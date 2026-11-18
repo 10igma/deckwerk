@@ -10,3 +10,4 @@ dist
 /target-a
 /ui/.shots
 !/crates/dw-decode/tests/data/*
+!/crates/dw-library/tests/data/*
