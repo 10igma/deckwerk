@@ -217,3 +217,33 @@ fn interpolation_at_integer_positions_is_bit_exact() {
     assert_eq!(sample_stereo(&src, -40.0), (0.0, 0.0));
     assert_eq!(sample_stereo(&src, 5000.5), (0.0, 0.0));
 }
+
+/// MIX-08: Die Decke gilt als True Peak, also auch zwischen zwei Samples.
+#[test]
+fn limiter_holds_the_ceiling_as_true_peak() {
+    use dw_dsp::resample::resample_stereo;
+    // 12 kHz mit 45° Phasenlage: Die Samples erreichen nur 71 % der wahren Spitze.
+    let amp = 1.3f64;
+    let src: Vec<f32> = (0..48_000)
+        .flat_map(|i| {
+            let s = (amp * (2.0 * PI * 12_000.0 * i as f64 / SR + PI / 4.0).sin()) as f32;
+            [s, s]
+        })
+        .collect();
+    let sample_peak = src.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(sample_peak < 0.93, "Samples allein liegen unter der Decke: {sample_peak}");
+
+    let true_peak = |x: &[f32]| {
+        let up = resample_stereo(x, 48_000, 384_000);
+        up[20_000..up.len() - 20_000].iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    assert!(true_peak(&src) > 1.25, "das Testsignal hat eine wahre Spitze von 1,3");
+
+    let mut lim = Limiter::new(SR, -0.3);
+    let mut out = src.clone();
+    lim.process(&mut out);
+    let tp_db = 20.0 * true_peak(&out).log10();
+    println!("True Peak nach dem Limiter: {tp_db:.2} dBTP");
+    assert!(tp_db <= -0.3 + 0.1, "True Peak {tp_db:.2} dBTP über der Decke");
+    assert!(tp_db >= -1.5, "Limiter nimmt zu viel weg: {tp_db:.2} dBTP");
+}

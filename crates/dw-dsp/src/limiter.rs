@@ -1,7 +1,50 @@
 //! Vorausschauender Limiter für die Master-Summe (MIX-08). Stereo gekoppelt.
 //! Die Verzögerung beträgt `lookahead()` Samples.
+//!
+//! Gemessen wird der True Peak: Das Signal wird für die Pegelerkennung vierfach
+//! überabgetastet, damit auch Spitzen zwischen zwei Samples erfasst werden.
 
 use dw_core::db_to_lin;
+use std::f64::consts::PI;
+
+/// Stützstellen je Phase des Interpolationsfilters der Pegelerkennung.
+const TP_TAPS: usize = 12;
+const TP_PHASES: usize = 4;
+
+fn bessel_i0(x: f64) -> f64 {
+    let mut sum = 1.0;
+    let mut term = 1.0;
+    let q = x * x / 4.0;
+    for k in 1..40 {
+        term *= q / (k * k) as f64;
+        sum += term;
+    }
+    sum
+}
+
+/// Koeffizienten für die Zwischenwerte bei 1/4, 2/4 und 3/4 zwischen zwei Samples.
+fn true_peak_filter() -> [[f32; TP_TAPS]; TP_PHASES - 1] {
+    let mut out = [[0.0f32; TP_TAPS]; TP_PHASES - 1];
+    let beta = 8.0;
+    let half = TP_TAPS as f64 / 2.0;
+    for (p, row) in out.iter_mut().enumerate() {
+        let frac = (p + 1) as f64 / TP_PHASES as f64;
+        let mut tmp = [0.0f64; TP_TAPS];
+        let mut sum = 0.0;
+        for (k, t) in tmp.iter_mut().enumerate() {
+            let x = k as f64 - (half - 1.0) - frac;
+            let sinc = if x.abs() < 1e-12 { 1.0 } else { (PI * x).sin() / (PI * x) };
+            let w = x / half;
+            let window = if w.abs() >= 1.0 { 0.0 } else { bessel_i0(beta * (1.0 - w * w).sqrt()) / bessel_i0(beta) };
+            *t = sinc * window;
+            sum += *t;
+        }
+        for (r, t) in row.iter_mut().zip(tmp) {
+            *r = (t / sum) as f32;
+        }
+    }
+    out
+}
 
 pub struct Limiter {
     ceiling: f32,
@@ -19,12 +62,17 @@ pub struct Limiter {
     release_coef: f32,
     /// Kleinster Gain seit dem letzten Abruf.
     min_gain: f32,
+    /// Letzte Samples je Kanal für die True-Peak-Erkennung (doppelt abgelegt, damit das Fenster nie umbricht).
+    tp_hist: [[f32; TP_TAPS * 2]; 2],
+    tp_pos: usize,
+    tp_filter: [[f32; TP_TAPS]; TP_PHASES - 1],
     pub enabled: bool,
 }
 
 impl Limiter {
     pub fn new(sample_rate: f64, ceiling_db: f32) -> Self {
-        let look = ((sample_rate * 0.0015).round() as usize).max(8);
+        // Die Vorschau muss länger sein als die Laufzeit des Erkennungsfilters.
+        let look = ((sample_rate * 0.0015).round() as usize).max(TP_TAPS * 2);
         Limiter {
             ceiling: db_to_lin(ceiling_db),
             look,
@@ -38,6 +86,9 @@ impl Limiter {
             // Rückkehr auf 63 % in 80 ms
             release_coef: 1.0 - (-1.0 / (0.080 * sample_rate as f32)).exp(),
             min_gain: 1.0,
+            tp_hist: [[0.0; TP_TAPS * 2]; 2],
+            tp_pos: 0,
+            tp_filter: true_peak_filter(),
             enabled: true,
         }
     }
@@ -54,7 +105,23 @@ impl Limiter {
     /// Verarbeitet verschachtelte Stereo-Samples an Ort und Stelle.
     pub fn process(&mut self, buf: &mut [f32]) {
         for frame in buf.chunks_exact_mut(2) {
-            let peak = frame[0].abs().max(frame[1].abs());
+            // True Peak: das Sample selbst und drei Zwischenwerte je Kanal.
+            let mut peak = frame[0].abs().max(frame[1].abs());
+            for c in 0..2 {
+                self.tp_hist[c][self.tp_pos] = frame[c];
+                self.tp_hist[c][self.tp_pos + TP_TAPS] = frame[c];
+            }
+            self.tp_pos = (self.tp_pos + 1) % TP_TAPS;
+            for c in 0..2 {
+                let window = &self.tp_hist[c][self.tp_pos..self.tp_pos + TP_TAPS];
+                for row in &self.tp_filter {
+                    let mut v = 0.0f32;
+                    for k in 0..TP_TAPS {
+                        v += window[k] * row[k];
+                    }
+                    peak = peak.max(v.abs());
+                }
+            }
             let need = if self.enabled && peak > self.ceiling { self.ceiling / peak } else { 1.0 };
             self.need[self.need_idx] = need;
             self.need_idx = (self.need_idx + 1) % self.need.len();
