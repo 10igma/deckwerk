@@ -102,9 +102,8 @@ fn written_wav_reads_back_identically() {
         let back = decode_file(&out).unwrap();
         assert_eq!(back.bits_per_sample, Some(bits as u32));
         assert_eq!(back.audio.data.len(), r.audio.data.len());
-        // Die Referenz ist 16 bit; beide Tiefen geben sie bis auf eine halbe 16-bit-Stufe wieder.
-        let worst = back.audio.data.iter().zip(&r.audio.data).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
-        assert!(worst <= 0.6 / 32768.0, "{bits} bit: Abweichung {worst}");
+        // Die Referenz ist 16 bit; beide Tiefen geben sie bitgenau wieder.
+        assert!(back.audio.data == r.audio.data, "{bits} bit: weicht ab");
         let _ = std::fs::remove_file(out);
     }
 }

@@ -22,9 +22,10 @@ pub fn write_wav(path: &Path, audio: &AudioBuf, bits: u16) -> std::io::Result<()
     w.write_all(&bits.to_le_bytes())?;
     w.write_all(b"data")?;
     w.write_all(&data_len.to_le_bytes())?;
-    let scale = ((1i64 << (bits - 1)) - 1) as f64;
+    // Maßstab 2^(bits−1) wie beim Lesen: Eine gelesene Datei wird bitgenau wieder geschrieben.
+    let scale = (1i64 << (bits - 1)) as f64;
     for &s in &audio.data {
-        let v = (s.clamp(-1.0, 1.0) as f64 * scale).round() as i32;
+        let v = ((s as f64 * scale).round() as i64).clamp(-(scale as i64), scale as i64 - 1) as i32;
         w.write_all(&v.to_le_bytes()[..bytes_per_sample as usize])?;
     }
     w.flush()
