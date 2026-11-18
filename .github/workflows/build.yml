@@ -74,7 +74,8 @@ jobs:
       - run: pnpm --dir ui install --frozen-lockfile
       - name: Installer bauen
         working-directory: app
-        run: pnpm --dir ../ui exec tauri build
+        # Aus app/ aufrufen: Dort liegt tauri.conf.json.
+        run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build
       - uses: actions/upload-artifact@v4
         with:
           name: deckwerk-${{ runner.os }}
