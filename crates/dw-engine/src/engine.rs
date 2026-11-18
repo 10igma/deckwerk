@@ -173,6 +173,12 @@ impl Engine {
         }
     }
 
+    /// Läuft das Deck und ist es auf dem Master zu hören (Fader offen, Crossfader nicht abgewandt)?
+    fn audible(&self, i: usize) -> bool {
+        let d = &self.decks[i];
+        d.playing && d.strip.fader_value > 0.0 && self.xf_gain(d.strip.xf_assign) > 0.0
+    }
+
     fn update_outputs(&mut self) {
         for i in 0..4 {
             let g = self.xf_gain(self.decks[i].strip.xf_assign);
@@ -359,10 +365,24 @@ impl Engine {
     fn block(&mut self, n: usize, mout: &mut [f32], cout: &mut [f32]) {
         self.execute_jumps();
 
-        // Automatische Master-Wahl: das am längsten laufende Deck.
-        if self.master_auto && !self.master.is_some_and(|m| self.decks[m].playing) {
-            let best = (0..4).filter(|&i| self.decks[i].playing).min_by_key(|&i| self.decks[i].started_at);
-            self.set_master(best, true);
+        // Automatische Master-Wahl (DECK-09): das am längsten laufende hörbare Deck.
+        // Ist kein laufendes Deck hörbar, bleibt der bisherige Master, solange er läuft.
+        if self.master_auto {
+            let current_playing = self.master.is_some_and(|m| self.decks[m].playing);
+            let current_audible = self.master.is_some_and(|m| self.audible(m));
+            if !current_audible {
+                let by_start = |e: &Engine, audible: bool| {
+                    (0..4).filter(|&i| e.decks[i].playing && (!audible || e.audible(i))).min_by_key(|&i| e.decks[i].started_at)
+                };
+                match by_start(self, true) {
+                    Some(best) => self.set_master(Some(best), true),
+                    None if !current_playing => {
+                        let best = by_start(self, false);
+                        self.set_master(best, true);
+                    }
+                    None => {}
+                }
+            }
         }
 
         let dt = n as f64 / self.sr;

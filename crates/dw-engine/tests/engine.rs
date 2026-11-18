@@ -313,3 +313,44 @@ fn offline_render_speed() {
     assert!(m.peak() > 0.05);
     assert!(factor >= 10.0, "nur {factor:.1}-fache Echtzeit");
 }
+
+/// DECK-09: Die Automatik wählt das hörbare Deck. Wird der Master ausgeblendet, übernimmt das
+/// andere laufende Deck, ohne dass sich Tempo oder Phase ändern.
+#[test]
+fn auto_master_follows_the_audible_deck() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(128.0, 0.0, 400, 0));
+    e.load(B, click_track(133.37, 0.2, 400, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    e.apply(Command::Play { deck: A, on: true });
+    e.apply(Command::Play { deck: B, on: true });
+    let mut fr = ClickFinder::new(1, 0.2);
+    run(&mut e, 10.0, &mut [&mut fr]);
+    assert_eq!(e.snapshot().master, Some(A));
+
+    // A ausblenden: B ist jetzt das einzige hörbare Deck und wird Master.
+    e.apply(Command::Fader { deck: A, value: 0.0 });
+    run(&mut e, 10.0, &mut [&mut fr]);
+    let s = e.snapshot();
+    assert_eq!(s.master, Some(B));
+    assert!(s.decks[0].playing, "A läuft unhörbar weiter");
+    assert!((s.clock_bpm - 128.0).abs() < 1e-6, "Clock {}", s.clock_bpm);
+    for w in fr.clicks[1..].windows(2) {
+        let d = w[1] as i64 - w[0] as i64;
+        assert!((d - 22_500).abs() <= 1, "Beat-Abstand {d} nach der Übergabe");
+    }
+
+    // Beide unhörbar: Der Master bleibt, solange er läuft.
+    e.apply(Command::Fader { deck: B, value: 0.0 });
+    run(&mut e, 1.0, &mut [&mut fr]);
+    assert_eq!(e.snapshot().master, Some(B));
+
+    // Crossfader ganz von B weg, A wieder offen: A ist hörbar und übernimmt.
+    e.apply(Command::Fader { deck: A, value: 1.0 });
+    e.apply(Command::Fader { deck: B, value: 1.0 });
+    e.apply(Command::XfAssign { deck: A, assign: XfAssign::Left });
+    e.apply(Command::XfAssign { deck: B, assign: XfAssign::Right });
+    e.apply(Command::Crossfader { pos: -1.0 });
+    run(&mut e, 1.0, &mut [&mut fr]);
+    assert_eq!(e.snapshot().master, Some(A));
+}
