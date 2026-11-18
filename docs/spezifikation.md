@@ -960,7 +960,8 @@ Tasten sind als Positionen auf dem US-Layout benannt und an die physische Positi
 
 | Funktion | Taste |
 |---|---|
-| Crossfader links / rechts (Shift = ganz) | ← / → |
+| Crossfader links / rechts (Alt = ganz) | ← / → |
+| Kanalfader A auf / zu, B auf / zu | Strg + D/F, Strg + L/; |
 | Liste hoch / runter | ↑ / ↓ |
 | Suche | Strg/Cmd + F |
 | Ansichten Mixen, Bibliothek, Vorbereiten, Auto-Mix | F1–F4 |
@@ -970,7 +971,8 @@ Tasten sind als Positionen auf dem US-Layout benannt und an die physische Positi
 | Aufnahme | Strg/Cmd + R |
 | Quantisierung, Snap | F9, F10 |
 | Rückgängig / Wiederholen | Strg/Cmd + Z / Shift + Strg/Cmd + Z |
-| Leertaste | Play/Pause des Decks mit Fokus bzw. Vorhören in Bibliothek und Auto-Mix |
+| Leertaste | Play/Pause des Decks mit Fokus (das zuletzt bediente Deck, sichtbar markiert) bzw. Vorhören in Bibliothek und Auto-Mix |
+| Fokus eines Reglers lösen | Esc |
 
 ---
 
@@ -1003,7 +1005,10 @@ Tasten sind als Positionen auf dem US-Layout benannt und an die physische Positi
 
 - Erster Start: Auswahl des Audiogeräts mit Testton, Auswahl des Musikordners, danach direkt die Ansicht „Mixen".
 - Alle Bedienelemente haben Kurzhilfen mit Name, aktuellem Wert und Tastenkürzel.
-- Gefährliche Aktionen im Live-Betrieb (laufendes Deck neu laden, Master-Deck stoppen) sind abgesichert, die Absicherung ist abschaltbar.
+- Gefährliche Aktionen im Live-Betrieb sind abgesichert, die Absicherung ist abschaltbar. Als gefährlich gilt, was ein hörbares Deck unterbricht (Fader offen und Crossfader nicht abgewandt): Stoppen, Cue, Sprung in der Übersicht, Neuladen. Solche Aktionen brauchen ein Halten der Taste (ca. 400 ms) oder einen zweiten Druck innerhalb 1 s; der Sprung in der Übersicht braucht Shift. Ein unhörbares Deck wird ohne Hürde bedient.
+- In ein geladenes, stehendes Deck lädt nur der gezielte Befehl (Lade-Taste, Shift + Pfeil, Ablegen); der Doppelklick in der Liste lädt nur in ein leeres Deck.
+- Doppelklick = Standardwert gilt nicht für Kanalfader und Master-Lautstärke: Ein geschlossener Kanal öffnet sich nie mit einem Griff.
+- Bedienziele im Live-Betrieb sind mindestens 28 px hoch, auch bei 1280×720.
 - Kontraste nach VIS-11; keine Information nur über Farbe (VIS-12).
 
 ### 9.4 Wartbarkeit
