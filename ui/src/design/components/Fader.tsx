@@ -2,7 +2,8 @@
 // ein Klick neben die Kappe lässt den Wert nicht springen.
 import { useRef, type CSSProperties } from 'react';
 import { useDragValue } from './useDragValue';
-import { useTip, type TipContent } from './Tooltip';
+import { useTip, type TipContent, type TipSide } from './Tooltip';
+import { CutSide } from './KeyBtn';
 import { DeckPlate } from './Marks';
 import type { DeckId } from '../../core/types';
 
@@ -26,6 +27,8 @@ export interface FaderProps {
   /** Wert wird von außen geführt (z. B. Sync): Kappe hohl. */
   guided?: boolean;
   tip?: TipContent;
+  /** Lage der Kurzhilfe; senkrechte Fader zeigen sie seitlich, damit sie beim Ziehen nichts verdeckt. */
+  tipSide?: TipSide;
   ariaLabel?: string;
   wheelStep?: number;
   forceHeld?: boolean;
@@ -50,7 +53,7 @@ export function Fader(props: FaderProps) {
     wheelStep: props.wheelStep,
     onHeldChange: props.onHeldChange,
   });
-  const tipProps = useTip(props.tip, drag.held);
+  const tipProps = useTip(props.tip, drag.held, props.tipSide ?? 'top');
   const v = Math.min(1, Math.max(0, value));
   const lo = Math.min(v, fillFrom);
   const hi = Math.max(v, fillFrom);
@@ -131,7 +134,9 @@ export function Crossfader(props: CrossfaderProps) {
         disabled={props.disabled}
         forceHeld={props.forceHeld}
       />
-      <DeckPlate deck={props.right} size="sm" cut="tr" />
+      <CutSide value="tr">
+        <DeckPlate deck={props.right} size="sm" />
+      </CutSide>
     </div>
   );
 }

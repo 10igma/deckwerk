@@ -12,6 +12,10 @@ export interface StageColors {
   bg: Rgb;
   rail: Rgb;
   text: Rgb;
+  /** Umriss-Grau: Abspielmarke, solange kein Deck geladen ist. */
+  line: Rgb;
+  /** Warnfarbe: Versatz zwischen den Beat-Marken beider Decks. */
+  warn: Rgb;
   low: Rgb;
   mid: Rgb;
   high: Rgb;
@@ -105,6 +109,9 @@ export function bandVisibility(db: number): number {
   return Math.max(0.03, Math.min(1, dbToLin(db)));
 }
 
+/** Deckkraft der Rasterlinien in den Bahnen: Beat ≈ 2 : 1, Takt ≥ 3 : 1, Phrase kräftiger (VIS-03). */
+export const LINE_ALPHA = { beat: 0.24, bar: 0.36, phrase: 0.52 };
+
 export function buildScene(input: StageInput): StageScene {
   const { width, height, dpr, colors } = input;
   const railH = Math.max(4, Math.round(input.railH / 2) * 2);
@@ -115,10 +122,18 @@ export function buildScene(input: StageInput): StageScene {
     input.clockBpm > 0 ? input.clockBpm : input.lanes.find((l) => l.state.loaded)?.state.bpm || FALLBACK_BPM;
   const secPerPx = secondsPerPx(width, input.zoomBeats, refBpm);
   const px = Math.max(1, Math.round(input.unit ?? dpr));
+  // Breite der Marken in der Schiene: Beat 0,2 rem, Takt 0,4 rem, Phrase 0,7 rem.
+  const rem = (input.unit ?? dpr) * 14;
+  const markW = { beat: Math.max(2, Math.round(rem * 0.2)), bar: Math.max(4, Math.round(rem * 0.4)), phrase: Math.max(7, Math.round(rem * 0.7)) };
+  const half = railH / 2;
+  const seam = px; // Fuge zwischen den Hälften der Schiene
 
   const lanes: LaneScene[] = [];
-  const rects: Rect[] = [];
-  rects.push({ x: 0, y: railY, w: width, h: railH, color: [...colors.rail, 1] });
+  const lines: Rect[] = [];
+  const marks: Rect[] = [];
+  // Beat-Positionen je Bahn, um den Versatz zwischen den Decks zu zeigen.
+  const beatXs: number[][] = [[], []];
+  const beatSpacing: number[] = [0, 0];
 
   input.lanes.forEach((lane, i) => {
     const top = i === 0;
@@ -156,46 +171,75 @@ export function buildScene(input: StageInput): StageScene {
 
     const deckColor = colors.decks[lane.deck];
     // Grundlinie an der Schiene.
-    rects.push({ x: 0, y: top ? railY - px : railY + railH, w: width, h: px, color: [...deckColor, loaded ? 0.55 : 0.25] });
+    lines.push({ x: 0, y: top ? railY - px : railY + railH, w: width, h: px, color: [...deckColor, loaded ? 0.7 : 0.25] });
     if (!loaded || !lane.grid || trackSecPerPx <= 0) return;
 
-    // Beat- und Taktlinien: in der Bahn dezent, in der Schiene kräftig in der Deck-Farbe.
+    // Beat- und Taktlinien in der Bahn; in der Schiene füllt jede Marke ihre Hälfte in der Deck-Farbe.
     const grid = lane.grid;
-    const half = railH / 2;
     const tLeft = s.pos - center * trackSecPerPx;
     const tRight = s.pos + (width - center) * trackSecPerPx;
     const first = Math.ceil(beatAt(grid, Math.max(tLeft, -1)));
     const last = Math.floor(beatAt(grid, Math.min(tRight, s.duration)));
-    const pxPerBeat = (60 / (s.track_bpm || FALLBACK_BPM)) / trackSecPerPx;
-    const showBeats = pxPerBeat >= 7 * dpr;
+    const pxPerBeat = 60 / (s.track_bpm || FALLBACK_BPM) / trackSecPerPx;
+    const showBeats = pxPerBeat >= markW.beat * 3;
+    beatSpacing[i] = pxPerBeat;
     for (let b = Math.max(0, first); b <= last; b++) {
       const down = isDownbeat(grid, b);
       if (!down && !showBeats) continue;
       const bar = Math.floor((b - grid.bar_offset) / 4);
       const phrase = down && bar % PHRASE_BARS === 0;
       const x = center + (secAt(grid, b) - s.pos) / trackSecPerPx;
+      if (showBeats) beatXs[i].push(x);
       const lw = phrase ? 3 * px : down ? 2 * px : px;
-      const xi = Math.round(x - lw / 2);
-      rects.push({ x: xi, y, w: lw, h: laneH, color: [...colors.text, phrase ? 0.34 : down ? 0.2 : 0.08] });
-      const th = phrase || down ? half - px : Math.round(half * 0.5);
-      const tw = phrase ? 6 * px : down ? 3 * px : 2 * px;
-      rects.push({
-        x: Math.round(x - tw / 2),
-        y: top ? railY + (half - px - th) : railY + half + px,
-        w: tw,
-        h: th,
-        color: [...deckColor, 1],
+      lines.push({
+        x: Math.round(x - lw / 2),
+        y,
+        w: lw,
+        h: laneH,
+        color: [...colors.text, phrase ? LINE_ALPHA.phrase : down ? LINE_ALPHA.bar : LINE_ALPHA.beat],
       });
+      const tw = phrase ? markW.phrase : down ? markW.bar : markW.beat;
+      const mx = Math.round(x - tw / 2);
+      marks.push({ x: mx, y: top ? railY : railY + half + seam / 2, w: tw, h: half - seam / 2, color: [...deckColor, 1] });
+      if (phrase) {
+        // Phrasenmarke: zusätzlich eine Fahne in die eigene Bahn hinein.
+        const flag = Math.round(rem * 0.4);
+        marks.push({ x: mx, y: top ? railY - flag : railY + railH, w: tw, h: flag, color: [...deckColor, 1] });
+      }
     }
   });
 
-  // Abspielmarke über alles, mit Kappen oben und unten.
+  const rects: Rect[] = [...lines];
+  rects.push({ x: 0, y: railY, w: width, h: railH, color: [...colors.rail, 1] });
+  // Laufen beide Decks, wird der Versatz zwischen ihren Beat-Marken als gelbe Fläche sichtbar:
+  // keine Fläche = im Takt, breite Fläche = läuft weg.
+  const [la, lb] = input.lanes;
+  if (la.state.playing && lb.state.playing && beatXs[0].length > 0 && beatXs[1].length > 0) {
+    const limit = Math.min(beatSpacing[0], beatSpacing[1]) / 2;
+    const bandH = Math.max(2 * px, Math.round(railH * 0.5));
+    for (const xb of beatXs[1]) {
+      let best = Infinity;
+      for (const xa of beatXs[0]) if (Math.abs(xa - xb) < Math.abs(best)) best = xa - xb;
+      if (Math.abs(best) > 1.5 && Math.abs(best) < limit) {
+        const x0 = Math.min(xb, xb + best);
+        rects.push({ x: Math.round(x0), y: railY + (railH - bandH) / 2, w: Math.max(1, Math.round(Math.abs(best))), h: bandH, color: [...colors.warn, 1] });
+      }
+    }
+  }
+  rects.push(...marks);
+
+  // Abspielmarke über alles, mit Kappen oben und unten; ohne geladenes Deck nur als graue Linie.
+  const anyLoaded = lanes.some((l) => l.loaded);
+  const head: Rgba = anyLoaded ? [...colors.text, 1] : [...colors.line, 1];
   const pw = 2 * px;
   rects.push({ x: center - pw / 2 - px, y: 0, w: pw + 2 * px, h: height, color: [...colors.bg, 0.55] });
-  rects.push({ x: center - pw / 2, y: 0, w: pw, h: height, color: [...colors.text, 1] });
-  const cap = Math.round(5 * dpr);
-  rects.push({ x: center - cap, y: 0, w: cap * 2, h: Math.round(3 * dpr), color: [...colors.text, 1] });
-  rects.push({ x: center - cap, y: height - Math.round(3 * dpr), w: cap * 2, h: Math.round(3 * dpr), color: [...colors.text, 1] });
+  rects.push({ x: center - pw / 2, y: 0, w: pw, h: height, color: head });
+  if (anyLoaded) {
+    const cap = Math.round(5 * (input.unit ?? dpr));
+    const capH = Math.round(3 * (input.unit ?? dpr));
+    rects.push({ x: center - cap, y: 0, w: cap * 2, h: capH, color: head });
+    rects.push({ x: center - cap, y: height - capH, w: cap * 2, h: capH, color: head });
+  }
 
   return { width, height, dpr, lanes, rects };
 }

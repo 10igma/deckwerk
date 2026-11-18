@@ -5,7 +5,9 @@ import { getDeckAssets, type DeckAssets } from '../../app/assets';
 import { latestSnapshot, useFrame } from '../../app/frame';
 import { getUi } from '../../app/store';
 import { deckIndex, VALUES_PER_POINT, type DeckId } from '../../core/types';
+import { useTip } from '../../design/components';
 import { cssNumber, cssVar, deckTokenName } from '../../design/tokens';
+import { useT } from '../../i18n';
 import { BAND_SHARE } from './wave/scene';
 
 interface Props {
@@ -58,6 +60,8 @@ export function Overview({ deck, ariaLabel }: Props) {
   const cache = useRef<{ assets: DeckAssets; w: number; h: number; theme: string; image: HTMLCanvasElement } | null>(null);
   const lastKey = useRef('');
   const dragging = useRef(false);
+  const t = useT();
+  const tip = useTip({ name: t('deck.overviewTip'), value: t('deck.overviewTipValue'), keys: ['Shift'] });
 
   useEffect(() => {
     const c = canvas.current;
@@ -124,7 +128,7 @@ export function Overview({ deck, ariaLabel }: Props) {
     const d = latestSnapshot().decks[deckIndex(deck)];
     if (!d.loaded) return;
     const r = e.currentTarget.getBoundingClientRect();
-    seek(deck, ((e.clientX - r.left) / r.width) * d.duration);
+    return seek(deck, ((e.clientX - r.left) / r.width) * d.duration, e.shiftKey);
   };
 
   return (
@@ -133,11 +137,11 @@ export function Overview({ deck, ariaLabel }: Props) {
       className="overview"
       role="img"
       aria-label={ariaLabel}
+      {...tip}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        dragging.current = true;
-        seekTo(e);
+        dragging.current = seekTo(e) ?? false;
       }}
       onPointerMove={(e) => {
         // Im laufenden Deck nur der Klick, kein Schleifen.

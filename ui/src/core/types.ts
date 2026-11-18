@@ -151,33 +151,73 @@ export interface Waveform {
 }
 
 // ---------------------------------------------------------------------------
-// Ab hier: Typen ohne Gegenstück in dw-core (Stand Stufe 1). Sie beschreiben,
-// was die Oberfläche von Bibliothek und Engine zusätzlich braucht.
+// Ab hier: Typen der Desktop-Hülle (docs/kern-schnittstelle.md, app/src/commands.rs).
 // ---------------------------------------------------------------------------
 
 export type TrackId = string;
 
-/** Zeile der Bibliothek (später aus dw-library). */
+/** Zeile der Bibliothek (`library_list`). */
 export interface TrackInfo {
   id: TrackId;
   title: string;
   artist: string;
+  /** 0, solange unbekannt (noch nicht analysiert und keine Angabe in der Datei). */
   bpm: number;
   key: Key | null;
   /** Dauer in Sekunden. */
   duration: number;
+  analyzed: boolean;
+  /** Datei liegt nicht mehr am gespeicherten Ort. */
+  missing: boolean;
 }
 
-/** Engine-Kennzahlen (ENG-09); im Snapshot des Kerns noch nicht enthalten. */
+/** Engine-Kennzahlen (`Poll.status`, ENG-09). */
 export interface EngineStatus {
-  /** DSP-Last 0–1 (Anteil der Pufferzeit). */
+  /** DSP-Last 0–1, höchster Wert seit dem letzten Abruf. */
   dsp_load: number;
   xruns: number;
   sample_rate: number;
+  /** 0 = Vorgabe des Geräts. */
   buffer_size: number;
+  /** false: kein Audiogerät, die Engine läuft stumm. */
+  has_device: boolean;
+  device_error: string | null;
+}
+
+/** Antwort von `core_poll`. */
+export interface Poll {
+  snapshot: Snapshot;
+  status: EngineStatus;
+  /** Ändert sich → Bibliothek neu abrufen. */
+  library_rev: number;
+  /** Tracks in der Analyse-Warteschlange. */
+  pending_analysis: number;
+}
+
+/** Stand der Bibliothek, wie ihn die Oberfläche beobachtet. */
+export interface LibraryStatus {
+  rev: number;
+  pending_analysis: number;
+}
+
+/** Ergebnis von `library_import`. */
+export interface ImportResult {
+  added: number;
+  duplicates: number;
+  relinked: number;
+  failed: [path: string, reason: string][];
 }
 
 export type LoadedTracks = Record<DeckId, TrackId | null>;
+
+export const emptyEngineStatus = (): EngineStatus => ({
+  dsp_load: 0,
+  xruns: 0,
+  sample_rate: 48000,
+  buffer_size: 0,
+  has_device: true,
+  device_error: null,
+});
 
 export function emptyDeckState(): DeckState {
   return {

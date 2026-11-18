@@ -13,7 +13,7 @@ function NoticeLayer() {
   const notice = useUi((s) => s.notice);
   if (!notice) return null;
   return (
-    <div className="dw-notice" role="status" key={notice.id}>
+    <div className="dw-notice" role={notice.tone === 'error' ? 'alert' : 'status'} data-tone={notice.tone} key={notice.id}>
       <Icon name="warn" size="1.2em" />
       {notice.text}
     </div>

@@ -6,7 +6,7 @@ import { nowDate } from './env';
 import { useEngineStatus, useFrame, useSnap } from './frame';
 import { bindingKeys, findBinding, shortcutKeys } from './keymap';
 import { navigate, VIEWS, type RouteId, type ViewId } from './router';
-import { setLang, setUi, useUi } from './store';
+import { setLang, setLiveGuard, setUi, useUi } from './store';
 import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../design/components';
 import { useLang, useT, type MsgKey } from '../i18n';
 import { formatBpm } from '../lib/format';
@@ -80,7 +80,7 @@ function LoadMeter() {
   const pct = Math.round(st.dsp_load * 100);
   const tip = useTip({
     name: t('hdr.load'),
-    value: `${pct} % · ${t('hdr.xruns', { n: st.xruns })} · ${st.sample_rate / 1000} kHz / ${st.buffer_size}`,
+    value: `${pct} % · ${t('hdr.xruns', { n: st.xruns })} · ${st.sample_rate / 1000} kHz / ${st.buffer_size > 0 ? st.buffer_size : t('hdr.bufferDefault')}`,
   });
   return (
     <div className="hdr__load" data-level={st.dsp_load > 0.7 ? 'high' : st.dsp_load > 0.4 ? 'mid' : 'low'} {...tip}>
@@ -94,22 +94,67 @@ function LoadMeter() {
   );
 }
 
+/** Dauerhafter Warnhinweis, solange kein Audiogerät läuft; die Meldung des Systems steht in der Kurzhilfe. */
+function DeviceWarning() {
+  const t = useT();
+  const st = useEngineStatus();
+  const tip = useTip({ name: t('hdr.noDevice'), value: st.device_error ?? t('hdr.noDeviceHint') });
+  if (st.has_device) return null;
+  return (
+    <span className="hdr__warn" role="status" tabIndex={0} {...tip}>
+      <Icon name="warn" size="1em" />
+      {t('hdr.noDeviceShort')}
+    </span>
+  );
+}
+
+function ViewTab({ view, route, hint }: { view: ViewId; route: RouteId; hint: string }) {
+  const t = useT();
+  const tip = useTip({ name: t('nav.open', { view: t(VIEW_LABEL[view]) }), keys: hint ? [hint] : [] });
+  return (
+    <a className="hdr__tab" href={`#/${view}`} aria-current={route === view ? 'page' : undefined} draggable={false} {...tip}>
+      {t(VIEW_LABEL[view])}
+      <kbd>{hint}</kbd>
+    </a>
+  );
+}
+
 function WallClock() {
+  const t = useT();
+  const tip = useTip({ name: t('hdr.time') });
   const [now, setNow] = useState(nowDate);
   useEffect(() => {
     const id = setInterval(() => setNow(nowDate()), 5000);
     return () => clearInterval(id);
   }, []);
   const text = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  return <span className="hdr__time dw-num">{text}</span>;
+  return (
+    <span className="hdr__time dw-num" {...tip}>
+      {text}
+    </span>
+  );
 }
 
 function SettingsPanel() {
   const t = useT();
   const lang = useLang();
   const theme = useUi((s) => s.theme);
+  const guard = useUi((s) => s.liveGuard);
+  const renderer = useUi((s) => s.rendererInfo);
   return (
     <div className="settings" role="dialog" aria-label={t('hdr.settings')}>
+      <div className="settings__row">
+        <span className="dw-label">{t('settings.guard')}</span>
+        <div className="settings__opts">
+          <KeyBtn mode="toggle" size="sm" active={guard} onPress={() => setLiveGuard(true)}>
+            {t('state.on')}
+          </KeyBtn>
+          <KeyBtn mode="toggle" size="sm" active={!guard} onPress={() => setLiveGuard(false)}>
+            {t('state.off')}
+          </KeyBtn>
+        </div>
+      </div>
+      <p className="settings__note">{t('settings.guardNote')}</p>
       <div className="settings__row">
         <span className="dw-label">{t('settings.language')}</span>
         <div className="settings__opts">
@@ -146,6 +191,10 @@ function SettingsPanel() {
           </KeyBtn>
         </div>
       </div>
+      <div className="settings__row">
+        <span className="dw-label">{t('settings.renderer')}</span>
+        <span className="settings__value">{renderer || '–'}</span>
+      </div>
       <p className="settings__note">{t('settings.note')}</p>
     </div>
   );
@@ -167,10 +216,7 @@ export function Header({ route }: { route: RouteId }) {
         <Brand />
         <nav className="hdr__nav" aria-label={t('nav.aria')}>
           {VIEWS.map((v) => (
-            <a key={v} className="hdr__tab" href={`#/${v}`} aria-current={route === v ? 'page' : undefined} draggable={false}>
-              {t(VIEW_LABEL[v])}
-              <kbd>{fkey(v)}</kbd>
-            </a>
+            <ViewTab key={v} view={v} route={route} hint={fkey(v)} />
           ))}
         </nav>
       </div>
@@ -178,6 +224,7 @@ export function Header({ route }: { route: RouteId }) {
       <ClockBlock />
 
       <div className="hdr__right">
+        <DeviceWarning />
         <KeyBtn mode="toggle" size="sm" disabled tip={{ name: t('hdr.quantize'), value: t('hdr.later', { stage: 2 }), keys: ['F9'] }} ariaLabel={t('hdr.quantize')}>
           <span className="dw-num">Q</span>
         </KeyBtn>
@@ -191,7 +238,7 @@ export function Header({ route }: { route: RouteId }) {
         <LoadMeter />
         <WallClock />
         <div className="hdr__gear">
-          <KeyBtn mode="toggle" size="sm" cut="tr" active={open} onPress={() => setUi({ settingsOpen: !open })} ariaLabel={t('hdr.settings')} tip={{ name: t('hdr.settings') }}>
+          <KeyBtn mode="toggle" size="sm" active={open} onPress={() => setUi({ settingsOpen: !open })} ariaLabel={t('hdr.settings')} tip={{ name: t('hdr.settings') }}>
             <Icon name="gear" size="1.05em" />
           </KeyBtn>
           {open && <SettingsPanel />}

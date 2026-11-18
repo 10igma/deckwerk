@@ -2,12 +2,12 @@
 // direkt aus dem Snapshot; React rendert nur, wenn sich ein ausgewählter Wert ändert.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { CoreApi } from '../core/api';
-import { emptySnapshot, type EngineStatus, type Snapshot } from '../core/types';
+import { emptyEngineStatus, emptySnapshot, type EngineStatus, type Snapshot } from '../core/types';
 
 export type FrameCallback = (s: Snapshot, timeMs: number, dtMs: number) => void;
 
 let current: Snapshot = emptySnapshot();
-let status: EngineStatus = { dsp_load: 0, xruns: 0, sample_rate: 48000, buffer_size: 256 };
+let status: EngineStatus = emptyEngineStatus();
 const snapListeners = new Set<() => void>();
 const statusListeners = new Set<() => void>();
 const frameCallbacks = new Set<FrameCallback>();

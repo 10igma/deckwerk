@@ -17,7 +17,11 @@ export type IconName =
   | 'match'
   | 'ok'
   | 'clash'
-  | 'warn';
+  | 'warn'
+  | 'tostart'
+  | 'expand'
+  | 'collapse'
+  | 'drop';
 
 const PATHS: Record<IconName, string> = {
   play: 'M5 3 L19 12 L5 21 Z',
@@ -37,6 +41,13 @@ const PATHS: Record<IconName, string> = {
   ok: 'M12 2 L22 12 L12 22 L2 12 Z M12 6.2 V17.8 L17.8 12 Z',
   clash: 'M5 2.5 L12 9.5 L19 2.5 L21.5 5 L14.5 12 L21.5 19 L19 21.5 L12 14.5 L5 21.5 L2.5 19 L9.5 12 L2.5 5 Z',
   warn: 'M12 2 L23 21 H1 Z M10.8 9 H13.2 V15 H10.8 Z M10.8 16.6 H13.2 V19 H10.8 Z',
+  // Sprung zum Anfang: Balken und Dreieck nach links
+  tostart: 'M4 4 H8 V20 H4 Z M21 4 V20 L9 12 Z',
+  // Liste aufziehen / zurücksetzen
+  expand: 'M3 3 H21 V6 H3 Z M12 9 L20 19 H4 Z',
+  collapse: 'M3 18 H21 V21 H3 Z M12 15 L20 5 H4 Z',
+  // Ablegen: Pfeil in eine Schale
+  drop: 'M10 2 H14 V10 H18 L12 16.5 L6 10 H10 Z M3 15 H6 V19 H18 V15 H21 V22 H3 Z',
 };
 
 export function Icon({ name, size = '1em', style }: { name: IconName; size?: string; style?: CSSProperties }) {

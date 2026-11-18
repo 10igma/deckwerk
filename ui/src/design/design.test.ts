@@ -80,7 +80,10 @@ describe.each([
   });
   it('Frequenzbänder unterscheiden sich auch in der Helligkeit (VIS-12)', () => {
     const [lo, mid, hi] = ['--band-low', '--band-mid', '--band-high'].map((n) => luminance(hex(t, n)));
+    // Kupfer < Messing < Zinn. Zinn liegt bewusst deutlich unter Kalkweiß (Schrift, Abspielmarke),
+    // deshalb ist der Schritt Messing → Zinn kleiner als Kupfer → Messing; die Lage im Stapel trennt zusätzlich.
     expect(mid / lo).toBeGreaterThan(1.5);
-    expect(hi / mid).toBeGreaterThan(1.4);
+    expect(hi / mid).toBeGreaterThan(1.2);
+    expect(luminance(hex(t, '--text-1')) / hi).toBeGreaterThan(1.3);
   });
 });

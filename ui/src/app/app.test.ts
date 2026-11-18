@@ -4,6 +4,7 @@ import en from '../i18n/en.json';
 import { translate } from '../i18n';
 import { DEFAULT_KEYMAP, bindingKeys, findBinding, findConflicts, resolveKey, shortcutKeys, type KeyLike } from './keymap';
 import { parseRoute } from './router';
+import { webglPresent } from './env';
 import { remForViewport } from './scale';
 
 const key = (code: string, mods: Partial<KeyLike> = {}): KeyLike => ({ code, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods });
@@ -45,12 +46,27 @@ describe('Tastenbelegung (8.7)', () => {
     expect(hit('KeyJ', { ctrlKey: true })).toEqual({ action: 'deck.filter_close', deck: 'b', fine: false });
     expect(hit('KeyK', { ctrlKey: true })).toEqual({ action: 'deck.filter_open', deck: 'b', fine: false });
   });
+  it('Kanalfader auf Alt + Tempo-Tasten (Strg + F bleibt die Suche), fein mit Shift', () => {
+    expect(hit('KeyD', { altKey: true })).toEqual({ action: 'deck.fader_up', deck: 'a', fine: false });
+    expect(hit('KeyF', { altKey: true })).toEqual({ action: 'deck.fader_down', deck: 'a', fine: false });
+    expect(hit('KeyL', { altKey: true })).toEqual({ action: 'deck.fader_up', deck: 'b', fine: false });
+    expect(hit('Semicolon', { altKey: true, shiftKey: true })).toEqual({ action: 'deck.fader_down', deck: 'b', fine: true });
+    // Die in 8.7 genannte Kombination Strg + F ist dort doppelt belegt; sie bleibt die Suche.
+    expect(hit('KeyF', { ctrlKey: true })?.action).toBe('search.focus');
+    expect(hit('KeyD', { ctrlKey: true })).toBeNull();
+  });
+  it('Leertaste spielt das Deck mit Fokus, Esc löst den Regler-Fokus', () => {
+    expect(hit('Space')).toEqual({ action: 'deck.play_focus', deck: undefined, fine: false });
+    expect(hit('Escape')?.action).toBe('focus.release');
+    expect(shortcutKeys('deck.play_focus', undefined, 'de')).toEqual(['␣']);
+  });
   it('Pfeile: Crossfader, Liste, Laden mit Shift, ganz mit Alt', () => {
     expect(hit('ArrowLeft')?.action).toBe('xf.left');
     expect(hit('ArrowRight')?.action).toBe('xf.right');
     expect(hit('ArrowLeft', { shiftKey: true })).toEqual({ action: 'deck.load', deck: 'a', fine: false });
     expect(hit('ArrowRight', { shiftKey: true })).toEqual({ action: 'deck.load', deck: 'b', fine: false });
     expect(hit('ArrowLeft', { altKey: true })?.action).toBe('xf.full_left');
+    expect(hit('ArrowRight', { altKey: true })?.action).toBe('xf.full_right');
     expect(hit('ArrowUp')?.action).toBe('list.up');
     expect(hit('ArrowDown')?.action).toBe('list.down');
   });
@@ -101,12 +117,23 @@ describe('Sprachdateien (BED-07)', () => {
     }
   });
   it('Platzhalter werden ersetzt', () => {
-    expect(translate('de', 'notice.loadProtected', { deck: 'A' })).toBe('Deck A läuft – Laden gesperrt. Erst anhalten.');
+    expect(translate('de', 'guard.seekShift', { deck: 'A' })).toBe('Deck A ist hörbar – Sprung nur mit Shift + Klick.');
     expect(translate('en', 'stage.beats', { n: 8 })).toBe('8 beats');
   });
 });
 
 describe('Hülle', () => {
+  it('WebGL wird unter WebKitGTK über eine 2D-Fläche gezeigt, sonst direkt', () => {
+    const chrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+    const webkitGtk = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
+    const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+    const edge = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0';
+    expect(webglPresent('', chrome)).toBe('direct');
+    expect(webglPresent('', webkitGtk)).toBe('blit');
+    expect(webglPresent('', mac)).toBe('direct');
+    expect(webglPresent('', edge)).toBe('direct');
+    expect(webglPresent('?renderer=blit', chrome)).toBe('blit');
+  });
   it('Routen aus dem Hash', () => {
     expect(parseRoute('')).toBe('mixen');
     expect(parseRoute('#/designsystem')).toBe('designsystem');

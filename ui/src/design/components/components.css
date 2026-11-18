@@ -45,7 +45,6 @@
   height: var(--ctl-h-sm);
   min-width: var(--ctl-h-sm);
   padding: 0 var(--sp-2);
-  font-size: var(--fs-1);
 }
 .dw-key[data-size='lg'] {
   --cut: var(--cut-2);
@@ -79,22 +78,14 @@
   height: 0.2rem;
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
-.dw-key[data-size='sm'] .dw-key__lamp {
-  top: 0.15rem;
-  right: 0.2rem;
-  width: 0.5rem;
-  height: 0.15rem;
-}
-.dw-key[data-size='sm'][data-mode='toggle'] {
-  padding-right: 0.85rem;
-}
 .dw-key[data-size='lg'] .dw-key__lamp {
   width: 0.8rem;
   height: 0.25rem;
   top: 0.3rem;
   right: 0.3rem;
 }
-.dw-key:hover:not(:disabled) {
+.dw-key:hover:not(:disabled),
+.dw-key[data-force='hover'] {
   --key-line: var(--state-hover-line);
 }
 /* gehalten */
@@ -139,12 +130,63 @@
 .dw-key:disabled .dw-key__lamp {
   box-shadow: inset 0 0 0 1px var(--line-1);
 }
-.dw-key:focus-visible {
+.dw-key:focus-visible,
+.dw-key[data-force='focus'] {
   box-shadow: none;
   --key-line: var(--text-1);
 }
-.dw-key:focus-visible::before {
+.dw-key:focus-visible::before,
+.dw-key[data-force='focus']::before {
   inset: var(--stroke-2);
+}
+/* aktiv als Umriss: für große Tasten (Play), damit keine Leuchtfläche entsteht */
+.dw-key[data-tone='outline'][data-active='true'] {
+  --key-fill: var(--bg-2);
+  --key-line: var(--key-accent);
+  --key-text: var(--text-1);
+}
+.dw-key[data-tone='outline'][data-active='true']::before {
+  inset: var(--stroke-2);
+}
+.dw-key[data-tone='outline'][data-active='true'] .dw-key__lamp {
+  background: var(--key-accent);
+}
+.dw-key[data-tone='outline'][data-active='true'] svg {
+  color: var(--key-accent);
+}
+.dw-key[data-tone='outline'][data-active='true'][data-held='true'],
+.dw-key[data-tone='outline'][data-active='true']:active:not(:disabled) {
+  --key-fill: var(--state-held-bg);
+  --key-line: var(--key-accent);
+}
+.dw-key[data-tone='outline'][data-active='true'][data-held='true']::before,
+.dw-key[data-tone='outline'][data-active='true']:active:not(:disabled)::before {
+  filter: none;
+}
+/* scharf: Live-Schutz wartet auf Halten (Balken läuft) oder den zweiten Druck */
+.dw-key[data-armed='true'],
+.dw-key[data-tone][data-active='true'][data-armed='true'] {
+  --key-line: var(--state-armed-line);
+}
+.dw-key[data-armed='true']::before {
+  inset: var(--stroke-2);
+}
+.dw-key[data-armed='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0.25rem;
+  width: 0;
+  background: var(--state-armed-line);
+}
+.dw-key[data-armed='true'][data-held='true']::after {
+  animation: dw-hold 400ms linear forwards;
+}
+@keyframes dw-hold {
+  to {
+    width: 100%;
+  }
 }
 
 /* ---------- Drehregler ------------------------------------------------------ */
@@ -205,8 +247,13 @@
   stroke: var(--text-3);
   stroke-width: 3;
 }
-.dw-knob__dial:hover .dw-knob__cap {
+.dw-knob__dial:hover .dw-knob__cap,
+.dw-knob[data-force='hover'] .dw-knob__cap {
   stroke: var(--state-hover-line);
+}
+.dw-knob[data-force='focus'] .dw-knob__cap {
+  stroke: var(--text-1);
+  stroke-width: 4;
 }
 .dw-knob[data-held='true'] .dw-knob__cap {
   fill: var(--line-1);
@@ -405,9 +452,9 @@
 }
 .dw-plate[data-size='lg'] {
   --cut: var(--cut-2);
-  width: 2.7rem;
-  height: 2.7rem;
-  font-size: 2.1rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1.7rem;
 }
 .dw-plate[data-size='sm'] {
   width: 1.15rem;
@@ -430,6 +477,8 @@
 .dw-plate[data-deck='d'] { --plate-color: var(--deck-d); }
 
 /* ---------- Tonart-Marke ---------------------------------------------------------- */
+/* Code in Schriftfarbe auf dunklem Grund, Tonart-Farbe als Balken links. Gefüllte Farbflächen
+   bleiben Deck-Schildern und aktiven Tasten vorbehalten. */
 .dw-keychip {
   --chip: var(--key-none);
   display: inline-flex;
@@ -440,11 +489,12 @@
 .dw-keychip__code {
   display: inline-grid;
   place-items: center;
-  min-width: 2.3rem;
-  height: 1.3rem;
-  padding: 0 0.3rem;
-  background: var(--chip);
-  color: var(--ink);
+  min-width: 2.6rem;
+  height: 1.35rem;
+  padding: 0 0.3rem 0 0.25rem;
+  background: var(--bg-2);
+  border-left: 0.35rem solid var(--chip);
+  color: var(--text-1);
   font: 600 var(--fs-2) / 1 var(--font-num);
   font-stretch: var(--num-stretch);
   font-variant-numeric: tabular-nums;
@@ -452,16 +502,18 @@
 }
 /* Dur (B) zusätzlich mit Kerbe oben rechts, Moll (A) als volles Rechteck */
 .dw-keychip[data-mode='major'] .dw-keychip__code {
-  clip-path: polygon(0 0, calc(100% - 0.35rem) 0, 100% 0.35rem, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, calc(100% - 0.4rem) 0, 100% 0.4rem, 100% 100%, 0 100%);
 }
 .dw-keychip[data-mode='none'] .dw-keychip__code {
   background: none;
+  border-left-color: var(--line-2);
   color: var(--text-3);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
 }
 .dw-keychip[data-size='lg'] .dw-keychip__code {
-  min-width: 3.1rem;
+  min-width: 3.3rem;
   height: 1.8rem;
+  border-left-width: 0.45rem;
   font-size: var(--fs-4);
 }
 .dw-keychip__name {
@@ -580,15 +632,25 @@
   height: var(--row-h);
   padding: 0 var(--sp-3);
   gap: var(--sp-3);
-  border-bottom: 1px solid var(--line-1);
+  /* Trennlinie als Schatten, damit die volle Zeilenhöhe Trefferfläche bleibt */
+  box-shadow: inset 0 -1px 0 var(--line-1);
   color: var(--text-2);
   position: relative;
   cursor: default;
 }
 .dw-row[data-head='true'] {
   background: var(--bg-1);
-  border-bottom: 1px solid var(--line-2);
-  height: 1.7rem;
+  box-shadow: inset 0 -1px 0 var(--line-2);
+  height: max(28px, 1.7rem);
+}
+/* jede zweite Zeile dunkler, damit das Auge quer in der Zeile bleibt */
+.dw-row[data-zebra='true'] {
+  background: var(--bg-0);
+}
+/* gedämpft: Eintrag nicht nutzbar (Datei fehlt) */
+.dw-row[data-dim='true'],
+.dw-row[data-dim='true'] .dw-row__cell[data-strong='true'] {
+  color: var(--text-3);
 }
 .dw-row:not([data-head='true']):hover {
   background: var(--bg-2);
@@ -630,22 +692,32 @@
 }
 
 /* ---------- Kurzhilfe ------------------------------------------------------------------------------ */
+/* Dunkel mit hellem Umriss: Im dunklen Raum darf die Hilfe nicht das Hellste auf dem Schirm sein. */
 .dw-tip {
   position: fixed;
   z-index: var(--z-tip);
+  isolation: isolate;
   pointer-events: none;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: 0.35rem 0.6rem;
-  background: var(--text-1);
-  color: var(--ink);
+  padding: 0.4rem 0.65rem;
+  background: var(--line-2);
+  color: var(--text-1);
   font: 500 var(--fs-2) / 1.2 var(--font-text);
   white-space: nowrap;
   clip-path: polygon(var(--cut-1) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut-1));
 }
+.dw-tip::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  background: var(--bg-3);
+  clip-path: polygon(calc(var(--cut-1) - 0.6px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--cut-1) - 0.6px));
+}
 .dw-tip[data-static='true'] {
-  position: static;
+  position: relative;
   display: inline-flex;
 }
 .dw-tip__name {
@@ -656,6 +728,7 @@
   font-stretch: var(--num-stretch);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-1);
+  color: var(--text-2);
 }
 .dw-tip__keys {
   display: inline-flex;
@@ -671,6 +744,49 @@
   border: 1px solid currentColor;
   font: 500 var(--fs-1) / 1 var(--font-num);
   font-stretch: var(--num-stretch);
+}
+
+/* ---------- Zahleneingabe ------------------------------------------------------------------------------ */
+.dw-value {
+  display: inline-block;
+  min-width: 0;
+  /* Trefferfläche nach oben vergrößert (über die Beschriftung), ohne den Platz im Raster zu ändern */
+  padding: 1.05rem 0 0.1rem;
+  margin-top: -0.95rem;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font: 500 var(--fs-2) / 1 var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  cursor: text;
+  border-bottom: 1px dotted transparent;
+}
+.dw-value:hover:not(:disabled) {
+  border-bottom-color: var(--text-3);
+}
+.dw-value:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.dw-value:focus-visible {
+  box-shadow: none;
+  border-bottom: 1px solid var(--text-1);
+}
+.dw-value--edit {
+  width: 100%;
+  margin-top: 0;
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--text-1);
+  border-bottom: 0;
+  padding: 0.15rem 0.2rem;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.dw-value--edit[data-bad='true'] {
+  box-shadow: inset 0 0 0 2px var(--status-danger);
 }
 
 /* ---------- Hinweis ---------------------------------------------------------------------------------- */
@@ -689,6 +805,6 @@
   font: 600 var(--fs-3) / 1.2 var(--font-text);
   clip-path: polygon(var(--cut-2) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut-2));
 }
-.dw-notice__icon {
-  font: 700 var(--fs-4) / 1 var(--font-label);
+.dw-notice[data-tone='error'] {
+  background: var(--status-danger);
 }

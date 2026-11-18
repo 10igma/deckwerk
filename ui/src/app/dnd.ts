@@ -1,7 +1,7 @@
 // Drag-and-drop von Tracks aus der Liste auf ein Deck (DECK-04).
 import { useState } from 'react';
 import type { DeckId, TrackId } from '../core/types';
-import { loadTrack } from './actions';
+import { loadByDrop } from './actions';
 
 export const TRACK_MIME = 'application/x-deckwerk-track';
 
@@ -34,7 +34,7 @@ export function useTrackDrop(deck: DeckId) {
         e.preventDefault();
         setOver(false);
         const id = e.dataTransfer.getData(TRACK_MIME);
-        if (id) void loadTrack(deck, id);
+        if (id) loadByDrop(deck, id);
       },
     },
   };

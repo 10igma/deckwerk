@@ -2,13 +2,13 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, send } from '../../app/actions';
+import { bend, focusDeck, send } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
-import { forcedRenderer } from '../../app/env';
+import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
 import { getUi, setUi, useUi } from '../../app/store';
 import { deckIndex, type DeckId } from '../../core/types';
-import { DeckPlate, Icon, KeyBtn } from '../../design/components';
+import { DeckPlate, Icon, KeyBtn, useTip } from '../../design/components';
 import { cssVar, remPx } from '../../design/tokens';
 import { useT } from '../../i18n';
 import { clamp } from '../../lib/curves';
@@ -20,6 +20,8 @@ import { WebGLWaveRenderer } from './wave/webgl';
 
 export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32];
 const LANES: [DeckId, DeckId] = ['a', 'b'];
+/** Höhe der Beat-Schiene in rem (je Deck eine Hälfte). */
+export const RAIL_REM = 2;
 
 function stepZoom(dir: -1 | 1): void {
   const cur = ZOOM_STEPS.indexOf(getUi().zoomBeats);
@@ -30,24 +32,30 @@ function stepZoom(dir: -1 | 1): void {
 function LaneOverlay({ deck, position }: { deck: DeckId; position: 'top' | 'bottom' }) {
   const t = useT();
   const track = useUi((s) => s.deckTracks[deck]);
+  const loading = useUi((s) => s.loading[deck]);
   const loaded = useSnap((s) => s.decks[deckIndex(deck)].loaded);
   const drop = useTrackDrop(deck);
+  const name = deck.toUpperCase();
+  // Kurzhilfe am Schild erklärt, was Ziehen und Mausrad in der Wellenform tun (9.3).
+  const tip = useTip({ name: t('stage.tip', { deck: name }), value: t('stage.tipValue'), keys: [t('key.wheel')] });
   return (
     <div className="stage__lane" data-pos={position} data-over={drop.over ? 'true' : undefined} {...drop.handlers}>
-      <div className="stage__tag">
+      <div className="stage__tag" {...tip}>
         <DeckPlate deck={deck} />
-        {loaded && track ? (
+        {loading ? (
           <span className="stage__title dw-truncate">
-            <b>{track.title}</b> · {track.artist}
+            {t('deck.loading')} <b>{loading.title}</b>
           </span>
-        ) : null}
+        ) : loaded && track ? (
+          <span className="stage__title dw-truncate">
+            <b>{track.title}</b>
+            {track.artist ? ` · ${track.artist}` : ''}
+          </span>
+        ) : (
+          <span className="stage__title stage__title--empty">{t('stage.empty', { deck: name })}</span>
+        )}
       </div>
-      {!loaded && (
-        <div className="stage__empty">
-          <span className="dw-label">{t('stage.empty', { deck: deck.toUpperCase() })}</span>
-        </div>
-      )}
-      {drop.over && <div className="stage__drop dw-label">{t('deck.dropHere', { deck: deck.toUpperCase() })}</div>}
+      {drop.over && <div className="stage__drop dw-label">{t('deck.dropHere', { deck: name })}</div>}
     </div>
   );
 }
@@ -63,6 +71,7 @@ export function WaveStage() {
   const shown = useRef<Record<string, DeckAssets | null>>({});
   const colors = useRef<{ theme: string; value: StageColors } | null>(null);
   const lastKey = useRef('');
+  const tested = useRef(false);
   const drag = useRef<{ deck: DeckId; x: number; pos: number; playing: boolean; secPerPx: number } | null>(null);
 
   // Zeichner anlegen: WebGL 2, sonst Canvas 2D.
@@ -71,7 +80,7 @@ export function WaveStage() {
     if (!c) return;
     let r: WaveRenderer;
     try {
-      r = mode === 'webgl2' ? new WebGLWaveRenderer(c) : new Canvas2DWaveRenderer(c);
+      r = mode === 'webgl2' ? new WebGLWaveRenderer(c, webglPresent(window.location.search, navigator.userAgent)) : new Canvas2DWaveRenderer(c);
     } catch (err) {
       if (mode === 'webgl2') {
         console.warn('WebGL 2 nicht nutzbar, Rückfall auf Canvas 2D:', err);
@@ -80,6 +89,7 @@ export function WaveStage() {
       return;
     }
     renderer.current = r;
+    setUi({ rendererInfo: r.kind === 'webgl2' ? `WebGL 2 · ${r.info}` : r.info });
     shown.current = {};
     lastKey.current = '';
     const lost = (e: Event) => {
@@ -149,7 +159,7 @@ export function WaveStage() {
     let key = `${w}x${h}|${ui.zoomBeats}|${snap.clock_bpm.toFixed(3)}`;
     for (const deck of LANES) {
       const d = snap.decks[deckIndex(deck)];
-      key += `|${d.loaded ? 1 : 0}:${d.pos.toFixed(4)}:${d.tempo_offset.toFixed(5)}:${d.eq_db.join(',')}`;
+      key += `|${d.loaded ? 1 : 0}${d.playing ? 1 : 0}:${d.pos.toFixed(4)}:${d.tempo_offset.toFixed(5)}:${d.eq_db.join(',')}`;
     }
     if (key === lastKey.current) return;
     lastKey.current = key;
@@ -161,7 +171,7 @@ export function WaveStage() {
       width: w,
       height: h,
       dpr,
-      railH: remPx() * 1.5 * dpr,
+      railH: remPx() * RAIL_REM * dpr,
       unit: (remPx() / 14) * dpr,
       zoomBeats: ui.zoomBeats,
       clockBpm: snap.clock_bpm,
@@ -169,6 +179,16 @@ export function WaveStage() {
       colors: colors.current.value,
     });
     r.draw(scene, colors.current.value);
+    // Einmal nach dem ersten Bild prüfen, ob WebGL wirklich zeichnet; sonst auf Canvas 2D wechseln.
+    if (r instanceof WebGLWaveRenderer && !tested.current) {
+      tested.current = true;
+      const test = r.selfTest(scene);
+      setUi({ rendererInfo: test.ok ? `WebGL 2 · ${r.info}` : `WebGL 2 zeichnet nicht (${test.detail}) – Canvas 2D` });
+      if (!test.ok) {
+        console.warn('WebGL 2 zeichnet nicht, Rückfall auf Canvas 2D:', test.detail);
+        setMode('canvas2d');
+      }
+    }
   });
 
   // Ziehen in der Wellenform: laufendes Deck anschieben/abbremsen, stehendes Deck verschieben (DECK-07).
@@ -179,6 +199,7 @@ export function WaveStage() {
     const snap = latestSnapshot();
     const d = snap.decks[deckIndex(deck)];
     if (!d.loaded) return;
+    focusDeck(deck);
     const refBpm = snap.clock_bpm > 0 ? snap.clock_bpm : d.bpm || FALLBACK_BPM;
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = {
@@ -225,7 +246,7 @@ export function WaveStage() {
           <Icon name="plus" size="0.8em" />
         </KeyBtn>
         <span className="stage__zoomval dw-num">{t(zoom === 1 ? 'stage.beat' : 'stage.beats', { n: zoom })}</span>
-        <KeyBtn size="sm" cut="tr" onPress={() => stepZoom(1)} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} ariaLabel={t('stage.zoomOut')} tip={{ name: t('stage.zoomOut'), keys: [t('key.wheel')] }}>
+        <KeyBtn size="sm" onPress={() => stepZoom(1)} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} ariaLabel={t('stage.zoomOut')} tip={{ name: t('stage.zoomOut'), keys: [t('key.wheel')] }}>
           <Icon name="minus" size="0.8em" />
         </KeyBtn>
       </div>

@@ -158,6 +158,78 @@ describe('MockCore', () => {
     expect(Math.abs(a.decks[1].phase)).toBeLessThan(1e-6);
     expect(a.master).toBe('a');
   });
+  it('Auto-Master folgt dem hörbaren Deck (DECK-09): Fader von A zu → B übernimmt ohne Temposprung', () => {
+    const core = new MockCore({ manualClock: true, scene: 'transition' });
+    run(core, 0.5);
+    expect(last(core).master).toBe('a');
+    core.apply({ type: 'fader', deck: 'a', value: 0 });
+    run(core, 0.1);
+    const s = last(core);
+    expect(s.master).toBe('b');
+    expect(s.clock_bpm).toBeCloseTo(134, 6);
+    // Läuft kein Deck hörbar, bleibt der Master, wo er ist.
+    core.apply({ type: 'fader', deck: 'b', value: 0 });
+    run(core, 0.1);
+    expect(last(core).master).toBe('b');
+  });
+  it('Kanalfader wirkt quadratisch wie im Kern: halber Weg = ein Viertel', () => {
+    const level = (fader: number): number => {
+      const core = new MockCore({ scene: 'synced', frozen: true });
+      core.apply({ type: 'limiter', on: false });
+      core.apply({ type: 'fader', deck: 'a', value: fader });
+      core.computeLevels();
+      return core.snapshot().mixer.master_peak[0];
+    };
+    expect(level(0.5) / level(1)).toBeCloseTo(0.25, 6);
+  });
+  it('Bibliothek „analyzing": unanalysierte Tracks ohne Tempo und Tonart, Analyse läuft ab', async () => {
+    const core = new MockCore({ manualClock: true, library: 'analyzing' });
+    const states: number[] = [];
+    core.subscribeLibrary((s) => states.push(s.pending_analysis));
+    let tracks = await core.listTracks();
+    const waiting = tracks.filter((t) => !t.analyzed && !t.missing);
+    expect(waiting.length).toBe(12);
+    expect(waiting.every((t) => t.bpm === 0 && t.key === null)).toBe(true);
+    expect(tracks.filter((t) => t.missing).length).toBe(1);
+    expect(states[0]).toBe(12);
+    run(core, 2);
+    expect(states[states.length - 1]).toBe(10);
+    tracks = await core.listTracks();
+    expect(tracks.filter((t) => !t.analyzed && !t.missing).length).toBe(10);
+  });
+  it('leere Bibliothek, Import bringt Tracks ohne Analyse und erhöht den Stand', async () => {
+    const core = new MockCore({ manualClock: true, library: 'empty' });
+    const revs: number[] = [];
+    core.subscribeLibrary((s) => revs.push(s.rev));
+    expect((await core.listTracks()).length).toBe(0);
+    const r = await core.importPaths(['/musik/techno']);
+    expect(r.added).toBe(6);
+    expect(revs.length).toBe(2);
+    expect(revs[1]).toBeGreaterThan(revs[0]);
+    const tracks = await core.listTracks();
+    expect(tracks.length).toBe(6);
+    expect(tracks.every((t) => !t.analyzed)).toBe(true);
+  });
+  it('Laden: fehlende Datei wird mit Klartext abgelehnt, Ladezeit wird eingehalten, Analyse beim Laden nachgeholt', async () => {
+    const core = new MockCore({ manualClock: true, library: 'analyzing', loadDelayMs: 30 });
+    const tracks = await core.listTracks();
+    const missing = tracks.find((t) => t.missing)!;
+    await expect(core.loadTrack('a', missing.id)).rejects.toMatch(/Datei nicht gefunden/);
+    const pending = tracks.find((t) => !t.analyzed && !t.missing)!;
+    const t0 = Date.now();
+    const p = core.loadTrack('b', pending.id);
+    expect(core.snapshot().decks[1].loaded).toBe(false);
+    await p;
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(25);
+    expect(core.snapshot().decks[1].loaded).toBe(true);
+    expect((await core.listTracks()).find((t) => t.id === pending.id)!.analyzed).toBe(true);
+  });
+  it('ohne Audiogerät trägt der Status die Meldung', () => {
+    expect(new MockCore({ manualClock: true }).status().has_device).toBe(true);
+    const st = new MockCore({ manualClock: true, noDevice: true }).status();
+    expect(st.has_device).toBe(false);
+    expect(st.device_error).toMatch(/Ausgabegerät/);
+  });
   it('eingefrorener Kern nimmt Befehle an und meldet sofort', () => {
     const core = new MockCore({ scene: 'loaded', frozen: true });
     const seen: Snapshot[] = [];

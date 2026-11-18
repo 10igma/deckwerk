@@ -50,10 +50,22 @@ export const GAIN_CURVE = makeDbCurve({ maxDb: 12, floorDb: -48, zeroPos: 0.5, k
 /** Master- und Kopfhörer-Lautstärke: −∞ … +6 dB, 0 dB bei 3/4 des Wegs. */
 export const VOLUME_CURVE = makeDbCurve({ maxDb: 6, floorDb: -60, zeroPos: 0.75, killZone: 0.03, exponent: 1.6 });
 
-/** Kanalfader: linear in dB bis −60 dB, ganz unten stumm (MIX-05). */
+/** Kanalfader: im Kern quadratisch (Faktor = Stellung²), ganz unten stumm (MIX-05). */
+export const faderGain = (value: number): number => {
+  const v = clamp(value, 0, 1);
+  return v * v;
+};
+
+/** Anzeige des Kanalfaders: 40 · log10(Stellung) dB; halber Weg = −12 dB. */
 export function faderToDb(value: number): number {
   const v = clamp(value, 0, 1);
-  return v <= 0 ? -Infinity : (v - 1) * 60;
+  return v <= 0 ? -Infinity : 40 * Math.log10(v);
+}
+
+/** Stellung des Kanalfaders für einen Pegel in dB (Skalenstriche, Zahleneingabe). */
+export function faderFromDb(db: number): number {
+  if (!(db > -Infinity)) return 0;
+  return clamp(Math.pow(10, db / 40), 0, 1);
 }
 
 export const FILTER_DEAD_ZONE = 0.02;

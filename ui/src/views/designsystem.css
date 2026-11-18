@@ -149,7 +149,7 @@
 }
 .ds__matrix {
   display: grid;
-  grid-template-columns: 7rem repeat(5, 9rem);
+  grid-template-columns: 8rem repeat(7, 8.5rem);
   align-items: center;
   justify-items: start;
   gap: var(--sp-3) var(--sp-4);
@@ -194,6 +194,11 @@
   position: static;
   transform: none;
   align-self: flex-start;
+}
+.ds .lib__state,
+.ds .lib__spinner {
+  /* Zustandsmarken der Bibliothek (Stile aus der Ansicht „Mixen") */
+  vertical-align: middle;
 }
 .ds__phases {
   display: grid;

@@ -8,6 +8,7 @@ const blend = (bg: Rgb, fg: Rgb, t: number): Rgb => [bg[0] + (fg[0] - bg[0]) * t
 
 export class Canvas2DWaveRenderer implements WaveRenderer {
   readonly kind = 'canvas2d' as const;
+  readonly info = 'Canvas 2D';
   private ctx: CanvasRenderingContext2D;
   private tracks = new Map<DeckId, Waveform>();
   private col = new Float32Array(3);
@@ -29,19 +30,20 @@ export class Canvas2DWaveRenderer implements WaveRenderer {
     ctx.fillStyle = css(colors.bg);
     ctx.fillRect(0, 0, scene.width, scene.height);
     const bandColors = [colors.low, colors.mid, colors.high];
-    const stripe = Math.max(2, Math.round(3 * scene.dpr));
+    // Schraffur wie im Shader: Streifen unter 135°, Periode 6 Pixel (mal Geräte-Faktor).
+    const period = 6 * scene.dpr;
+    const shade = (c: Rgb, v: number, side: number): string => css(blend(colors.bg, blend(colors.bg, c, v), side === 0 ? colors.playedDim : 1));
 
     for (const lane of scene.lanes) {
       const wf = this.tracks.get(lane.deck);
       if (!lane.loaded || !wf) continue;
       const data = wf.levels[lane.level].data;
       const center = lane.w / 2;
-      // Farben je Band und Seite der Abspielmarke vorab mischen.
+      // Farben je Band und Seite der Abspielmarke vorab mischen; gekillte Bänder hell/dunkel für die Schraffur.
       const styles = [0, 1].map((side) =>
         bandColors.map((c, b) => {
           const g = lane.bandGain[b];
-          const v = g < 0.02 ? 0.3 : 0.42 + 0.58 * g;
-          return css(blend(colors.bg, blend(colors.bg, c, v), side === 0 ? colors.playedDim : 1));
+          return g < 0.02 ? [shade(c, 0.07, side), shade(c, 0.34, side)] : [shade(c, 0.42 + 0.58 * g, side)];
         }),
       );
       for (let x = 0; x < lane.w; x++) {
@@ -50,12 +52,23 @@ export class Canvas2DWaveRenderer implements WaveRenderer {
         let from = 0;
         for (let b = 0; b < 3; b++) {
           const hgt = this.col[b] * BAND_SHARE[b] * lane.h * 0.97;
-          // Gekilltes Band: nur jede zweite Streifenbreite zeichnen (Schraffur-Ersatz).
-          const skip = lane.bandGain[b] < 0.02 && Math.floor(x / stripe) % 2 === 1;
-          if (hgt > 0.3 && !skip) {
-            ctx.fillStyle = styles[side][b];
+          if (hgt > 0.3) {
             const y = lane.dir > 0 ? lane.y + lane.h - from - hgt : lane.y + from;
+            const st = styles[side][b];
+            ctx.fillStyle = st[0];
             ctx.fillRect(lane.x + x, y, 1, hgt);
+            if (st.length > 1) {
+              // Helle Streifen: dort, wo (x + y von unten) in der zweiten Hälfte der Periode liegt.
+              ctx.fillStyle = st[1];
+              const yBottom = scene.height - (y + hgt);
+              const base = lane.x + x + yBottom;
+              let k = Math.floor(base / period) * period + period / 2 - base;
+              for (; k < hgt; k += period) {
+                const s0 = Math.max(0, k);
+                const s1 = Math.min(hgt, k + period / 2);
+                if (s1 > s0) ctx.fillRect(lane.x + x, y + hgt - s1, 1, s1 - s0);
+              }
+            }
           }
           from += hgt;
         }

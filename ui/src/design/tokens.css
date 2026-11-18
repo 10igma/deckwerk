@@ -30,7 +30,7 @@
   /* --- Frequenzbänder (Metalle, von dunkel nach hell) ---------------------- */
   --band-low: #D77343;  /* Kupfer – Tief < 200 Hz */
   --band-mid: #E1B75C;  /* Messing – Mitte */
-  --band-high: #EDE8D6; /* Zinn – Hoch > 2,5 kHz */
+  --band-high: #C8D3D4; /* Zinn – Hoch > 2,5 kHz (kühles Grau, klar unter Kalkweiß) */
 
   /* --- Status und Warnung -------------------------------------------------- */
   --status-ok: #5EDB81;
@@ -88,19 +88,20 @@
   --stroke-2: 2px;
 
   /* --- Maße der Bedienelemente ------------------------------------------------ */
-  --ctl-h-sm: 1.5rem;
-  --ctl-h-md: 2rem;
+  --ctl-h-sm: 2rem;   /* 28 px bei 1280×720 – Mindesthöhe für alles, was live geklickt wird (9.3) */
+  --ctl-h-md: 2.2rem;
   --ctl-h-lg: 2.6rem;
-  --knob-sm: 2.5rem;
+  --knob-sm: 2.4rem;
   --knob-md: 3.1rem;
   --knob-lg: 4rem;
   --fader-cap: 1.3rem;
-  --header-h: 2.9rem;
-  --row-h: 1.8rem;
+  --header-h: 2.6rem;
+  --row-h: max(28px, 1.8rem);
 
   /* --- Zustände ----------------------------------------------------------------- */
   --state-hover-line: var(--text-2);
   --state-held-bg: var(--bg-3);
+  --state-armed-line: var(--status-warn); /* Live-Schutz wartet auf Halten oder zweiten Druck */
   --state-disabled-opacity: 0.38;
   --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--text-1);
   --played-dim: 0.45;      /* Helligkeit des bereits gespielten Teils */

@@ -1,13 +1,25 @@
-/* Ansicht „Mixen“: Bühne (Wellenformen) · Pult (Deck A, Mixer, Deck B) · Bibliothek. */
+/* Ansicht „Mixen": Bühne (Wellenformen) · Pult (Deck A, Mixer, Deck B) · Bibliothek.
+   Höhen: Die Bühne bekommt mindestens 40 % des Fensters. Das Pult ist fest. Die Bibliothek nimmt,
+   was übrig ist, bis zu acht Zeilen – jede weitere Höhe geht an die Bühne. */
 .mix {
-  --desk-h: 20.2rem;
-  --mixer-w: 35.5rem;
+  --desk-h: 13.8rem;
+  --mini-h: 2.7rem;
+  --mixer-w: 43.8rem;
+  --deck-max: 32rem;
+  --lib-bar-h: max(31px, 2.2rem);
+  --lib-head-h: max(28px, 1.7rem);
+  --lib-min: calc(var(--lib-bar-h) + var(--lib-head-h) + 3 * var(--row-h));
+  --lib-pref: calc(var(--lib-bar-h) + var(--lib-head-h) + 8 * var(--row-h));
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(8rem, 1.1fr) var(--desk-h) minmax(7rem, 1fr);
+  grid-template-rows: minmax(40vh, 1fr) var(--desk-h) minmax(var(--lib-min), var(--lib-pref));
   gap: 1px;
   background: var(--line-1);
+}
+/* Bibliothek aufgezogen: Decks als eine Zeile, die Liste nimmt den Rest (8.2). */
+.mix[data-lib='big'] {
+  grid-template-rows: 40vh var(--mini-h) minmax(0, 1fr);
 }
 
 /* ---------- Bühne ---------------------------------------------------------- */
@@ -30,7 +42,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: calc(50% - 0.75rem);
+  height: calc(50% - 1rem);
 }
 .stage__lane[data-pos='top'] {
   top: 0;
@@ -38,6 +50,8 @@
 .stage__lane[data-pos='bottom'] {
   bottom: 0;
 }
+/* Schild und Titel liegen ohne deckende Fläche über der Wellenform: Sie schneiden keine Spitzen ab.
+   Die Schrift bekommt eine Ruß-Kontur, damit sie auch über hellen Schichten lesbar bleibt. */
 .stage__tag {
   position: absolute;
   left: var(--sp-2);
@@ -45,10 +59,7 @@
   align-items: center;
   gap: var(--sp-2);
   max-width: 42%;
-  padding-right: var(--sp-2);
-  background: var(--bg-0);
-  background: color-mix(in srgb, var(--bg-0) 80%, transparent);
-  pointer-events: none;
+  cursor: default;
 }
 .stage__lane[data-pos='top'] .stage__tag {
   top: var(--sp-2);
@@ -58,24 +69,23 @@
 }
 .stage__title {
   font-size: var(--fs-2);
-  color: var(--text-2);
+  color: var(--text-1);
+  text-shadow:
+    0 0 2px var(--bg-0),
+    1px 0 0 var(--bg-0),
+    -1px 0 0 var(--bg-0),
+    0 1px 0 var(--bg-0),
+    0 -1px 0 var(--bg-0),
+    1px 1px 0 var(--bg-0),
+    -1px -1px 0 var(--bg-0),
+    1px -1px 0 var(--bg-0),
+    -1px 1px 0 var(--bg-0);
 }
 .stage__title b {
-  color: var(--text-1);
   font-weight: 600;
 }
-.stage__empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background-image: var(--hatch);
-  pointer-events: none;
-}
-.stage__empty .dw-label {
-  background: var(--bg-0);
-  padding: 0.3rem 0.6rem;
-  color: var(--text-2);
+.stage__title--empty {
+  color: var(--text-3);
 }
 .stage__drop {
   position: absolute;
@@ -83,8 +93,8 @@
   display: grid;
   place-items: center;
   border: 2px dashed var(--text-1);
-  background: var(--bg-0);
-  background: color-mix(in srgb, var(--bg-0) 82%, transparent);
+  background-color: var(--bg-0);
+  background-image: var(--hatch);
   color: var(--text-1);
   pointer-events: none;
 }
@@ -95,20 +105,32 @@
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  background: var(--bg-0);
   cursor: default;
 }
 .stage__zoomval {
   min-width: 4.6rem;
   text-align: center;
   font-size: var(--fs-1);
-  color: var(--text-2);
+  color: var(--text-1);
+  text-shadow:
+    0 0 2px var(--bg-0),
+    1px 0 0 var(--bg-0),
+    -1px 0 0 var(--bg-0),
+    0 1px 0 var(--bg-0),
+    0 -1px 0 var(--bg-0);
 }
 
 /* ---------- Pult -------------------------------------------------------------- */
+/* Decks sind in der Breite begrenzt; Überschuss geht an den Mixer (mittig gesetzt). */
 .mix__desk {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--mixer-w) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--deck-max)) minmax(var(--mixer-w), 1fr) minmax(0, var(--deck-max));
+  gap: 1px;
+  min-height: 0;
+}
+.mix__mini {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1px;
   min-height: 0;
 }
@@ -120,17 +142,31 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(2rem, 1fr) auto auto;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  grid-template-rows: 2.1rem auto minmax(1.2rem, 1fr) auto auto;
+  gap: 0.24rem;
+  padding: 0.35rem 0.6rem 0.4rem;
   background: var(--bg-1);
   border-top: var(--stroke-2) solid var(--deck-color);
 }
-.deck[data-deck='a'] { --deck-color: var(--deck-a); }
-.deck[data-deck='b'] { --deck-color: var(--deck-b); }
+.deck[data-deck='a'],
+.minideck[data-deck='a'] { --deck-color: var(--deck-a); }
+.deck[data-deck='b'],
+.minideck[data-deck='b'] { --deck-color: var(--deck-b); }
 .deck[data-deck='c'] { --deck-color: var(--deck-c); }
 .deck[data-deck='d'] { --deck-color: var(--deck-d); }
-.deck[data-over='true']::after {
+/* Deck mit Fokus (Leertaste): doppelt starke Kante und Balken unter dem Buchstaben des Schilds. */
+.deck[data-focus='true'] {
+  border-top-width: 4px;
+  padding-top: calc(0.35rem - 2px);
+}
+.deck[data-focus='true'] .deck__head > .dw-plate,
+.minideck[data-focus='true'] > .dw-plate {
+  box-shadow: inset 0 -0.3rem 0 var(--ink);
+  line-height: 0.8;
+  align-content: start;
+}
+.deck[data-over='true']::after,
+.minideck[data-over='true']::after {
   content: '';
   position: absolute;
   inset: 0.25rem;
@@ -142,7 +178,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
-  min-height: 2.7rem;
+  min-height: 0;
 }
 .deck__titles {
   min-width: 0;
@@ -152,20 +188,60 @@
   color: var(--text-1);
 }
 .deck__title--empty {
-  color: var(--text-2);
+  font-weight: 500;
+  font-size: var(--fs-3);
+  color: var(--text-3);
 }
 .deck__artist {
   font-size: var(--fs-2);
   line-height: 1.25;
   color: var(--text-2);
 }
+/* Ladezustand: laufender Balken und Text */
+.deck__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--status-warn);
+}
+.deck__loadbar {
+  position: relative;
+  flex: none;
+  width: 4rem;
+  height: 0.35rem;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.deck__loadbar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 20%;
+  width: 40%;
+  background: var(--status-warn);
+  animation: dw-load 1.1s linear infinite;
+}
+@keyframes dw-load {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+/* Tonart und Verträglichkeit: innen am Mixer, bei Deck A also rechts, bei Deck B links */
 .deck__keybox {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  align-items: center;
+  gap: var(--sp-3);
 }
-/* Deck B: Kopf gespiegelt, Schild außen */
+.deck[data-side='left'] .deck__keybox {
+  flex-direction: row-reverse;
+}
+.deck[data-side='left'] .deck__keybox .dw-keychip {
+  flex-direction: row-reverse;
+}
 .deck[data-side='right'] .deck__head > .dw-plate {
   order: 3;
 }
@@ -175,10 +251,6 @@
 }
 .deck[data-side='right'] .deck__keybox {
   order: 1;
-  align-items: flex-start;
-}
-.deck[data-side='right'] .deck__keybox .dw-keychip {
-  flex-direction: row;
 }
 .deck__compat {
   display: inline-flex;
@@ -193,25 +265,74 @@
 .deck__compat[data-compat='ok'] { color: var(--status-warn); }
 .deck__compat[data-compat='clash'] { color: var(--status-danger); }
 
+/* Zahlen: Restzeit außen, Takt in der Mitte, BPM innen am Mixer */
 .deck__numbers {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--sp-4);
+  align-items: end;
+  gap: var(--sp-3);
 }
 .deck__col {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.12rem;
   min-width: 0;
 }
-.deck__col[data-align='right'] {
+.deck[data-side='left'] .deck__col[data-role='bpm'],
+.deck[data-side='right'] .deck__col[data-role='rest'] {
   align-items: flex-end;
+  order: 3;
+}
+.deck[data-side='right'] .deck__col[data-role='bpm'] {
+  order: 1;
+}
+.deck__col[data-role='bar'] {
+  align-items: center;
+  order: 2;
+}
+.deck__bpm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+.deck__bpm .dw-label {
+  font-size: var(--fs-1);
+}
+.deck__big {
+  font-size: var(--fs-6);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+.deck__mid {
+  font-size: var(--fs-5);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-2);
+}
+/* unruhiger Anhang (Zehntel, Schlag im Takt): kleiner und gedämpft */
+.deck__tail {
+  font-size: 0.58em;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0;
+}
+.deck__mid .deck__tail {
+  font-size: 0.72em;
+  color: var(--text-3);
+}
+/* leer: gedämpfter Strich statt Scheinwert */
+.deck__big--empty {
+  font-size: var(--fs-5);
+  font-weight: 400;
+  color: var(--text-3);
 }
 .deck__subline {
   display: flex;
   align-items: baseline;
-  gap: 0.45rem;
+  gap: 0.35rem;
+  height: 0.85rem;
   font-size: var(--fs-1);
   color: var(--text-2);
   white-space: nowrap;
@@ -219,18 +340,29 @@
 .deck__subline .dw-label {
   font-size: var(--fs-1);
 }
+.deck__subline .dw-value {
+  font-size: var(--fs-1);
+}
+.deck__subline .dw-value--edit {
+  width: 4.6rem;
+}
+.deck__dot {
+  width: 0.2rem;
+  height: 0.2rem;
+  background: var(--line-2);
+  align-self: center;
+}
 .deck__beats {
   display: flex;
   gap: 0.2rem;
-  margin-top: 0.1rem;
 }
 .deck__beats span {
-  width: 0.9rem;
-  height: 0.3rem;
+  width: 0.8rem;
+  height: 0.28rem;
   background: var(--bg-3);
 }
 .deck__beats span:first-child {
-  width: 1.4rem;
+  width: 1.3rem;
 }
 .deck__beats[data-beat='1'] span:nth-child(1),
 .deck__beats[data-beat='2'] span:nth-child(2),
@@ -239,9 +371,10 @@
   background: var(--text-1);
 }
 
-.deck__overview {
+.deck__overview,
+.minideck__overview {
   position: relative;
-  min-height: 2rem;
+  min-height: 1.2rem;
   background: var(--bg-0);
   box-shadow: inset 0 0 0 1px var(--line-1);
 }
@@ -253,53 +386,129 @@
   display: block;
   cursor: pointer;
 }
-.deck__overview-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background-image: var(--hatch);
-  pointer-events: none;
-}
 
+/* Gleichlauf: Phase liegt als schmaler Streifen direkt über dem Tempo-Regler, auf derselben Achse */
 .deck__run {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 3.4rem;
-  align-items: center;
-  gap: 0.4rem var(--sp-2);
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: end;
+  gap: 0.4rem;
 }
-.deck__phaseval {
-  font-size: var(--fs-1);
-  color: var(--text-2);
-  text-align: right;
+.deck__sync {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
 }
-.deck__tempo {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-2);
+.deck__phase {
+  margin: 0 calc(var(--fader-cap) / 2);
+}
+.deck__phase .dw-phase {
+  height: 0.5rem;
 }
 .deck__range {
-  justify-self: stretch;
+  min-width: 2.8rem;
   padding: 0 0.3rem;
-  font-size: var(--fs-1);
 }
 .deck__range .dw-num {
   font-size: var(--fs-1);
 }
+.deck__phaseval {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  min-width: 2.9rem;
+  height: var(--ctl-h-sm);
+  font-size: var(--fs-1);
+  color: var(--text-2);
+}
+.deck__phaseval .dw-label {
+  font-size: var(--fs-1);
+}
+
+/* Transport: in beiden Decks dieselbe Reihenfolge. CUE steht nicht neben SYNC; CLOCK ist abgerückt. */
 .deck__transport {
   display: flex;
-  gap: var(--sp-2);
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
 }
 .deck__transport .dw-key {
-  padding: 0 0.8rem;
+  height: 2.05rem;
+  padding: 0 0.6rem;
 }
 .deck__play {
   flex: 1 1 auto;
-  max-width: 14rem;
+  max-width: 9rem;
 }
+.deck__fuge {
+  flex: none;
+  width: 1px;
+  height: 1.4rem;
+  margin: 0 0.25rem;
+  background: var(--line-2);
+}
+/* Sync und sein Modus sind eine angedockte Gruppe */
+.deck__syncgroup {
+  display: flex;
+  flex: none;
+}
+.deck__syncgroup .dw-key + .dw-key {
+  margin-left: -1px;
+  clip-path: none;
+}
+.deck__syncgroup .dw-key + .dw-key::before {
+  clip-path: none;
+}
+.deck[data-side='right'] .deck__syncgroup .dw-key:first-child,
+.deck[data-side='right'] .deck__syncgroup .dw-key:first-child::before {
+  clip-path: none;
+}
+.deck[data-side='right'] .deck__syncgroup .dw-key + .dw-key {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+}
+.deck[data-side='right'] .deck__syncgroup .dw-key + .dw-key::before {
+  clip-path: polygon(0 0, calc(100% - var(--cut) + 0.6px) 0, 100% calc(var(--cut) - 0.6px), 100% 100%, 0 100%);
+}
+.deck__mode {
+  min-width: 3.5rem;
+}
+/* CLOCK ist in jeder Auflösung um denselben festen Abstand abgerückt (riskante Taste, 9.3) */
 .deck__master {
-  margin-left: auto;
+  margin-left: calc(var(--sp-5) - 0.3rem);
+}
+
+/* ---------- Deck als eine Zeile ---------------------------------------------------- */
+.minideck {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(4rem, 12rem) minmax(4rem, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 0.6rem;
+  min-width: 0;
+  background: var(--bg-1);
+  border-top: var(--stroke-2) solid var(--deck-color);
+}
+.minideck[data-focus='true'] {
+  border-top-width: 4px;
+}
+.minideck__title {
+  font: 600 var(--fs-3) / 1.2 var(--font-text);
+}
+.minideck__overview {
+  height: calc(var(--ctl-h-sm) + 2px);
+}
+.minideck__num {
+  font-size: var(--fs-4);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.minideck__rest {
+  min-width: 5.6rem;
+  text-align: right;
 }
 
 /* ---------- Mixer ------------------------------------------------------------------ */
@@ -308,92 +517,95 @@
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem 0.45rem;
   background: var(--bg-1);
   border-top: var(--stroke-2) solid var(--line-2);
 }
 .mixer__strips {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8rem minmax(0, 1fr);
-  gap: var(--sp-3);
+  grid-template-columns: 16.7rem 8rem 16.7rem;
+  gap: 0.6rem;
   min-height: 0;
 }
 .mixer__xf {
-  padding: 0 4.5rem;
+  padding: 0 2.5rem;
+}
+.mixer__xf .dw-fader[data-orient='h'] {
+  height: var(--ctl-h-sm);
 }
 .strip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--sp-3);
+  grid-template-columns: minmax(0, 1fr) 3.6rem;
+  gap: 0.5rem;
   min-height: 0;
   min-width: 0;
 }
 .strip[data-side='right'] {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 3.6rem minmax(0, 1fr);
 }
 .strip[data-side='right'] .strip__level {
   order: -1;
 }
 .strip__knobs {
   display: grid;
-  grid-template-rows: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 0.2rem;
   min-height: 0;
   min-width: 0;
 }
 .strip__row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--sp-2);
-  border-bottom: 1px solid var(--line-1);
+  gap: 0.35rem;
   min-width: 0;
 }
-.strip__row:last-child {
-  border-bottom: 0;
+/* Gain und Filter nebeneinander */
+.strip__row--pair {
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+}
+/* EQ: Regler · Band und Wert · Kill-Taste in voller Zeilenhöhe */
+.strip__row--eq {
+  grid-template-columns: auto 3rem minmax(0, 1fr);
+}
+.strip__row--single {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 .strip__meta {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  align-items: flex-end;
+  gap: 0.15rem;
   min-width: 0;
 }
-.strip__line {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.3rem;
-}
-.strip__val {
+.strip__meta .dw-label {
   font-size: var(--fs-1);
-  color: var(--text-2);
-  line-height: 1;
+}
+.strip__meta .dw-value {
+  max-width: 100%;
 }
 .strip__band[data-band='low'] { color: var(--band-low); }
 .strip__band[data-band='mid'] { color: var(--band-mid); }
 .strip__band[data-band='high'] { color: var(--band-high); }
 .strip__level {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  justify-items: center;
-  gap: var(--sp-2);
-  width: 4.4rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.3rem;
   min-height: 0;
-}
-.strip__levelhead {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
 }
 .strip__fadbox {
   display: grid;
-  grid-template-columns: 1rem 2.5rem;
-  gap: 0.45rem;
+  grid-template-columns: 1rem 2.3rem;
+  gap: 0.3rem;
   min-height: 0;
-  height: 100%;
+}
+.strip__fadbox .dw-fader[data-orient='v'] {
+  width: 2.3rem;
+  min-height: 0;
 }
 .strip[data-side='right'] .strip__fadbox {
-  grid-template-columns: 2.5rem 1rem;
+  grid-template-columns: 2.3rem 1rem;
 }
 .strip[data-side='right'] .strip__meter {
   order: 2;
@@ -403,31 +615,26 @@
   min-height: 0;
   padding: calc(var(--fader-cap) / 2) 0;
 }
+.strip__level .dw-key {
+  padding: 0 0.3rem;
+}
+.strip__letter {
+  font: 700 var(--fs-3) / 1 var(--font-label);
+}
 
 .master {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.4rem;
   min-height: 0;
-  padding: 0 var(--sp-2);
+  padding: 0 0.4rem;
   border-left: 1px solid var(--line-1);
   border-right: 1px solid var(--line-1);
 }
-.master__title {
-  text-align: center;
-  color: var(--text-2);
-}
-.master__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--sp-2);
-}
 .master__meters {
   display: grid;
-  grid-template-columns: 1.3rem 0.45rem;
-  gap: 0.25rem;
+  grid-template-columns: 1.2rem 0.4rem;
+  gap: 0.15rem;
   min-height: 0;
 }
 .master__meter,
@@ -436,45 +643,37 @@
   height: 100%;
 }
 .master__gr {
-  padding-top: calc(5px + 1px);
+  padding-top: 6px;
 }
 .master__ctl {
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: space-between;
-  gap: var(--sp-1);
   min-width: 0;
+  min-height: 0;
 }
-.master__grval {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: var(--fs-1);
+.master__title {
+  text-align: center;
   color: var(--text-2);
-}
-.master__grval .dw-label {
   font-size: var(--fs-1);
 }
 .master__phones {
   display: flex;
-  justify-content: space-around;
+  justify-content: space-between;
 }
 
 /* ---------- Bibliothek ------------------------------------------------------------------ */
 .lib {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: var(--lib-bar-h) minmax(0, 1fr);
   background: var(--bg-1);
 }
 .lib__bar {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  height: 2.1rem;
-  padding: 0 var(--sp-3);
+  padding: 0 0.6rem;
   border-bottom: 1px solid var(--line-1);
   min-width: 0;
 }
@@ -486,7 +685,7 @@
   align-items: center;
   gap: var(--sp-2);
   width: 21rem;
-  height: 1.6rem;
+  height: max(28px, 1.8rem);
   padding: 0 var(--sp-2);
   background: var(--bg-0);
   box-shadow: inset 0 0 0 1px var(--line-2);
@@ -527,6 +726,33 @@
   color: var(--text-3);
   flex: none;
 }
+/* Analyse-Fortschritt */
+.lib__analysis {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  font: 600 var(--fs-2) / 1 var(--font-text);
+  color: var(--status-warn);
+}
+.lib__spinner {
+  position: relative;
+  flex: none;
+  width: 1.6rem;
+  height: 0.3rem;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.lib__spinner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 30%;
+  width: 40%;
+  background: currentColor;
+  animation: dw-load 1.1s linear infinite;
+}
 .lib__hint {
   margin-left: auto;
   font-size: var(--fs-2);
@@ -536,9 +762,15 @@
   white-space: nowrap;
   min-width: 0;
 }
+.lib__bar > .dw-key {
+  height: max(28px, 1.8rem);
+}
 .lib__table {
   min-height: 0;
   overflow-y: auto;
+}
+.lib__table > .dw-row {
+  padding: 0 0.6rem;
 }
 .lib__table > .dw-row[data-head='true'] {
   position: sticky;
@@ -561,36 +793,98 @@
 .lib__sort[data-active='true'] {
   color: var(--text-1);
 }
+/* Lade-Tasten: neutral, solange sie nur eine Möglichkeit sind. Deck-Farbe erst unter dem Zeiger
+   und als gefülltes Schild in der Zeile des geladenen Tracks. Trefferfläche = volle Zeilenhöhe. */
 .lib__loads {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.6rem;
+  height: 100%;
 }
 .lib__load {
   --load-color: var(--text-2);
-  width: 1.6rem;
-  height: 1.3rem;
+  width: 2.2rem;
+  height: 100%;
   display: grid;
   place-items: center;
-  font: 700 var(--fs-2) / 1 var(--font-label);
-  color: var(--load-color);
-  box-shadow: inset 0 0 0 1px var(--load-color);
   cursor: pointer;
+}
+.lib__load span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 1.45rem;
+  font: 700 var(--fs-2) / 1 var(--font-label);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .lib__load[data-deck='a'] { --load-color: var(--deck-a); }
 .lib__load[data-deck='b'] { --load-color: var(--deck-b); }
-.lib__load:hover {
-  background: var(--bg-0);
+.lib__load:hover:not(:disabled) span {
+  color: var(--load-color);
   box-shadow: inset 0 0 0 2px var(--load-color);
 }
-.lib__load[data-loaded='true'] {
+.lib__load[data-loaded='true'] span {
   background: var(--load-color);
   color: var(--ink);
+  box-shadow: none;
+}
+.lib__load:disabled {
+  cursor: not-allowed;
+}
+.lib__load:disabled span {
+  color: var(--line-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  background-image: var(--hatch-fine);
+}
+.lib__load:focus-visible {
+  box-shadow: none;
+}
+.lib__load:focus-visible span {
+  box-shadow: inset 0 0 0 2px var(--text-1);
 }
 .lib__keycell {
   min-width: 0;
   overflow: hidden;
 }
+/* Zustand statt Tonart: wird analysiert / Datei fehlt */
+.lib__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font: 600 var(--fs-1) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lib__state[data-state='pending'] {
+  color: var(--status-warn);
+}
+.lib__state[data-state='missing'] {
+  color: var(--status-danger);
+}
 .lib__none {
-  padding: var(--sp-4) var(--sp-3);
+  padding: var(--sp-4) 0.6rem;
   color: var(--text-2);
+}
+/* Leere Bibliothek: ein klarer Hinweis, wie Musik hineinkommt */
+.lib__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+  margin: 0.6rem;
+  padding: var(--sp-4) var(--sp-5);
+  border: 2px dashed var(--line-2);
+  color: var(--text-2);
+  min-height: 0;
+  overflow: hidden;
+}
+.lib__emptytitle {
+  font: 600 var(--fs-5) / 1.2 var(--font-text);
+  color: var(--text-1);
+}
+.lib__emptytext {
+  margin-top: 0.3rem;
+  max-width: 46rem;
+  font-size: var(--fs-3);
 }

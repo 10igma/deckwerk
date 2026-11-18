@@ -3,14 +3,16 @@ import type { CSSProperties } from 'react';
 import { knobAngle, KNOB_SWEEP } from '../../lib/curves';
 import { remPx } from '../tokens';
 import { useDragValue } from './useDragValue';
-import { useTip, type TipContent } from './Tooltip';
+import { hideTip, useTip, type TipContent } from './Tooltip';
 
 export interface KnobProps {
   /** Reglerweg 0 … 1. */
   value: number;
   onChange: (v: number) => void;
-  /** Reglerweg des Standardwerts (Doppelklick). */
+  /** Reglerweg des Standardwerts (Doppelklick). Ohne Angabe gibt es keinen Doppelklick-Sprung. */
   defaultValue?: number;
+  /** Reglerweg der Kerbe (Bezugswert, z. B. 0 dB); Standard: `defaultValue`. */
+  detent?: number;
   /** Bogen ab der Mitte statt ab dem linken Anschlag. */
   bipolar?: boolean;
   /** Anteil des Wegs am linken Anschlag, der „Kill“ bedeutet (wird markiert). */
@@ -25,6 +27,7 @@ export interface KnobProps {
   tip?: TipContent;
   ariaLabel?: string;
   forceHeld?: boolean;
+  forceState?: 'hover' | 'focus';
 }
 
 const R_ARC = 43;
@@ -53,15 +56,20 @@ export function Knob(props: KnobProps) {
     disabled,
     axis: 'y',
     travel: () => remPx() * 12,
+    // Beim Ziehen keine Kurzhilfe: Der Wert steht neben dem Regler, die Hilfe würde Nachbarn verdecken.
+    onHeldChange: (h) => {
+      if (h) hideTip();
+    },
   });
   const held = drag.held || !!props.forceHeld;
-  const tipProps = useTip(props.tip, drag.held);
+  const tipProps = useTip(drag.held ? undefined : props.tip);
   const angle = knobAngle(value);
   const start = -KNOB_SWEEP / 2;
-  const origin = bipolar ? knobAngle(defaultValue ?? 0.5) : start;
+  const detent = props.detent ?? defaultValue;
+  const origin = bipolar ? knobAngle(detent ?? 0.5) : start;
   const showValue = Math.abs(angle - origin) > 0.5;
-  const [dx0, dy0] = polar(47, knobAngle(defaultValue ?? 0));
-  const [dx1, dy1] = polar(52, knobAngle(defaultValue ?? 0));
+  const [dx0, dy0] = polar(47, knobAngle(detent ?? 0));
+  const [dx1, dy1] = polar(52, knobAngle(detent ?? 0));
 
   return (
     <div
@@ -69,6 +77,7 @@ export function Knob(props: KnobProps) {
       data-size={size}
       data-held={held ? 'true' : undefined}
       data-disabled={disabled ? 'true' : undefined}
+      data-force={props.forceState}
       style={props.accent ? ({ '--knob-accent': props.accent } as CSSProperties) : undefined}
     >
       <div
@@ -91,7 +100,7 @@ export function Knob(props: KnobProps) {
             <path className="dw-knob__kill" d={arc(R_ARC, start + 1.5, start + KNOB_SWEEP * props.killZone)} />
           )}
           {showValue && <path className="dw-knob__value" d={arc(R_ARC, origin, angle)} />}
-          {defaultValue !== undefined && <line className="dw-knob__detent" x1={dx0} y1={dy0} x2={dx1} y2={dy1} />}
+          {detent !== undefined && <line className="dw-knob__detent" x1={dx0} y1={dy0} x2={dx1} y2={dy1} />}
           <g transform={`rotate(${angle.toFixed(2)} 50 50)`}>
             <polygon className="dw-knob__cap" points={HEX} />
             <line className="dw-knob__pointer" x1="50" y1="38" x2="50" y2="21" />

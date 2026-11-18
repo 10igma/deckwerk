@@ -10,6 +10,8 @@ import {
   type DeckId,
   type DeckState,
   type EngineStatus,
+  type ImportResult,
+  type LibraryStatus,
   type LoadedTracks,
   type Snapshot,
   type SyncMode,
@@ -19,7 +21,8 @@ import {
   type Waveform,
   type XfAssign,
 } from '../types';
-import { crossfaderGains, faderToDb, filterSetting } from '../../lib/curves';
+import { channelOpen } from '../../lib/audible';
+import { crossfaderGains, faderGain, filterSetting } from '../../lib/curves';
 import { dbToLin, fromWire, toWire } from '../../lib/db';
 import { beatAt, secAt } from '../../lib/grid';
 import { hash01 } from './prng';
@@ -49,9 +52,23 @@ export interface MockDeck {
   peak: [number, number];
 }
 
+export type MockLibrary = 'full' | 'empty' | 'analyzing';
+
+interface LibraryEntry {
+  track: MockTrack;
+  analyzed: boolean;
+  missing: boolean;
+}
+
 export interface MockOptions {
   /** Ausgangszustand. */
   scene?: SceneName;
+  /** Bibliothek: voll analysiert (Standard), leer oder mit Tracks in der Analyse. */
+  library?: MockLibrary;
+  /** Kein Audiogerät: Die Engine läuft stumm, der Status trägt die Meldung. */
+  noDevice?: boolean;
+  /** Dauer des Ladens in Millisekunden (echtes Dekodieren dauert bis ca. 2 s). */
+  loadDelayMs?: number;
   /** Zeit steht: Es läuft kein Zeitgeber, Befehle wirken trotzdem. */
   frozen?: boolean;
   /** Eigener Takt statt setInterval (Tests). */
@@ -61,6 +78,9 @@ export interface MockOptions {
 const LIMITER_CEILING = Math.pow(10, -0.3 / 20);
 const TICK_MS = 1000 / 60;
 const WAVE_CACHE_SIZE = 6;
+/** Simulierte Analyse: Sekunden je Track. */
+const ANALYSIS_SECONDS = 0.8;
+const NO_DEVICE_TEXT = 'Kein Ausgabegerät gefunden (ALSA: Standardgerät nicht verfügbar).';
 
 function newDeck(id: DeckId): MockDeck {
   return {
@@ -105,6 +125,12 @@ export class MockCore implements CoreApi {
 
   private listeners = new Set<(s: Snapshot) => void>();
   private statusListeners = new Set<(s: EngineStatus) => void>();
+  private libraryListeners = new Set<(s: LibraryStatus) => void>();
+  private library: LibraryEntry[];
+  private libraryRev = 1;
+  private analysisClock = 0;
+  private readonly noDevice: boolean;
+  private readonly loadDelayMs: number;
   private waves = new Map<TrackId, Waveform>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastTick = 0;
@@ -113,6 +139,18 @@ export class MockCore implements CoreApi {
 
   constructor(options: MockOptions = {}) {
     this.frozen = options.frozen ?? false;
+    this.noDevice = options.noDevice ?? false;
+    this.loadDelayMs = options.loadDelayMs ?? 0;
+    const lib = options.library ?? 'full';
+    this.library =
+      lib === 'empty'
+        ? []
+        : MOCK_TRACKS.map((track, i) => ({
+            track,
+            // „analyzing": jeder dritte Track wartet noch, einer fehlt auf der Platte.
+            analyzed: lib === 'full' || i % 3 !== 2,
+            missing: lib === 'analyzing' && i === 9,
+          }));
     if (options.scene) applyScene(this, options.scene);
     this.computeLevels();
     if (!this.frozen && !options.manualClock && typeof setInterval === 'function') {
@@ -154,17 +192,89 @@ export class MockCore implements CoreApi {
     return () => this.statusListeners.delete(listener);
   }
 
+  subscribeLibrary(listener: (s: LibraryStatus) => void): Unsubscribe {
+    this.libraryListeners.add(listener);
+    listener(this.libraryStatus());
+    return () => this.libraryListeners.delete(listener);
+  }
+
   listTracks(): Promise<TrackInfo[]> {
-    return Promise.resolve(MOCK_TRACKS.map(trackInfo));
+    const rows = this.library.map((e): TrackInfo => {
+      const info = trackInfo(e.track);
+      // Ohne Analyse sind Tempo und Tonart unbekannt (wie in der Hülle: bpm = 0, key = null).
+      return { ...info, bpm: e.analyzed ? info.bpm : 0, key: e.analyzed ? info.key : null, analyzed: e.analyzed, missing: e.missing };
+    });
+    rows.sort((a, b) => a.title.localeCompare(b.title, 'de'));
+    return Promise.resolve(rows);
+  }
+
+  /** Simulierter Import: Jeder Pfad bringt bis zu sechs noch nicht vorhandene Tracks, zunächst ohne Analyse. */
+  importPaths(paths: string[]): Promise<ImportResult> {
+    let added = 0;
+    for (const _path of paths) {
+      void _path;
+      for (const track of MOCK_TRACKS) {
+        if (added >= paths.length * 6) break;
+        if (this.library.some((e) => e.track.id === track.id)) continue;
+        this.library.push({ track, analyzed: false, missing: false });
+        added += 1;
+      }
+    }
+    if (added > 0) this.libraryChanged();
+    return Promise.resolve({ added, duplicates: 0, relinked: 0, failed: [] });
   }
 
   loadTrack(deck: DeckId, trackId: TrackId): Promise<void> {
-    this.loadNow(deck, trackId);
-    if (this.frozen) {
-      this.computeLevels();
-      this.emit();
+    const entry = this.library.find((e) => e.track.id === trackId);
+    if (!entry) return Promise.reject(`Track ${trackId} ist nicht in der Bibliothek.`);
+    if (entry.missing) return Promise.reject(`/musik/${entry.track.title}.flac: Datei nicht gefunden.`);
+    const finish = () => {
+      // Wie in der Hülle: Ein noch nicht analysierter Track wird beim Laden analysiert.
+      if (!entry.analyzed) {
+        entry.analyzed = true;
+        this.libraryChanged();
+      }
+      this.loadNow(deck, trackId);
+      if (this.frozen) {
+        this.computeLevels();
+        this.emit();
+      }
+    };
+    if (this.loadDelayMs <= 0) {
+      finish();
+      return Promise.resolve();
     }
-    return Promise.resolve();
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        finish();
+        resolve();
+      }, this.loadDelayMs);
+    });
+  }
+
+  private libraryStatus(): LibraryStatus {
+    return { rev: this.libraryRev, pending_analysis: this.library.filter((e) => !e.analyzed && !e.missing).length };
+  }
+
+  private libraryChanged(): void {
+    this.libraryRev += 1;
+    const st = this.libraryStatus();
+    this.libraryListeners.forEach((l) => l(st));
+  }
+
+  /** Hintergrund-Analyse: alle 0,8 s simulierter Zeit wird ein Track fertig. */
+  private stepAnalysis(dt: number): void {
+    const next = this.library.find((e) => !e.analyzed && !e.missing);
+    if (!next) {
+      this.analysisClock = 0;
+      return;
+    }
+    this.analysisClock += dt;
+    if (this.analysisClock >= ANALYSIS_SECONDS) {
+      this.analysisClock = 0;
+      next.analyzed = true;
+      this.libraryChanged();
+    }
   }
 
   getLoadedTracks(): Promise<LoadedTracks> {
@@ -302,15 +412,20 @@ export class MockCore implements CoreApi {
     } else if (this.masterMode !== 'auto') {
       next = this.masterMode;
     } else {
+      // Automatisch: das am längsten laufende hörbare Deck (DECK-09); läuft keines hörbar,
+      // das am längsten laufende.
+      const audible = (d: MockDeck): boolean => d.playing && channelOpen({ fader: d.fader, xf_assign: d.xf }, this.crossfader);
       const cur = this.master ? this.decks[deckIndex(this.master)] : null;
-      if (cur && cur.playing) {
+      const anyAudible = this.decks.some(audible);
+      if (cur && cur.playing && (audible(cur) || !anyAudible)) {
         next = this.master;
       } else {
         next = null;
         let best = -1;
         for (const id of DECK_IDS) {
           const d = this.decks[deckIndex(id)];
-          if (d.playing && d.playTime > best) {
+          if (!d.playing || (anyAudible && !audible(d))) continue;
+          if (d.playTime > best) {
             best = d.playTime;
             next = id;
           }
@@ -391,6 +506,7 @@ export class MockCore implements CoreApi {
 
     this.computeLevels();
     this.emit();
+    this.stepAnalysis(dt);
     this.statusTick += dt;
     if (this.statusTick >= 0.25) {
       this.statusTick = 0;
@@ -442,7 +558,7 @@ export class MockCore implements CoreApi {
       const r = level * (0.94 + 0.06 * hash01(q, i * 2 + 2));
       d.peak = [l, r];
       const xf = d.xf === 'left' ? xfL : d.xf === 'right' ? xfR : 1;
-      const g = dbToLin(faderToDb(d.fader)) * xf;
+      const g = faderGain(d.fader) * xf;
       sumL += l * g;
       sumR += r * g;
     });
@@ -464,7 +580,14 @@ export class MockCore implements CoreApi {
   status(): EngineStatus {
     const playing = this.decks.filter((d) => d.playing).length;
     const wobble = 0.02 * hash01(Math.floor(this.time * 4), 77);
-    return { dsp_load: 0.11 + 0.045 * playing + wobble, xruns: 0, sample_rate: 48000, buffer_size: 256 };
+    return {
+      dsp_load: 0.11 + 0.045 * playing + wobble,
+      xruns: 0,
+      sample_rate: 48000,
+      buffer_size: 256,
+      has_device: !this.noDevice,
+      device_error: this.noDevice ? NO_DEVICE_TEXT : null,
+    };
   }
 
   snapshot(): Snapshot {

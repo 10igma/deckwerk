@@ -2,6 +2,8 @@ import type {
   Command,
   DeckId,
   EngineStatus,
+  ImportResult,
+  LibraryStatus,
   LoadedTracks,
   Snapshot,
   TrackAnalysis,
@@ -14,20 +16,34 @@ export type Unsubscribe = () => void;
 
 /**
  * Einzige Schnittstelle zwischen Oberfläche und Kern.
- * Der MockCore und die spätere Tauri-Anbindung implementieren sie gleich.
+ * MockCore (Browser) und TauriCore (Desktop-Hülle) implementieren sie gleich.
  */
 export interface CoreApi {
   /** Bedienbefehl an die Engine senden. */
   send(cmd: Command): void;
-  /** Zustands-Schnappschüsse (ca. 60 je Sekunde). Der letzte Stand wird sofort geliefert. */
+  /** Zustands-Schnappschüsse (einer je Bild). Der letzte Stand wird sofort geliefert. */
   subscribe(listener: (s: Snapshot) => void): Unsubscribe;
-  /** Engine-Kennzahlen (Last, Xruns), ca. 4 je Sekunde. */
+  /** Engine-Kennzahlen (Last, Xruns, Gerätestatus); nur bei Änderung. */
   subscribeStatus(listener: (s: EngineStatus) => void): Unsubscribe;
+  /** Stand der Bibliothek: Ändert sich `rev`, muss `listTracks` neu abgerufen werden. */
+  subscribeLibrary(listener: (s: LibraryStatus) => void): Unsubscribe;
   listTracks(): Promise<TrackInfo[]>;
-  /** Lädt einen Track auf ein Deck; erfüllt, sobald das Deck spielbereit ist. */
+  /** Dateien und Ordner importieren (Ordner rekursiv). */
+  importPaths(paths: string[]): Promise<ImportResult>;
+  /**
+   * Lädt einen Track auf ein Deck; erfüllt, sobald das Deck spielbereit ist (kann Sekunden dauern).
+   * Abgelehnt mit einem Klartext (string oder Error), wenn das Laden scheitert.
+   */
   loadTrack(deck: DeckId, trackId: TrackId): Promise<void>;
   /** Welche Tracks liegen auf den Decks (z. B. nach einem Neustart, BED-08). */
   getLoadedTracks(): Promise<LoadedTracks>;
   getWaveform(trackId: TrackId): Promise<Waveform>;
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis>;
+}
+
+/** Fehlertext aus einer Ablehnung der Hülle (dort ein string) oder einem Error. */
+export function errorText(err: unknown): string {
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  return String(err);
 }

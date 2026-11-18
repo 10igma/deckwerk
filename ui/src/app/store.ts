@@ -11,6 +11,8 @@ export type PerDeck<T> = Record<DeckId, T>;
 export interface Notice {
   id: number;
   text: string;
+  /** 'warn' = Schutz und Hinweise, 'error' = Fehler (z. B. beim Laden). */
+  tone: 'warn' | 'error';
 }
 
 export interface UiState {
@@ -36,18 +38,45 @@ export interface UiState {
   sortDir: 1 | -1;
   notice: Notice | null;
   settingsOpen: boolean;
+  /** Live-Schutz nach 9.3 (abschaltbar). */
+  liveGuard: boolean;
+  /** Deck mit Fokus: das zuletzt bediente; die Leertaste wirkt darauf. */
+  focusDeck: DeckId;
+  /** Geschützte Aktion, die auf Halten oder den zweiten Druck wartet (z. B. 'stop.a'). */
+  armedId: string | null;
+  /** Track, der gerade auf ein Deck geladen wird (Dekodieren dauert). */
+  loading: PerDeck<TrackInfo | null>;
+  /** Bibliothek aufgezogen: Decks schrumpfen auf eine Zeile (8.2). */
+  libraryBig: boolean;
+  /** Tracks in der Analyse-Warteschlange. */
+  pendingAnalysis: number;
+  /** Die Liste wurde mindestens einmal vom Kern geholt. */
+  tracksReady: boolean;
+  /** Womit die Wellenformen gezeichnet werden (Anzeige in den Einstellungen). */
+  rendererInfo: string;
 }
 
 const perDeck = <T,>(make: () => T): PerDeck<T> => ({ a: make(), b: make(), c: make(), d: make() });
 
-function readLang(): Lang {
+function readStored(key: string): string | null {
   try {
-    const stored = localStorage.getItem('dw.lang');
-    if (stored === 'de' || stored === 'en') return stored;
+    return localStorage.getItem(key);
+  } catch {
+    return null; // kein Speicher verfügbar
+  }
+}
+
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
   } catch {
     /* kein Speicher verfügbar */
   }
-  return 'de';
+}
+
+function readLang(): Lang {
+  const stored = readStored('dw.lang');
+  return stored === 'en' ? 'en' : 'de';
 }
 
 let state: UiState = {
@@ -68,6 +97,14 @@ let state: UiState = {
   sortDir: 1,
   notice: null,
   settingsOpen: false,
+  liveGuard: true,
+  focusDeck: 'a',
+  armedId: null,
+  loading: perDeck(() => null),
+  libraryBig: false,
+  pendingAnalysis: 0,
+  tracksReady: false,
+  rendererInfo: '',
 };
 
 const listeners = new Set<() => void>();
@@ -81,7 +118,7 @@ export function setUi(patch: Partial<UiState> | ((s: UiState) => Partial<UiState
 }
 
 /** Einen Eintrag je Deck ändern. */
-export function setDeckUi<K extends 'deckTracks' | 'cuePoints' | 'cueHeld' | 'tempoRange' | 'syncPref' | 'eqBeforeKill'>(
+export function setDeckUi<K extends 'deckTracks' | 'cuePoints' | 'cueHeld' | 'tempoRange' | 'syncPref' | 'eqBeforeKill' | 'loading'>(
   key: K,
   deck: DeckId,
   value: UiState[K][DeckId],
@@ -106,25 +143,28 @@ export function initUi(search: string): void {
   setUi({
     lang: lang === 'de' || lang === 'en' ? lang : readLang(),
     theme: theme === 'contrast' ? 'contrast' : 'dark',
+    liveGuard: params.get('guard') === 'off' ? false : readStored('dw.guard') !== 'off',
+    libraryBig: params.get('lib') === 'big',
   });
 }
 
 export function setLang(lang: Lang): void {
   setUi({ lang });
-  try {
-    localStorage.setItem('dw.lang', lang);
-  } catch {
-    /* kein Speicher verfügbar */
-  }
+  store('dw.lang', lang);
+}
+
+export function setLiveGuard(on: boolean): void {
+  setUi({ liveGuard: on });
+  store('dw.guard', on ? 'on' : 'off');
 }
 
 let noticeId = 0;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Kurzen Hinweis zeigen (verschwindet von selbst). */
-export function showNotice(text: string, ms = 3200): void {
+export function showNotice(text: string, tone: Notice['tone'] = 'warn', ms = tone === 'error' ? 7000 : 3200): void {
   noticeId += 1;
-  setUi({ notice: { id: noticeId, text } });
+  setUi({ notice: { id: noticeId, text, tone } });
   if (noticeTimer) clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => setUi({ notice: null }), ms);
 }

@@ -5,6 +5,10 @@ import type { Lang } from '../lib/format';
 
 export type ActionId =
   | 'deck.play'
+  | 'deck.play_focus'
+  | 'deck.fader_up'
+  | 'deck.fader_down'
+  | 'focus.release'
   | 'deck.cue'
   | 'deck.sync'
   | 'deck.bend_down'
@@ -75,6 +79,10 @@ function deckBindings(deck: DeckId, k: Record<string, string>): Binding[] {
     { code: k.killLow, action: 'deck.kill_low', deck, mode: 'trigger', stage: 1 },
     { code: k.bendDown, mod: true, action: 'deck.filter_close', deck, mode: 'trigger', repeat: true, stage: 1 },
     { code: k.bendUp, mod: true, action: 'deck.filter_open', deck, mode: 'trigger', repeat: true, stage: 1 },
+    // 8.7 legt die Kanalfader auf Strg + D/F bzw. Strg + L/; – Strg + F ist dort aber auch die Suche.
+    // Die Suche behält Strg/Cmd + F; die Kanalfader liegen auf Alt (wie „Crossfader ganz").
+    { code: k.tempoDown, alt: true, shift: 'fine', action: 'deck.fader_up', deck, mode: 'trigger', repeat: true, stage: 1 },
+    { code: k.tempoUp, alt: true, shift: 'fine', action: 'deck.fader_down', deck, mode: 'trigger', repeat: true, stage: 1 },
     // Ab Stufe 2 (Hotcues, Loops, Beatjump, Flux):
     ...hot.map((code, i): Binding => ({ code, action: 'deck.hotcue', deck, arg: i + 1, mode: 'trigger', stage: 2 })),
     { code: k.loop, action: 'deck.loop_toggle', deck, mode: 'trigger', stage: 2 },
@@ -99,8 +107,7 @@ export const DEFAULT_KEYMAP: Binding[] = [
   }),
   { code: 'ArrowLeft', action: 'xf.left', mode: 'trigger', repeat: true, stage: 1 },
   { code: 'ArrowRight', action: 'xf.right', mode: 'trigger', repeat: true, stage: 1 },
-  // 8.7 nennt Shift + ←/→ doppelt (Laden und „Crossfader ganz“). Laden behält Shift,
-  // „ganz nach links/rechts“ liegt deshalb auf Alt.
+  // Alt = ganz nach links/rechts (8.7).
   { code: 'ArrowLeft', alt: true, action: 'xf.full_left', mode: 'trigger', stage: 1 },
   { code: 'ArrowRight', alt: true, action: 'xf.full_right', mode: 'trigger', stage: 1 },
   { code: 'ArrowUp', action: 'list.up', mode: 'trigger', repeat: true, stage: 1 },
@@ -111,6 +118,9 @@ export const DEFAULT_KEYMAP: Binding[] = [
   { code: 'F3', action: 'view.vorbereiten', mode: 'trigger', stage: 0 },
   { code: 'F4', action: 'view.automix', mode: 'trigger', stage: 0 },
   { code: 'F10', action: 'global.snap', mode: 'trigger', stage: 1 },
+  // Leertaste: Play/Pause des Decks mit Fokus (das zuletzt bediente).
+  { code: 'Space', action: 'deck.play_focus', mode: 'trigger', stage: 1 },
+  { code: 'Escape', action: 'focus.release', mode: 'trigger', stage: 1 },
   { code: 'F9', action: 'global.quantize', mode: 'trigger', stage: 2 },
   { code: 'KeyR', mod: true, action: 'global.record', mode: 'trigger', stage: 2 },
 ];
@@ -154,6 +164,7 @@ const CODE_LABELS: Record<string, string> = {
   ArrowUp: '↑',
   ArrowDown: '↓',
   Space: '␣',
+  Escape: 'Esc',
 };
 
 /** Beschriftung einer Taste nach US-Layout (wie in 8.7). */

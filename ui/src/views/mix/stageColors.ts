@@ -7,6 +7,8 @@ export function readStageColors(): StageColors {
     bg: cssRgb('--bg-0'),
     rail: cssRgb('--bg-1'),
     text: cssRgb('--text-1'),
+    line: cssRgb('--line-2'),
+    warn: cssRgb('--status-warn'),
     low: cssRgb('--band-low'),
     mid: cssRgb('--band-mid'),
     high: cssRgb('--band-high'),

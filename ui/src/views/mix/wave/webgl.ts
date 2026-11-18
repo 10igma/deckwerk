@@ -10,8 +10,12 @@ const LANE_VS = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 
+// Wichtig: Ganzzahlen ausdrücklich in voller Genauigkeit. Ohne Angabe gilt im Fragment-Shader
+// „mediump int" (mindestens 16 Bit) – Punktindizes über 32 767 laufen dann auf manchen Treibern
+// über (so gesehen in WebKitGTK), und die Bahn bleibt leer.
 const LANE_FS = `#version 300 es
 precision highp float;
+precision highp int;
 precision highp sampler2D;
 uniform sampler2D u_tex;
 uniform int u_texW;
@@ -126,6 +130,7 @@ function link(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram 
 
 export class WebGLWaveRenderer implements WaveRenderer {
   readonly kind = 'webgl2' as const;
+  readonly info: string;
   private gl: WebGL2RenderingContext;
   private laneProg: WebGLProgram;
   private rectProg: WebGLProgram;
@@ -137,11 +142,29 @@ export class WebGLWaveRenderer implements WaveRenderer {
   private rectCanvasU: WebGLUniformLocation | null;
   private tracks = new Map<DeckId, LevelTex[]>();
 
-  /** Wirft, wenn kein WebGL-2-Kontext entsteht – der Aufrufer nimmt dann Canvas 2D. */
-  constructor(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  /** Nur bei `present = 'blit'`: eigene, unsichtbare Zeichenfläche für WebGL und der 2D-Kontext der sichtbaren. */
+  private glCanvas: HTMLCanvasElement | null = null;
+  private out: CanvasRenderingContext2D | null = null;
+
+  /**
+   * Wirft, wenn kein WebGL-2-Kontext entsteht – der Aufrufer nimmt dann Canvas 2D.
+   * `present`: 'direct' zeichnet in die sichtbare Fläche. 'blit' rechnet in einer unsichtbaren
+   * WebGL-Fläche und kopiert jedes Bild in die sichtbare 2D-Fläche – nötig, wo die Web-Ansicht
+   * WebGL-Flächen nicht auf den Schirm bringt (WebKitGTK ohne beschleunigte Darstellung).
+   */
+  constructor(canvas: HTMLCanvasElement, present: 'direct' | 'blit' = 'direct') {
+    let target = canvas;
+    if (present === 'blit') {
+      this.out = canvas.getContext('2d', { alpha: false });
+      if (!this.out) throw new Error('Canvas 2D nicht verfügbar');
+      this.glCanvas = document.createElement('canvas');
+      target = this.glCanvas;
+    }
+    const gl = target.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL 2 nicht verfügbar');
     this.gl = gl;
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    this.info = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) + (present === 'blit' ? ' · über Canvas 2D gezeigt' : '');
     this.laneProg = link(gl, LANE_VS, LANE_FS);
     this.rectProg = link(gl, RECT_VS, RECT_FS);
     for (const name of ['u_tex', 'u_texW', 'u_points', 'u_idxCenter', 'u_idxPerPx', 'u_origin', 'u_size', 'u_dir', 'u_colLow', 'u_colMid', 'u_colHigh', 'u_bg', 'u_gain', 'u_share', 'u_playedDim', 'u_dpr']) {
@@ -204,6 +227,10 @@ export class WebGLWaveRenderer implements WaveRenderer {
   draw(scene: StageScene, colors: StageColors): void {
     const gl = this.gl;
     const { width, height } = scene;
+    if (this.glCanvas && (this.glCanvas.width !== width || this.glCanvas.height !== height)) {
+      this.glCanvas.width = width;
+      this.glCanvas.height = height;
+    }
     gl.disable(gl.BLEND);
     gl.viewport(0, 0, width, height);
     gl.clearColor(colors.bg[0], colors.bg[1], colors.bg[2], 1);
@@ -238,7 +265,15 @@ export class WebGLWaveRenderer implements WaveRenderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    // Linien und Marken.
+    this.drawRects(scene);
+    // Fertiges Bild in die sichtbare Fläche kopieren.
+    if (this.out && this.glCanvas) this.out.drawImage(this.glCanvas, 0, 0);
+  }
+
+  /** Linien und Marken als instanzierte Rechtecke. */
+  private drawRects(scene: StageScene): void {
+    const gl = this.gl;
+    const { width, height } = scene;
     const n = scene.rects.length;
     if (n === 0) return;
     if (this.rectData.length < n * 8) {
@@ -260,6 +295,22 @@ export class WebGLWaveRenderer implements WaveRenderer {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.rectData.subarray(0, n * 8));
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
     gl.bindVertexArray(null);
+  }
+
+  /**
+   * Selbsttest nach dem Zeichnen: Liest einen Punkt der Abspielmarke zurück. Manche Umgebungen
+   * liefern einen WebGL-2-Kontext, der nichts zeichnet – dann ist Canvas 2D die bessere Wahl.
+   */
+  selfTest(scene: StageScene): { ok: boolean; detail: string } {
+    const gl = this.gl;
+    const px = new Uint8Array(4);
+    const x = Math.round(scene.width / 2);
+    const y = Math.round(scene.height / 2);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const err = gl.getError();
+    // Die Abspielmarke ist heller als der Grund (Kalkweiß oder Umriss-Grau).
+    const ok = err === gl.NO_ERROR && px[0] > 60;
+    return { ok, detail: `rgb ${px[0]},${px[1]},${px[2]} · Fehler 0x${err.toString(16)}` };
   }
 
   dispose(): void {

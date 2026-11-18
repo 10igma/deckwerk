@@ -8,10 +8,14 @@ export interface TipContent {
   keys?: string[];
 }
 
+/** Lage der Kurzhilfe zum Element. */
+export type TipSide = 'top' | 'left' | 'right';
+
 interface TipState {
   owner: object;
   rect: DOMRect;
   content: TipContent;
+  side: TipSide;
 }
 
 let tip: TipState | null = null;
@@ -29,9 +33,16 @@ function cancel(): void {
   timer = null;
 }
 
+/** Offene Kurzhilfe schließen (z. B. wenn ein Regler gezogen wird und der Wert daneben steht). */
+export function hideTip(): void {
+  cancel();
+  if (tip) set(null);
+}
+
 /**
  * Verbindet ein Bedienelement mit der Kurzhilfe. `immediate` zeigt sie sofort
- * (während ein Regler gezogen wird), sonst nach kurzer Verzögerung.
+ * (während ein Fader gezogen wird), sonst nach kurzer Verzögerung. `side` legt sie
+ * neben das Element, damit sie beim Ziehen nichts verdeckt.
  */
 export interface TipHandlers {
   onPointerEnter?: (e: React.PointerEvent) => void;
@@ -40,7 +51,7 @@ export interface TipHandlers {
   onBlur?: () => void;
 }
 
-export function useTip(content: TipContent | undefined, immediate = false): TipHandlers {
+export function useTip(content: TipContent | undefined, immediate = false, side: TipSide = 'top'): TipHandlers {
   const owner = useRef({}).current;
   const el = useRef<Element | null>(null);
   const latest = useRef(content);
@@ -50,7 +61,7 @@ export function useTip(content: TipContent | undefined, immediate = false): TipH
     el.current = target;
     cancel();
     const open = () => {
-      if (latest.current && el.current) set({ owner, rect: el.current.getBoundingClientRect(), content: latest.current });
+      if (latest.current && el.current) set({ owner, rect: el.current.getBoundingClientRect(), content: latest.current, side });
     };
     if (delay <= 0) open();
     else timer = setTimeout(open, delay);
@@ -63,7 +74,7 @@ export function useTip(content: TipContent | undefined, immediate = false): TipH
   // Inhalt nachführen, solange die Hilfe zu diesem Element offen ist.
   useEffect(() => {
     if (tip?.owner === owner && content && el.current) {
-      set({ owner, rect: el.current.getBoundingClientRect(), content });
+      set({ owner, rect: el.current.getBoundingClientRect(), content, side });
     }
   });
 
@@ -125,9 +136,17 @@ export function TipLayer() {
     const h = node.offsetHeight;
     const gap = 6;
     let x = state.rect.left + state.rect.width / 2 - w / 2;
-    x = Math.max(4, Math.min(window.innerWidth - w - 4, x));
     let y = state.rect.top - h - gap;
-    if (y < 4) y = state.rect.bottom + gap;
+    if (state.side !== 'top') {
+      // Seitlich: auf Höhe der Mitte, links oder rechts neben dem Element.
+      x = state.side === 'left' ? state.rect.left - w - gap : state.rect.right + gap;
+      if (x < 4) x = state.rect.right + gap;
+      if (x + w > window.innerWidth - 4) x = state.rect.left - w - gap;
+      y = state.rect.top + state.rect.height / 2 - h / 2;
+    }
+    x = Math.max(4, Math.min(window.innerWidth - w - 4, x));
+    if (y < 4) y = state.side === 'top' ? state.rect.bottom + gap : 4;
+    y = Math.min(window.innerHeight - h - 4, y);
     node.style.left = `${Math.round(x)}px`;
     node.style.top = `${Math.round(y)}px`;
   });

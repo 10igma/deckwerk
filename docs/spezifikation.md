@@ -961,7 +961,7 @@ Tasten sind als Positionen auf dem US-Layout benannt und an die physische Positi
 | Funktion | Taste |
 |---|---|
 | Crossfader links / rechts (Alt = ganz) | ← / → |
-| Kanalfader A auf / zu, B auf / zu | Strg + D/F, Strg + L/; |
+| Kanalfader A auf / zu, B auf / zu | Alt + D/F, Alt + L/; |
 | Liste hoch / runter | ↑ / ↓ |
 | Suche | Strg/Cmd + F |
 | Ansichten Mixen, Bibliothek, Vorbereiten, Auto-Mix | F1–F4 |

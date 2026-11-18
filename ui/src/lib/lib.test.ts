@@ -7,6 +7,8 @@ import {
   VOLUME_CURVE,
   bpmWithOffset,
   crossfaderGains,
+  faderFromDb,
+  faderGain,
   faderToDb,
   filterSetting,
   knobAngle,
@@ -19,6 +21,8 @@ import { dbToLin, fromWire, linToDb, toWire } from './db';
 import { formatBpm, formatDb, formatHz, formatPercent, formatPhase } from './format';
 import { barBeat, beatAt, constantGrid, isDownbeat, secAt, snapSeek } from './grid';
 import { camelot, camelotString, compatClass, fromCamelot, harmonicCompat, keyName, makeKey, openKeyString } from './key';
+import { channelOpen } from './audible';
+import { parseInRange, parseNumber } from './parse';
 import { formatDuration, formatRemaining, formatTime } from './time';
 
 describe('Zeitformat', () => {
@@ -106,11 +110,21 @@ describe('Regler-Kennlinien', () => {
     expect(VOLUME_CURVE.toDb(1)).toBeCloseTo(6);
     expect(VOLUME_CURVE.toDb(0.75)).toBe(0);
   });
-  it('Kanalfader: oben 0 dB, linear in dB bis −60, unten stumm (MIX-05)', () => {
+  it('Kanalfader: quadratisch wie im Kern – Anzeige 40·log10(Stellung), halber Weg = −12 dB (MIX-05)', () => {
     expect(faderToDb(1)).toBe(0);
-    expect(faderToDb(0.5)).toBeCloseTo(-30);
-    expect(faderToDb(0.001)).toBeCloseTo(-59.94);
+    expect(faderToDb(0.5)).toBeCloseTo(-12.04, 2);
+    expect(faderToDb(0.25)).toBeCloseTo(-24.08, 2);
+    expect(faderToDb(0.1)).toBeCloseTo(-40, 6);
     expect(faderToDb(0)).toBe(-Infinity);
+    // Anzeige und Verstärkung des Kerns (Stellung²) stimmen überein.
+    for (const v of [0.05, 0.3, 0.5, 0.8, 1]) expect(faderToDb(v)).toBeCloseTo(linToDb(faderGain(v)), 9);
+    expect(faderGain(0.5)).toBe(0.25);
+  });
+  it('Skalenstriche des Kanalfaders: dB → Stellung und zurück', () => {
+    expect(faderFromDb(0)).toBe(1);
+    expect(faderFromDb(-12)).toBeCloseTo(0.501, 3);
+    expect(faderFromDb(-Infinity)).toBe(0);
+    for (const db of [-48, -24, -6, 0]) expect(faderToDb(faderFromDb(db))).toBeCloseTo(db, 9);
   });
   it('Filter: Ruhezone, Tiefpass links, Hochpass rechts (5.14)', () => {
     expect(filterSetting(0).type).toBe('off');
@@ -237,5 +251,43 @@ describe('Farbrechnung', () => {
     expect(oklchToHex(1, 0, 0)).toBe('#FFFFFF');
     expect(oklchToHex(0, 0, 0)).toBe('#000000');
     expect(oklchToHex(0.7, 0.4, 260)).toMatch(/^#[0-9A-F]{6}$/);
+  });
+});
+
+describe('Zahleneingabe (BED-05)', () => {
+  it('liest Komma und Punkt, Vorzeichen und Einheit', () => {
+    expect(parseNumber('3,5')).toBe(3.5);
+    expect(parseNumber('3.5')).toBe(3.5);
+    expect(parseNumber('\u22123,2 dB')).toBe(-3.2);
+    expect(parseNumber('-3,2dB')).toBe(-3.2);
+    expect(parseNumber('+0,75 %')).toBe(0.75);
+    expect(parseNumber('±0,0')).toBe(0);
+    expect(parseNumber(' 12 ')).toBe(12);
+    expect(parseNumber(',5')).toBe(0.5);
+  });
+  it('erkennt −∞ und weist Unlesbares ab', () => {
+    expect(parseNumber('\u2212∞')).toBe(-Infinity);
+    expect(parseNumber('-inf')).toBe(-Infinity);
+    expect(parseNumber('')).toBeNull();
+    expect(parseNumber('laut')).toBeNull();
+  });
+  it('begrenzt auf den Bereich des Reglers', () => {
+    expect(parseInRange('20', -36, 6)).toBe(6);
+    expect(parseInRange('-99', -36, 6)).toBe(-36);
+    expect(parseInRange('-inf', -36, 6, true)).toBe(-Infinity);
+    expect(parseInRange('-inf', -36, 6)).toBe(-36);
+    expect(parseInRange('x', -36, 6)).toBeNull();
+  });
+});
+
+describe('Hörbar (9.3)', () => {
+  it('Kanalfader offen und Crossfader nicht ganz abgewandt', () => {
+    expect(channelOpen({ fader: 1, xf_assign: 'left' }, 0)).toBe(true);
+    expect(channelOpen({ fader: 0, xf_assign: 'left' }, 0)).toBe(false);
+    expect(channelOpen({ fader: 1, xf_assign: 'left' }, 1)).toBe(false);
+    expect(channelOpen({ fader: 1, xf_assign: 'left' }, 0.99)).toBe(true);
+    expect(channelOpen({ fader: 1, xf_assign: 'right' }, -1)).toBe(false);
+    expect(channelOpen({ fader: 0.01, xf_assign: 'right' }, 1)).toBe(true);
+    expect(channelOpen({ fader: 1, xf_assign: 'thru' }, -1)).toBe(true);
   });
 });

@@ -180,6 +180,25 @@ body[data-scroll='true'] {
   font-size: var(--fs-1);
   color: var(--text-2);
 }
+/* Warnhinweis „kein Audiogerät": dauerhaft, aber ohne Fläche – Umriss und Zeichen in der Warnfarbe */
+.hdr__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: var(--ctl-h-sm);
+  padding: 0 0.6rem;
+  margin-right: var(--sp-2);
+  box-shadow: inset 0 0 0 1px var(--status-warn);
+  color: var(--status-warn);
+  font: 600 var(--fs-2) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+.hdr__warn:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--text-1);
+}
 .hdr__time {
   font-size: var(--fs-3);
   color: var(--text-2);
@@ -193,7 +212,7 @@ body[data-scroll='true'] {
   position: absolute;
   right: 0;
   top: calc(100% + 0.6rem);
-  width: 22rem;
+  width: 24rem;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -211,6 +230,11 @@ body[data-scroll='true'] {
   display: flex;
   gap: var(--sp-2);
 }
+.settings__value {
+  font-size: var(--fs-2);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
 .settings__note {
   font-size: var(--fs-2);
   color: var(--text-3);
@@ -221,15 +245,13 @@ body[data-scroll='true'] {
   display: grid;
   place-items: center;
   background: var(--bg-0);
-  background-image: var(--hatch);
   padding: var(--sp-6);
 }
 .placeholder__card {
   max-width: 44rem;
   padding: var(--sp-6);
   background: var(--bg-1);
-  border-top: var(--stroke-2) solid var(--text-1);
-  clip-path: polygon(0 0, calc(100% - 1.5rem) 0, 100% 1.5rem, 100% 100%, 0 100%);
+  clip-path: polygon(1.5rem 0, 100% 0, 100% 100%, 0 100%, 0 1.5rem);
 }
 .placeholder__stage {
   color: var(--text-2);

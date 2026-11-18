@@ -6,6 +6,7 @@ import { DECK_IDS, emptyDeckState, type DeckId } from '../core/types';
 import {
   Cell,
   Crossfader,
+  CutSide,
   DeckPlate,
   Fader,
   Icon,
@@ -17,16 +18,21 @@ import {
   PhaseMeter,
   Readout,
   TipBox,
+  ValueField,
   type IconName,
 } from '../design/components';
 import { cssVar } from '../design/tokens';
 import { useLang, useT, type MsgKey } from '../i18n';
 import { contrast } from '../lib/color';
-import { EQ_CURVE } from '../lib/curves';
-import { formatDb, formatNumber } from '../lib/format';
+import { EQ_CURVE, faderFromDb, faderToDb } from '../lib/curves';
+import { FADER_MARKS_DB } from './mix/Mixer';
+import { formatDb, formatNumber, type Lang } from '../lib/format';
 import { fromCamelot } from '../lib/key';
+import { parseInRange } from '../lib/parse';
 import { readStageColors } from './mix/stageColors';
 import { Canvas2DWaveRenderer } from './mix/wave/canvas2d';
+import type { WaveRenderer } from './mix/wave/renderer';
+import { WebGLWaveRenderer } from './mix/wave/webgl';
 import { buildScene } from './mix/wave/scene';
 import './designsystem.css';
 
@@ -40,8 +46,14 @@ const COLOR_GROUPS: { title: MsgKey; tokens: string[] }[] = [
 const FONT_SIZES = ['--fs-1', '--fs-2', '--fs-3', '--fs-4', '--fs-5', '--fs-6', '--fs-7'];
 const SPACES = ['--sp-1', '--sp-2', '--sp-3', '--sp-4', '--sp-5', '--sp-6'];
 const SIZES = ['--ctl-h-sm', '--ctl-h-md', '--ctl-h-lg', '--knob-sm', '--knob-md', '--knob-lg', '--fader-cap', '--row-h', '--header-h'];
-const ICONS: IconName[] = ['play', 'pause', 'headphones', 'gear', 'rec', 'search', 'slower', 'faster', 'up', 'down', 'minus', 'plus', 'match', 'ok', 'clash', 'warn'];
-const ROW_COLS = '8rem minmax(8rem, 2fr) minmax(6rem, 1.4fr) 5rem 9rem 3.6rem';
+const ICONS: IconName[] = ['play', 'pause', 'tostart', 'headphones', 'gear', 'rec', 'search', 'slower', 'faster', 'up', 'down', 'minus', 'plus', 'expand', 'collapse', 'drop', 'match', 'ok', 'clash', 'warn'];
+
+/** Token-Wert mit Dezimalkomma im Deutschen und führender Null (0,25 rem statt .25rem). */
+function localize(value: string, lang: Lang): string {
+  const v = value.replace(/(^|[^\d])\.(\d)/g, '$10.$2').replace(/(\d)(rem|px|ms)\b/g, '$1 $2');
+  return lang === 'de' ? v.replace(/(\d)\.(\d)/g, '$1,$2') : v;
+}
+const ROW_COLS = '9rem minmax(8rem, 24rem) minmax(6rem, 18rem) 4.6rem 10.5rem 3.6rem minmax(0, 1fr)';
 
 function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
@@ -72,25 +84,27 @@ function Swatch({ token }: { token: string }) {
     setBg(cssVar('--bg-1'));
   }, [token, theme]);
   const ratio = hex && bg ? contrast(hex, bg) : 0;
+  const lang = useLang();
   return (
     <div className="ds__swatch">
       <span className="ds__chip" style={{ background: `var(${token})` }} />
       <span className="ds__token dw-num">{token}</span>
       <span className="ds__hex dw-num">{hex}</span>
-      <span className="ds__ratio dw-num">{ratio ? `${ratio.toFixed(1)} : 1` : ''}</span>
+      <span className="ds__ratio dw-num">{ratio ? `${formatNumber(ratio, 1, lang)} : 1` : ''}</span>
     </div>
   );
 }
 
 function TokenLength({ token, kind }: { token: string; kind: 'bar' | 'box' }) {
   const [value, setValue] = useState('');
+  const lang = useLang();
   useEffect(() => setValue(cssVar(token)), [token]);
   const style: CSSProperties = kind === 'bar' ? { width: `var(${token})`, height: '0.9rem' } : { width: `var(${token})`, height: `var(${token})` };
   return (
     <div className="ds__len">
       <span className="ds__lenbox" style={style} />
       <span className="ds__token dw-num">{token}</span>
-      <span className="ds__hex dw-num">{value}</span>
+      <span className="ds__hex dw-num">{localize(value, lang)}</span>
     </div>
   );
 }
@@ -111,14 +125,21 @@ function WaveSample() {
       const rect = c.getBoundingClientRect();
       c.width = Math.round(rect.width * dpr);
       c.height = Math.round(rect.height * dpr);
-      const r = new Canvas2DWaveRenderer(c);
+      // Derselbe Weg wie in der Ansicht „Mixen": WebGL 2, sonst Canvas 2D.
+      let r: WaveRenderer;
+      try {
+        r = new WebGLWaveRenderer(c);
+      } catch {
+        r = new Canvas2DWaveRenderer(c);
+      }
       r.setTrack('a', waveform);
       r.setTrack('b', waveform);
       const colors = readStageColors();
       const lane = (deck: DeckId, kill: boolean) => {
         const state = emptyDeckState();
         state.loaded = true;
-        state.pos = analysis.grid.anchors[0].pos + (60 / analysis.bpm) * (52 * 4 + 1.6);
+        state.playing = true;
+        state.pos = analysis.grid.anchors[0].pos + (60 / analysis.bpm) * (52 * 4 + 1.6 + (kill ? 0.12 : 0));
         state.duration = analysis.duration;
         state.bpm = analysis.bpm;
         state.track_bpm = analysis.bpm;
@@ -127,10 +148,10 @@ function WaveSample() {
       };
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
       r.draw(
-        buildScene({ width: c.width, height: c.height, dpr, railH: rem * 1.5 * dpr, unit: (rem / 14) * dpr, zoomBeats: 8, clockBpm: analysis.bpm, lanes: [lane('a', false), lane('b', true)], colors }),
+        buildScene({ width: c.width, height: c.height, dpr, railH: rem * 2 * dpr, unit: (rem / 14) * dpr, zoomBeats: 8, clockBpm: analysis.bpm, lanes: [lane('a', false), lane('b', true)], colors }),
         colors,
       );
-      r.dispose();
+      // Das Bild bleibt stehen; die Zeichenfläche behält ihren Kontext bis zum Abbau der Seite.
     });
     return () => {
       alive = false;
@@ -148,6 +169,7 @@ export function DesignSystemView() {
   const [tempo, setTempo] = useState(0.58);
   const [xf, setXf] = useState(-0.35);
   const [toggle, setToggle] = useState(true);
+  const [entry, setEntry] = useState(-3.2);
   const eqDb = EQ_CURVE.toDb(eq);
 
   return (
@@ -241,20 +263,27 @@ export function DesignSystemView() {
         <div className="ds__matrix">
           <span />
           <span className="dw-label">{t('ds.stateNormal')}</span>
+          <span className="dw-label">{t('ds.stateHover')}</span>
           <span className="dw-label">{t('ds.stateHeld')}</span>
           <span className="dw-label">{t('ds.stateActive')}</span>
           <span className="dw-label">{t('ds.stateActiveHeld')}</span>
+          <span className="dw-label">{t('ds.stateFocus')}</span>
           <span className="dw-label">{t('ds.stateDisabled')}</span>
 
           <span className="dw-label">{t('ds.keyTrigger')}</span>
           <KeyBtn>Beat</KeyBtn>
+          <KeyBtn forceState="hover">Beat</KeyBtn>
           <KeyBtn forceHeld>Beat</KeyBtn>
           <span className="ds__na">–</span>
           <span className="ds__na">–</span>
+          <KeyBtn forceState="focus">Beat</KeyBtn>
           <KeyBtn disabled>Beat</KeyBtn>
 
           <span className="dw-label">{t('ds.keyToggle')}</span>
           <KeyBtn mode="toggle">Sync</KeyBtn>
+          <KeyBtn mode="toggle" forceState="hover">
+            Sync
+          </KeyBtn>
           <KeyBtn mode="toggle" forceHeld>
             Sync
           </KeyBtn>
@@ -264,21 +293,54 @@ export function DesignSystemView() {
           <KeyBtn mode="toggle" active forceHeld accent="var(--deck-a)">
             Sync
           </KeyBtn>
+          <KeyBtn mode="toggle" forceState="focus">
+            Sync
+          </KeyBtn>
           <KeyBtn mode="toggle" disabled>
             Sync
           </KeyBtn>
 
+          <span className="dw-label">{t('ds.keyOutline')}</span>
+          <KeyBtn mode="toggle" tone="outline">
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" forceState="hover">
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" forceHeld>
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" active accent="var(--deck-a)">
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" active forceHeld accent="var(--deck-a)">
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" forceState="focus">
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+          <KeyBtn mode="toggle" tone="outline" disabled>
+            <Icon name="play" size="0.95em" /> Play
+          </KeyBtn>
+
           <span className="dw-label">{t('ds.keyHold')}</span>
           <KeyBtn mode="hold">Cue</KeyBtn>
+          <KeyBtn mode="hold" forceState="hover">
+            Cue
+          </KeyBtn>
           <KeyBtn mode="hold" forceHeld>
             Cue
           </KeyBtn>
           <span className="ds__na">–</span>
           <span className="ds__na">–</span>
+          <KeyBtn mode="hold" forceState="focus">
+            Cue
+          </KeyBtn>
           <KeyBtn mode="hold" disabled>
             Cue
           </KeyBtn>
         </div>
+        <p className="ds__note">{t('ds.cutRule')}</p>
         <div className="ds__rowflex">
           <Sample label={`${t('ds.sizes')}: sm · md · lg`}>
             <KeyBtn size="sm">Kill</KeyBtn>
@@ -289,10 +351,20 @@ export function DesignSystemView() {
           </Sample>
           <Sample label="A · B · C · D">
             {DECK_IDS.map((d) => (
-              <KeyBtn key={d} mode="toggle" active accent={`var(--deck-${d})`} cut={d === 'b' || d === 'd' ? 'tr' : 'tl'}>
-                Sync
-              </KeyBtn>
+              <CutSide key={d} value={d === 'b' || d === 'd' ? 'tr' : 'tl'}>
+                <KeyBtn mode="toggle" active accent={`var(--deck-${d})`}>
+                  Sync
+                </KeyBtn>
+              </CutSide>
             ))}
+          </Sample>
+          <Sample label={t('ds.stateArmed')}>
+            <KeyBtn mode="toggle" tone="outline" active armed accent="var(--deck-a)">
+              <Icon name="play" size="0.95em" /> Play
+            </KeyBtn>
+            <KeyBtn mode="hold" armed>
+              Cue
+            </KeyBtn>
           </Sample>
           <Sample label={t('eq.killShort')}>
             <KeyBtn mode="toggle" size="sm" active accent="var(--band-low)">
@@ -333,8 +405,14 @@ export function DesignSystemView() {
           <Sample label={`${t('eq.killShort')} (−∞)`}>
             <Knob size="md" bipolar value={0} defaultValue={0.5} killZone={0.05} accent="var(--band-high)" onChange={() => {}} label={t('eq.high.short')} valueText={formatDb(-Infinity, lang)} />
           </Sample>
+          <Sample label={t('ds.stateHover')}>
+            <Knob size="md" value={0.55} defaultValue={0.5} onChange={() => {}} forceState="hover" label={t('mixer.gain')} valueText={formatNumber(1.2, 1, lang, true)} />
+          </Sample>
           <Sample label={t('ds.stateHeld')}>
             <Knob size="md" value={0.4} defaultValue={0.5} onChange={() => {}} forceHeld label={t('mixer.gain')} valueText={formatNumber(-3.2, 1, lang, true)} />
+          </Sample>
+          <Sample label={t('ds.stateFocus')}>
+            <Knob size="md" value={0.5} defaultValue={0.5} onChange={() => {}} forceState="focus" label={t('mixer.gain')} valueText={formatNumber(0, 1, lang, true)} />
           </Sample>
           <Sample label={t('ds.stateDisabled')}>
             <Knob size="md" value={0.6} defaultValue={0.5} onChange={() => {}} disabled label={t('mixer.filter')} valueText={t('filter.off')} />
@@ -346,7 +424,7 @@ export function DesignSystemView() {
         <div className="ds__rowflex">
           <Sample label={t('ds.stateNormal')}>
             <div className="ds__vfader">
-              <Fader value={fader} defaultValue={1} onChange={setFader} accent="var(--deck-a)" ticks={Array.from({ length: 11 }, (_, i) => ({ at: i / 10, major: i % 2 === 0 }))} tip={{ name: t('mixer.fader'), value: `${Math.round(fader * 100)} %` }} />
+              <Fader value={fader} onChange={setFader} accent="var(--deck-a)" ticks={FADER_MARKS_DB.map((db) => ({ at: faderFromDb(db), major: db % 12 === 0 }))} tip={{ name: t('mixer.fader'), value: formatDb(faderToDb(fader), lang) }} />
             </div>
           </Sample>
           <Sample label={t('ds.stateHeld')}>
@@ -421,6 +499,23 @@ export function DesignSystemView() {
             </Readout>
           </Sample>
         </div>
+        <h3 className="dw-label ds__sub">{t('ds.valueField')}</h3>
+        <p className="ds__note">{t('ds.valueFieldNote')}</p>
+        <div className="ds__rowflex">
+          <Sample label={t('ds.stateNormal')}>
+            <ValueField text={formatNumber(entry, 1, lang, true)} ariaLabel={t('mixer.gain')} onCommit={(text) => {
+              const v = parseInRange(text, -48, 12);
+              if (v === null) return false;
+              setEntry(v);
+              return true;
+            }} />
+          </Sample>
+          <Sample label={t('ds.valueEditing')}>
+            <span style={{ width: '4.5rem', display: 'block' }}>
+              <ValueField text={formatNumber(-3.2, 1, lang, true)} ariaLabel={t('mixer.gain')} onCommit={() => true} forceEditing />
+            </span>
+          </Sample>
+        </div>
       </Section>
 
       <Section title={t('ds.row')}>
@@ -436,24 +531,40 @@ export function DesignSystemView() {
             <span className="dw-label" style={{ textAlign: 'right' }}>
               {t('lib.duration')}
             </span>
+            <span />
           </ListRow>
           {(
             [
-              ['Kaltwalzwerk', 'Mara Volt', 134, fromCamelot(8, 'A'), '6:42', {}, t('ds.stateNormal')],
-              ['Schicht III', 'Hektor Blei', 136, fromCamelot(9, 'A'), '7:05', { selected: true }, t('ds.rowSelected')],
-              ['Null Uhr Vier', 'Okular', 128, fromCamelot(7, 'B'), '6:01', { dragging: true }, t('ds.rowDragging')],
-              ['Vakuum', 'Ilse Draht', 131, null, '6:22', {}, '–'],
-            ] as [string, string, number, number | null, string, { selected?: boolean; dragging?: boolean }, string][]
-          ).map(([title, artist, bpm, key, len, state, label]) => (
+              ['Kaltwalzwerk', 'Mara Volt', 134, fromCamelot(8, 'A'), '6:42', {}, t('ds.stateNormal'), 'ok'],
+              ['Schicht III', 'Hektor Blei', 136, fromCamelot(9, 'A'), '7:05', { selected: true, zebra: true }, t('ds.rowSelected'), 'ok'],
+              ['Null Uhr Vier', 'Okular', 128, fromCamelot(7, 'B'), '6:01', { dragging: true }, t('ds.rowDragging'), 'ok'],
+              ['Vakuum', 'Ilse Draht', 131, null, '6:22', { zebra: true }, t('ds.rowNoKey'), 'ok'],
+              ['Rohrpost', 'Kontor 9', 0, null, '7:03', {}, t('lib.pending'), 'pending'],
+              ['Gleis 13', 'Jonte Maar', 127, fromCamelot(11, 'B'), '6:04', { dim: true, zebra: true }, t('lib.missing'), 'missing'],
+            ] as [string, string, number, number | null, string, { selected?: boolean; dragging?: boolean; dim?: boolean; zebra?: boolean }, string, string][]
+          ).map(([title, artist, bpm, key, len, state, label, kind]) => (
             <ListRow key={title} columns={ROW_COLS} {...state}>
-              <span className="dw-label">{label}</span>
+              <span className="dw-label dw-truncate">{label}</span>
               <Cell strong>{title}</Cell>
               <Cell>{artist}</Cell>
-              <Cell num>{formatNumber(bpm, 1, lang)}</Cell>
+              <Cell num>{bpm > 0 ? formatNumber(bpm, 1, lang) : '–'}</Cell>
               <span>
-                <KeyChip musicalKey={key} lang={lang} showName />
+                {kind === 'pending' ? (
+                  <span className="lib__state" data-state="pending">
+                    <span className="lib__spinner" aria-hidden="true" />
+                    {t('lib.pending')}
+                  </span>
+                ) : kind === 'missing' ? (
+                  <span className="lib__state" data-state="missing">
+                    <Icon name="warn" size="0.9em" />
+                    {t('lib.missing')}
+                  </span>
+                ) : (
+                  <KeyChip musicalKey={key} lang={lang} showName />
+                )}
               </span>
               <Cell num>{len}</Cell>
+              <span />
             </ListRow>
           ))}
         </div>
@@ -469,7 +580,11 @@ export function DesignSystemView() {
         <h3 className="dw-label ds__sub">{t('ds.notice')}</h3>
         <div className="dw-notice ds__notice">
           <Icon name="warn" size="1.2em" />
-          {t('notice.loadProtected', { deck: 'A' })}
+          {t('guard.stop', { deck: 'A' })}
+        </div>
+        <div className="dw-notice ds__notice" data-tone="error">
+          <Icon name="warn" size="1.2em" />
+          {t('notice.missing', { title: 'Gleis 13' })}
         </div>
       </Section>
 
