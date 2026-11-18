@@ -9,3 +9,4 @@ dist
 .DS_Store
 /target-a
 /ui/.shots
+!/crates/dw-decode/tests/data/*

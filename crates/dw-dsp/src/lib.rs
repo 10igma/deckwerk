@@ -6,6 +6,7 @@ pub mod filter;
 pub mod interp;
 pub mod isolator;
 pub mod limiter;
+pub mod resample;
 pub mod smooth;
 
 pub use biquad::{Biquad, Coeffs};
