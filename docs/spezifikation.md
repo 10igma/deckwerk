@@ -254,7 +254,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 |---|---|---|---|---|
 | TRANS-01 | Katalog der zehn Techniken aus 5.10, jede als parametrisierte Vorlage mit Reglerverläufen | M | 5 | jede Technik rendert für ein passendes Testpaar; Verläufe entsprechen der Vorlage (±1 Sample am Rasterpunkt) |
 | TRANS-02 | Jeder Übergang ist an Phrasengrenzen ausgerichtet | M | 5 | Start, Tauschpunkt und Ende liegen auf Downbeats im Phrasenraster beider Tracks |
-| TRANS-03 | Bass-Regel: Es spielen nie zwei ungedämpfte Bässe länger als 1 Takt gleichzeitig | M | 5 | Messung: Pegel im Band < 120 Hz steigt im Übergang nie um > 3 dB über den Mittelwert vor dem Übergang |
+| TRANS-03 | Bass-Regel: Es spielen nie zwei ungedämpfte Bässe länger als 1 Takt gleichzeitig | M | 5 | Messung je Takt: Der Pegel im Band < 120 Hz liegt im Übergang nie mehr als 3 dB über dem lautesten Takt, den A oder B allein in diesem Mix erreichen |
 | TRANS-04 | Eigene Vorlagen anlegen, ändern, speichern | S | 5 | Vorlage ist im Auto-Mix wählbar |
 | TRANS-05 | Übergänge sind im Live-Modus einzeln auslösbar („nächsten Übergang jetzt spielen") | S | 5 | Auslösen startet quantisiert an der nächsten Phrasengrenze |
 

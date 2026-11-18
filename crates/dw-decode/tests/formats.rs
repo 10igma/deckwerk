@@ -92,3 +92,19 @@ fn broken_and_missing_files_give_errors_instead_of_panics() {
     assert!(decode_file(&junk).is_err());
     let _ = std::fs::remove_file(junk);
 }
+
+#[test]
+fn written_wav_reads_back_identically() {
+    let r = dw_decode::decode_file(&data("ref.wav")).unwrap();
+    for bits in [16u16, 24] {
+        let out = std::env::temp_dir().join(format!("deckwerk_roundtrip_{bits}.wav"));
+        dw_decode::write_wav(&out, &r.audio, bits).unwrap();
+        let back = decode_file(&out).unwrap();
+        assert_eq!(back.bits_per_sample, Some(bits as u32));
+        assert_eq!(back.audio.data.len(), r.audio.data.len());
+        // Die Referenz ist 16 bit; beide Tiefen geben sie bis auf eine halbe 16-bit-Stufe wieder.
+        let worst = back.audio.data.iter().zip(&r.audio.data).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        assert!(worst <= 0.6 / 32768.0, "{bits} bit: Abweichung {worst}");
+        let _ = std::fs::remove_file(out);
+    }
+}

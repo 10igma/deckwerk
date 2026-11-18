@@ -2,6 +2,9 @@
 //! OGG Vorbis und Opus. Ergebnis ist immer Stereo in 32-bit-Gleitkomma.
 
 mod mp4;
+mod wav;
+
+pub use wav::write_wav;
 
 use dw_core::AudioBuf;
 use std::fs::File;
@@ -16,7 +19,7 @@ use symphonia::core::probe::Hint;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
-    #[error("Datei kann nicht geöffnet werden: {0}")]
+    #[error("Datei kann nicht geöffnet werden")]
     Io(#[from] std::io::Error),
     #[error("Format wird nicht erkannt oder nicht unterstützt: {0}")]
     Unsupported(String),

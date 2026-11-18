@@ -1,0 +1,15 @@
+[package]
+name = "dw-automix"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dw-core.workspace = true
+dw-engine.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+dw-analysis.workspace = true
+dw-testgen.workspace = true
+dw-dsp.workspace = true
