@@ -20,6 +20,8 @@ dw-dsp = { path = "crates/dw-dsp" }
 dw-decode = { path = "crates/dw-decode" }
 dw-analysis = { path = "crates/dw-analysis" }
 dw-engine = { path = "crates/dw-engine" }
+dw-audio = { path = "crates/dw-audio" }
+dw-library = { path = "crates/dw-library" }
 dw-testgen = { path = "crates/dw-testgen" }
 
 [profile.dev]

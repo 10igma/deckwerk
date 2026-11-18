@@ -1,0 +1,20 @@
+[package]
+name = "dw-audio"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+default = ["device"]
+# Ausgabe über die Audio-Schnittstellen des Systems. Ohne dieses Merkmal bleibt nur die
+# geräteunabhängige Anbindung (für Tests und Offline-Betrieb).
+device = ["dep:cpal"]
+asio = ["cpal?/asio"]
+jack = ["cpal?/jack"]
+
+[dependencies]
+dw-core.workspace = true
+dw-engine.workspace = true
+thiserror.workspace = true
+rtrb = "0.3"
+cpal = { version = "0.15", optional = true }
