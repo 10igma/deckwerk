@@ -4,6 +4,7 @@
 pub mod analysis;
 pub mod audio;
 pub mod command;
+pub mod db_json;
 pub mod grid;
 pub mod key;
 

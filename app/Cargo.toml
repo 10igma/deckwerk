@@ -1,0 +1,38 @@
+[package]
+name = "deckwerk-app"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Deckwerk – DJ-Software für Techno"
+
+[lib]
+name = "deckwerk_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "deckwerk-app"
+path = "src/main.rs"
+
+[features]
+# Bettet die gebaute Oberfläche (ui/dist) in das Programm ein. Für die Entwicklung mit
+# laufendem Vite-Server ohne dieses Merkmal bauen (--no-default-features).
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+dw-core.workspace = true
+dw-audio.workspace = true
+dw-engine.workspace = true
+dw-decode.workspace = true
+dw-analysis.workspace = true
+dw-library.workspace = true
+
+[dev-dependencies]
+dw-testgen.workspace = true
+tempfile = "3"

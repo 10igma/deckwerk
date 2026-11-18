@@ -71,6 +71,22 @@ pub fn list_devices() -> Vec<DeviceInfo> {
     out
 }
 
+/// Sinnvolle Voreinstellung für das Standardgerät: 48 kHz, wenn das Gerät sie kann, sonst seine
+/// eigene Abtastrate; die Kanalzahl des Geräts (mindestens 2, höchstens 4).
+pub fn default_config() -> Result<OutputConfig, DeviceError> {
+    let device = cpal::default_host().default_output_device().ok_or(DeviceError::NoDevice)?;
+    let default = device.default_output_config().map_err(|e| DeviceError::Backend(e.to_string()))?;
+    let supports_48k = device.supported_output_configs().is_ok_and(|mut configs| {
+        configs.any(|c| c.sample_format() == cpal::SampleFormat::F32 && c.min_sample_rate().0 <= 48_000 && 48_000 <= c.max_sample_rate().0)
+    });
+    Ok(OutputConfig {
+        device: None,
+        sample_rate: if supports_48k { 48_000 } else { default.sample_rate().0 },
+        buffer_frames: None,
+        channels: default.channels().clamp(2, 4),
+    })
+}
+
 /// Laufende Ausgabe. Beim Verwerfen endet sie.
 pub struct OutputStream {
     _stream: cpal::Stream,

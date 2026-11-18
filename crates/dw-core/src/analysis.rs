@@ -1,7 +1,7 @@
 //! Ergebnis der Track-Analyse (Spezifikation 5.1–5.5). Wird von `dw-analysis` erzeugt
 //! und von Engine, Bibliothek und Oberfläche gelesen.
 
-use crate::{BeatGrid, Key};
+use crate::{db_json, BeatGrid, Key};
 use serde::{Deserialize, Serialize};
 
 /// Wird erhöht, wenn sich ein Analyse-Verfahren so ändert, dass alte Ergebnisse veralten (ANA-17).
@@ -21,11 +21,13 @@ pub struct TrackAnalysis {
     pub key_confidence: f32,
     /// Abweichung vom Kammerton in Cent (−50 … +50).
     pub tuning_cents: f32,
-    /// Integrierte Lautheit in LUFS.
+    /// Integrierte Lautheit in LUFS (−∞ bei Stille).
+    #[serde(deserialize_with = "db_json::value")]
     pub lufs: f32,
     /// Lautheitsbereich in LU.
     pub lra: f32,
-    /// True Peak in dBTP.
+    /// True Peak in dBTP (−∞ bei Stille).
+    #[serde(deserialize_with = "db_json::value")]
     pub true_peak_db: f32,
 }
 
@@ -134,6 +136,26 @@ impl Waveform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn silence_survives_json() {
+        let a = TrackAnalysis {
+            version: 1,
+            duration: 1.0,
+            bpm: 120.0,
+            bpm_confidence: 0.0,
+            grid: crate::BeatGrid::constant(120.0, 0.0, 0),
+            key: None,
+            key_confidence: 0.0,
+            tuning_cents: 0.0,
+            lufs: f32::NEG_INFINITY,
+            lra: 0.0,
+            true_peak_db: f32::NEG_INFINITY,
+        };
+        let json = serde_json::to_string(&a).unwrap();
+        assert!(json.contains("\"lufs\":null"));
+        assert_eq!(serde_json::from_str::<TrackAnalysis>(&json).unwrap(), a);
+    }
 
     #[test]
     fn waveform_binary_roundtrip() {

@@ -2,6 +2,7 @@
 //! Maus, Tastatur, Automation und Autopilot erzeugen dieselben Befehle.
 //! Der Zustand fließt als `Snapshot` zurück an die Oberfläche.
 
+use crate::db_json;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -88,9 +89,18 @@ pub enum Command {
     /// Tempo der freien Clock in BPM.
     ClockTempo { bpm: f64 },
     /// Kanal-Gain in dB (zusätzlich zum Auto-Gain).
-    Gain { deck: DeckId, db: f32 },
+    Gain {
+        deck: DeckId,
+        #[serde(deserialize_with = "db_json::value")]
+        db: f32,
+    },
     /// EQ-Band in dB; `-inf` = Kill, Maximum +6.
-    Eq { deck: DeckId, band: Band, db: f32 },
+    Eq {
+        deck: DeckId,
+        band: Band,
+        #[serde(deserialize_with = "db_json::value")]
+        db: f32,
+    },
     /// Filter-Regler −1 … +1 (0 = aus).
     Filter { deck: DeckId, pos: f32 },
     /// Kanalfader 0 … 1.
@@ -102,12 +112,18 @@ pub enum Command {
     Crossfader { pos: f32 },
     XfCurve { curve: XfCurve },
     /// Master-Lautstärke in dB.
-    MasterVolume { db: f32 },
+    MasterVolume {
+        #[serde(deserialize_with = "db_json::value")]
+        db: f32,
+    },
     Limiter { on: bool },
     /// Kopfhörer: 0 = nur Cue, 1 = nur Master.
     CueMix { value: f32 },
     /// Kopfhörer-Lautstärke in dB.
-    CueVolume { db: f32 },
+    CueVolume {
+        #[serde(deserialize_with = "db_json::value")]
+        db: f32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -130,7 +146,9 @@ pub struct DeckState {
     pub phase: f64,
     /// Kanalpegel vor dem Fader, Spitze links/rechts (linear).
     pub peak: [f32; 2],
+    #[serde(deserialize_with = "db_json::value")]
     pub gain_db: f32,
+    #[serde(deserialize_with = "db_json::triple")]
     pub eq_db: [f32; 3],
     pub filter: f32,
     pub fader: f32,
@@ -142,12 +160,14 @@ pub struct DeckState {
 pub struct MixerState {
     pub crossfader: f32,
     pub xf_curve: XfCurve,
+    #[serde(deserialize_with = "db_json::value")]
     pub master_db: f32,
     pub limiter_on: bool,
     /// Pegelreduktion des Limiters in dB (≤ 0).
     pub limiter_gr_db: f32,
     pub master_peak: [f32; 2],
     pub cue_mix: f32,
+    #[serde(deserialize_with = "db_json::value")]
     pub cue_db: f32,
 }
 
@@ -162,4 +182,31 @@ pub struct Snapshot {
     pub mixer: MixerState,
     /// Bisher verarbeitete Frames.
     pub frames: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commands_use_the_documented_json_format() {
+        let cmd: Command = serde_json::from_str(r#"{"type":"eq","deck":"b","band":"low","db":null}"#).unwrap();
+        assert_eq!(cmd, Command::Eq { deck: DeckId::B, band: Band::Low, db: f32::NEG_INFINITY });
+        assert_eq!(serde_json::to_string(&cmd).unwrap(), r#"{"type":"eq","deck":"b","band":"low","db":null}"#);
+        let cmd: Command = serde_json::from_str(r#"{"type":"sync","deck":"a","mode":"beat"}"#).unwrap();
+        assert_eq!(cmd, Command::Sync { deck: DeckId::A, mode: SyncMode::Beat });
+        let cmd: Command = serde_json::from_str(r#"{"type":"set_master","deck":null}"#).unwrap();
+        assert_eq!(cmd, Command::SetMaster { deck: None });
+        assert_eq!(serde_json::from_str::<Command>(r#"{"type":"master_auto"}"#).unwrap(), Command::MasterAuto);
+    }
+
+    #[test]
+    fn snapshot_with_killed_band_survives_json() {
+        let mut s = Snapshot::default();
+        s.decks[1].eq_db = [f32::NEG_INFINITY, 0.0, -3.0];
+        s.mixer.limiter_gr_db = -1.5;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("[null,0.0,-3.0]"));
+        assert_eq!(serde_json::from_str::<Snapshot>(&json).unwrap(), s);
+    }
 }

@@ -245,6 +245,14 @@ impl Library {
         all.into_iter().find(|t| t.id == id).ok_or(LibraryError::NotFound)
     }
 
+    /// Inhalts-Fingerabdruck eines Tracks (Schlüssel für den Cache).
+    pub fn fingerprint_of(&self, id: TrackId) -> Result<String> {
+        self.conn
+            .query_row("SELECT hash FROM track WHERE id = ?1", params![id], |r| r.get(0))
+            .optional()?
+            .ok_or(LibraryError::NotFound)
+    }
+
     /// Tracks ohne Analyse oder mit veralteter Analyse-Version (ANA-17), außer gesperrten.
     pub fn pending_analysis(&self, current_version: u32) -> Result<Vec<(TrackId, PathBuf)>> {
         let mut stmt = self.conn.prepare(
