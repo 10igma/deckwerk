@@ -141,8 +141,8 @@ fn search_filter_and_sort() {
     assert_eq!(find(TrackQuery { text: "ÖZTÜRK".into(), ..Default::default() }), ["Nachtzug"]);
     // Mehrere Wörter über mehrere Felder (Künstler + Label)
     assert_eq!(find(TrackQuery { text: "mira nordwand".into(), ..Default::default() }), ["Kaltfront"]);
-    // Kommentar-Feld
-    assert_eq!(find(TrackQuery { text: "peak".into(), ..Default::default() }), ["Kaltfront"]);
+    // Kommentar-Feld, auch wenn es unter abweichendem Namen in der Datei steht (FLAC und MP3)
+    assert_eq!(find(TrackQuery { text: "peak".into(), sort: SortColumn::Title, ..Default::default() }), ["Kaltfront", "Nachtzug"]);
     assert!(find(TrackQuery { text: "gibtsnicht".into(), ..Default::default() }).is_empty());
     // BPM-Bereich und Tonart
     assert_eq!(find(TrackQuery { bpm_range: Some((130.0, 136.0)), ..Default::default() }), ["Nachtzug"]);

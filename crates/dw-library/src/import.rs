@@ -90,7 +90,22 @@ fn read_meta(path: &Path) -> std::result::Result<Meta, String> {
         m.artist = tag.artist().map(|s| s.trim().to_string()).unwrap_or_default();
         m.album = tag.album().map(|s| s.trim().to_string()).unwrap_or_default();
         m.genre = tag.genre().map(|s| s.trim().to_string()).unwrap_or_default();
-        m.comment = tag.comment().map(|s| s.trim().to_string()).unwrap_or_default();
+        // Manche Programme legen den Kommentar unter anderem Namen ab
+        // (DESCRIPTION in FLAC/OGG, freies Textfeld „comment" in ID3).
+        let loose_comment = || {
+            tag.items().find_map(|item| match (item.key(), item.value().text()) {
+                (ItemKey::Unknown(k), Some(v)) if k.eq_ignore_ascii_case("description") || k.eq_ignore_ascii_case("comment") => {
+                    Some(v.trim().to_string())
+                }
+                _ => None,
+            })
+        };
+        m.comment = tag
+            .comment()
+            .map(|s| s.trim().to_string())
+            .or_else(|| text(&ItemKey::Description))
+            .or_else(loose_comment)
+            .unwrap_or_default();
         m.year = tag.year();
         m.label = text(&ItemKey::Label).or_else(|| text(&ItemKey::Publisher)).unwrap_or_default();
         m.bpm = text(&ItemKey::Bpm)
