@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+rustfft = "6"
+realfft = "3"
+dw-core = { path = "crates/dw-core" }
+dw-dsp = { path = "crates/dw-dsp" }
+dw-decode = { path = "crates/dw-decode" }
+dw-analysis = { path = "crates/dw-analysis" }
+dw-engine = { path = "crates/dw-engine" }
+dw-testgen = { path = "crates/dw-testgen" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

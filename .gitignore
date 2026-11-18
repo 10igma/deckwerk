@@ -1,0 +1,11 @@
+/target
+node_modules
+dist
+/testdaten/*
+!/testdaten/README.md
+*.wav
+*.flac
+*.mp3
+.DS_Store
+/target-a
+/ui/.shots

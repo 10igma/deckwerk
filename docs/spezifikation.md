@@ -199,10 +199,10 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | ID | Anforderung | Prio | Stufe | Abnahmekriterium |
 |---|---|---|---|---|
 | MIX-01 | Je Kanal Gain −∞ bis +12 dB mit Auto-Gain auf Referenz-Lautheit (Standard −14 LUFS) | M | 1 | zwei Tracks mit −7 und −12 LUFS liegen nach Auto-Gain ≤ 0,5 LU auseinander |
-| MIX-02 | 3-Band-Equalizer als Isolator: Tief < 200 Hz, Mitte 200 Hz–2,5 kHz, Hoch > 2,5 kHz; je Band −∞ (Kill) bis +6 dB; Summe aller Bänder in Mittelstellung ist klangneutral | M | 1 | Mittelstellung: Betragsfrequenzgang ±0,1 dB; Kill: Dämpfung ≥ 60 dB eine Oktave innerhalb des Bands |
+| MIX-02 | 3-Band-Equalizer als Isolator: Tief < 200 Hz, Mitte 200 Hz–2,5 kHz, Hoch > 2,5 kHz; je Band −∞ (Kill) bis +6 dB; Summe aller Bänder in Mittelstellung ist klangneutral | M | 1 | Mittelstellung: Betragsfrequenzgang ±0,1 dB; Kill: Dämpfung ≥ 24 dB eine Oktave und ≥ 48 dB zwei Oktaven innerhalb des Bands (24 dB/Oktave) |
 | MIX-03 | Umschaltbar auf 4 Bänder (zusätzlich Tiefmitten 200–800 Hz) und auf klassischen EQ mit −26/+6 dB | S | 4 | Umschalten ohne Knacken |
 | MIX-04 | Filter auf einem Regler: Mitte = aus; links Tiefpass 20 kHz → 80 Hz; rechts Hochpass 20 Hz → 8 kHz; 12 dB/Oktave, Resonanz einstellbar | M | 1 | Mittelstellung ist bitgenau neutral (Bypass); Grenzfrequenz folgt der Kennlinie in 5.14 |
-| MIX-05 | Kanalfader mit wählbarer Kurve (linear in dB bis −60 dB, darunter stumm) | M | 1 | Fader oben = 0 dB, unten = stumm |
+| MIX-05 | Kanalfader mit wählbarer Kurve (Standard quadratisch: Faktor = Stellung²; alternativ linear oder linear in dB bis −60 dB) | M | 1 | Fader oben = 0 dB, unten = stumm |
 | MIX-06 | Crossfader mit Kurven „weich" (gleiche Leistung), „scharf" (Cut) und „aus"; Zuweisung je Kanal: links, rechts, durch | M | 1 | Kurve „weich": Summenleistung konstant ±0,2 dB über den ganzen Weg |
 | MIX-07 | Pegelanzeigen je Kanal (vor dem Fader) und Master (Stereo), Spitze und RMS, Übersteuerungsanzeige mit Halten | M | 1 | Anzeige stimmt ±0,5 dB mit Messsignal überein |
 | MIX-08 | Master: Lautstärke, Limiter (Decke −0,3 dBTP, schaltbar), Anzeige der Pegelreduktion | M | 1 | bei +12 dB Übersteuerung überschreitet der Ausgang −0,3 dBTP nicht |
