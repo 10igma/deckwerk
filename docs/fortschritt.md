@@ -40,6 +40,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - Limiter: −0,30 dBTP bei einem Signal, dessen Spitzen zwischen den Samples liegen. Ziel ≤ −0,3 dBTP.
 - Automatischer Übergang: Bass im Übergang höchstens 0,1 dB über dem Einzelpegel; die Gegenprobe mit zwei offenen Bässen liegt 5,1 dB darüber. Grenze 3 dB.
 - Oberfläche: Bühne 40 % der Höhe bei 1280×720 und 1920×1080; kleinstes Bedienziel 28 px bei 1280×720.
+- Linux-Paket: `Deckwerk_0.1.0_amd64.deb`, 5,8 MB, gebaut und gestartet (Import und Analyse von drei Tracks in unter 14 s). Installiert wurde es nicht.
 - Referenz-Set (40 synthetische Tracks): Tempo 40/40 innerhalb ±0,05 BPM, Beat-Abweichung im Mittel 0,14 ms, Downbeat 40/40, Tonart 40/40.
 
 ## Nicht geprüft
@@ -124,6 +125,12 @@ Nur du kannst das prüfen. Bauen und Starten: siehe README.
 | 9 | `deckwerk mix` mit zwei eigenen Tracks, Ergebnis anhören | Übergang klingt wie ein sauberer Bass-Tausch; wenn nicht: was stört? |
 
 ## Befehle
+
+Linux-Paket bauen (aus `app/`; für andere Pakettypen `--bundles` weglassen):
+
+```bash
+node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles deb
+```
 
 Anwendung mit Testdaten auf einem virtuellen Bildschirm starten und ein Bild aufnehmen (so entstand `docs/bilder/anwendung-linux.png`):
 
