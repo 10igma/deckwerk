@@ -1,0 +1,694 @@
+/* Grundkomponenten des Designsystems. Alle Maße und Farben kommen aus tokens.css. */
+
+/* ---------- Taste ---------------------------------------------------------- */
+.dw-key {
+  --cut: var(--cut-1);
+  --key-line: var(--line-2);
+  --key-fill: var(--bg-2);
+  --key-text: var(--text-1);
+  --key-accent: var(--text-1);
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  height: var(--ctl-h-md);
+  min-width: var(--ctl-h-md);
+  padding: 0 var(--sp-3);
+  background: var(--key-line);
+  color: var(--key-text);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut));
+  font: 600 var(--fs-2) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: none;
+}
+.dw-key::before {
+  content: '';
+  position: absolute;
+  inset: var(--stroke-1);
+  z-index: -1;
+  background: var(--key-fill);
+  clip-path: polygon(calc(var(--cut) - 0.6px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--cut) - 0.6px));
+  transition: background var(--t-fast);
+}
+.dw-key[data-cut='tr'] {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+}
+.dw-key[data-cut='tr']::before {
+  clip-path: polygon(0 0, calc(100% - var(--cut) + 0.6px) 0, 100% calc(var(--cut) - 0.6px), 100% 100%, 0 100%);
+}
+.dw-key[data-size='sm'] {
+  height: var(--ctl-h-sm);
+  min-width: var(--ctl-h-sm);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-1);
+}
+.dw-key[data-size='lg'] {
+  --cut: var(--cut-2);
+  height: var(--ctl-h-lg);
+  min-width: var(--ctl-h-lg);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-3);
+}
+.dw-key[data-block] {
+  display: flex;
+  width: 100%;
+}
+.dw-key__content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.dw-key__sub {
+  font: 500 var(--fs-1) / 1 var(--font-num);
+  font-stretch: var(--num-stretch);
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.85;
+}
+/* Lämpchen: nur Umschalt-Tasten tragen es; gefüllt = an */
+.dw-key__lamp {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 0.55rem;
+  height: 0.2rem;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.dw-key[data-size='sm'] .dw-key__lamp {
+  top: 0.15rem;
+  right: 0.2rem;
+  width: 0.5rem;
+  height: 0.15rem;
+}
+.dw-key[data-size='sm'][data-mode='toggle'] {
+  padding-right: 0.85rem;
+}
+.dw-key[data-size='lg'] .dw-key__lamp {
+  width: 0.8rem;
+  height: 0.25rem;
+  top: 0.3rem;
+  right: 0.3rem;
+}
+.dw-key:hover:not(:disabled) {
+  --key-line: var(--state-hover-line);
+}
+/* gehalten */
+.dw-key:active:not(:disabled),
+.dw-key[data-held='true'] {
+  --key-fill: var(--state-held-bg);
+  --key-line: var(--text-1);
+}
+.dw-key:active:not(:disabled) .dw-key__content,
+.dw-key[data-held='true'] .dw-key__content {
+  transform: translateY(1px);
+}
+/* aktiv (eingerastet) */
+.dw-key[data-active='true'] {
+  --key-fill: var(--key-accent);
+  --key-line: var(--key-accent);
+  --key-text: var(--ink);
+}
+.dw-key[data-active='true'] .dw-key__lamp {
+  background: var(--ink);
+  box-shadow: none;
+}
+.dw-key[data-active='true']:active:not(:disabled)::before,
+.dw-key[data-active='true'][data-held='true']::before {
+  filter: brightness(0.82);
+}
+.dw-key[data-active='true'][data-held='true'],
+.dw-key[data-active='true']:active:not(:disabled) {
+  --key-fill: var(--key-accent);
+  --key-line: var(--text-1);
+}
+/* deaktiviert: blass und schraffiert */
+.dw-key:disabled {
+  cursor: not-allowed;
+  --key-text: var(--text-3);
+  --key-line: var(--line-1);
+}
+.dw-key:disabled::before {
+  background-color: var(--bg-1);
+  background-image: var(--hatch-fine);
+}
+.dw-key:disabled .dw-key__lamp {
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+.dw-key:focus-visible {
+  box-shadow: none;
+  --key-line: var(--text-1);
+}
+.dw-key:focus-visible::before {
+  inset: var(--stroke-2);
+}
+
+/* ---------- Drehregler ------------------------------------------------------ */
+.dw-knob {
+  --knob-size: var(--knob-md);
+  --knob-accent: var(--text-1);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+}
+.dw-knob[data-size='sm'] {
+  --knob-size: var(--knob-sm);
+}
+.dw-knob[data-size='lg'] {
+  --knob-size: var(--knob-lg);
+}
+.dw-knob__dial {
+  width: var(--knob-size);
+  height: var(--knob-size);
+  display: block;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.dw-knob__dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dw-knob__track {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 6;
+}
+.dw-knob__kill {
+  fill: none;
+  stroke: var(--bg-0);
+  stroke-width: 3;
+}
+.dw-knob__value {
+  fill: none;
+  stroke: var(--knob-accent);
+  stroke-width: 6;
+}
+.dw-knob__cap {
+  fill: var(--bg-3);
+  stroke: var(--line-2);
+  stroke-width: 2;
+  transition: fill var(--t-fast);
+}
+.dw-knob__pointer {
+  stroke: var(--text-1);
+  stroke-width: 6;
+}
+.dw-knob__detent {
+  stroke: var(--text-3);
+  stroke-width: 3;
+}
+.dw-knob__dial:hover .dw-knob__cap {
+  stroke: var(--state-hover-line);
+}
+.dw-knob[data-held='true'] .dw-knob__cap {
+  fill: var(--line-1);
+  stroke: var(--text-1);
+}
+.dw-knob__dial:focus-visible {
+  box-shadow: none;
+}
+.dw-knob__dial:focus-visible .dw-knob__cap {
+  stroke: var(--text-1);
+  stroke-width: 4;
+}
+.dw-knob[data-disabled='true'] {
+  opacity: var(--state-disabled-opacity);
+}
+.dw-knob[data-disabled='true'] .dw-knob__dial {
+  cursor: not-allowed;
+}
+.dw-knob[data-disabled='true'] .dw-knob__value {
+  display: none;
+}
+.dw-knob__label {
+  font: 600 var(--fs-1) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.dw-knob__text {
+  font: 500 var(--fs-1) / 1 var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ---------- Fader (senkrecht und waagrecht) ---------------------------------- */
+.dw-fader {
+  --fader-accent: var(--text-1);
+  --cap: var(--fader-cap);
+  position: relative;
+  flex: none;
+  touch-action: none;
+  cursor: ns-resize;
+}
+.dw-fader[data-orient='v'] {
+  width: 2.5rem;
+  height: 100%;
+  min-height: 5rem;
+}
+.dw-fader[data-orient='h'] {
+  height: 2rem;
+  width: 100%;
+  cursor: ew-resize;
+}
+.dw-fader__slot {
+  position: absolute;
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.dw-fader[data-orient='v'] .dw-fader__slot {
+  left: calc(50% - 0.2rem);
+  width: 0.4rem;
+  top: calc(var(--cap) / 2);
+  bottom: calc(var(--cap) / 2);
+}
+.dw-fader[data-orient='h'] .dw-fader__slot {
+  top: calc(50% - 0.2rem);
+  height: 0.4rem;
+  left: calc(var(--cap) / 2);
+  right: calc(var(--cap) / 2);
+}
+.dw-fader__fill {
+  position: absolute;
+  background: var(--fader-accent);
+}
+.dw-fader[data-orient='v'] .dw-fader__fill {
+  left: 1px;
+  right: 1px;
+}
+.dw-fader[data-orient='h'] .dw-fader__fill {
+  top: 1px;
+  bottom: 1px;
+}
+.dw-fader__tick {
+  position: absolute;
+  background: var(--line-2);
+}
+.dw-fader[data-orient='v'] .dw-fader__tick {
+  left: 0;
+  width: 0.45rem;
+  height: 1px;
+}
+.dw-fader[data-orient='v'] .dw-fader__tick[data-major='true'] {
+  width: 0.7rem;
+  background: var(--text-3);
+}
+.dw-fader[data-orient='h'] .dw-fader__tick {
+  top: 0;
+  height: 0.35rem;
+  width: 1px;
+}
+.dw-fader[data-orient='h'] .dw-fader__tick[data-major='true'] {
+  height: 0.55rem;
+  background: var(--text-3);
+}
+.dw-fader__cap {
+  position: absolute;
+  background: var(--text-2);
+  clip-path: polygon(var(--cut-1) 0, 100% 0, 100% calc(100% - var(--cut-1)), calc(100% - var(--cut-1)) 100%, 0 100%, 0 var(--cut-1));
+  transition: background var(--t-fast);
+}
+.dw-fader__cap::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  background: var(--bg-3);
+  clip-path: polygon(calc(var(--cut-1) - 0.6px) 0, 100% 0, 100% calc(100% - var(--cut-1) + 0.6px), calc(100% - var(--cut-1) + 0.6px) 100%, 0 100%, 0 calc(var(--cut-1) - 0.6px));
+}
+.dw-fader__cap::after {
+  content: '';
+  position: absolute;
+  background: var(--fader-accent);
+}
+.dw-fader[data-orient='v'] .dw-fader__cap {
+  left: 0;
+  right: 0;
+  height: var(--cap);
+}
+.dw-fader[data-orient='v'] .dw-fader__cap::after {
+  left: 0.3rem;
+  right: 0.3rem;
+  top: calc(50% - 1.5px);
+  height: 3px;
+}
+.dw-fader[data-orient='h'] .dw-fader__cap {
+  top: 0;
+  bottom: 0;
+  width: var(--cap);
+}
+.dw-fader[data-orient='h'] .dw-fader__cap::after {
+  top: 0.3rem;
+  bottom: 0.3rem;
+  left: calc(50% - 1.5px);
+  width: 3px;
+}
+.dw-fader:hover .dw-fader__cap {
+  background: var(--text-1);
+}
+.dw-fader[data-held='true'] .dw-fader__cap {
+  background: var(--text-1);
+}
+.dw-fader[data-held='true'] .dw-fader__cap::before {
+  background: var(--line-1);
+}
+.dw-fader:focus-visible {
+  box-shadow: none;
+}
+.dw-fader:focus-visible .dw-fader__cap::before {
+  inset: 2px;
+}
+.dw-fader:focus-visible .dw-fader__cap {
+  background: var(--text-1);
+}
+.dw-fader[data-disabled='true'] {
+  opacity: var(--state-disabled-opacity);
+  cursor: not-allowed;
+}
+/* geführt: Wert kommt von außen (z. B. Sync), Kappe hohl */
+.dw-fader[data-guided='true'] .dw-fader__cap::before {
+  background: var(--bg-1);
+  background-image: var(--hatch);
+}
+
+/* ---------- Crossfader -------------------------------------------------------- */
+.dw-xfader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ---------- Deck-Schild --------------------------------------------------------- */
+.dw-plate {
+  --plate-color: var(--text-1);
+  --cut: var(--cut-1);
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: var(--plate-color);
+  color: var(--ink);
+  font: 700 1.05rem / 1 var(--font-label);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut));
+  flex: none;
+}
+.dw-plate[data-size='lg'] {
+  --cut: var(--cut-2);
+  width: 2.7rem;
+  height: 2.7rem;
+  font-size: 2.1rem;
+}
+.dw-plate[data-size='sm'] {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.85rem;
+  --cut: 0.22rem;
+}
+.dw-plate[data-cut='tr'] {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+}
+.dw-plate[data-hollow='true'] {
+  background: var(--bg-2);
+  color: var(--plate-color);
+  box-shadow: inset 0 0 0 1px var(--plate-color);
+  clip-path: none;
+}
+.dw-plate[data-deck='a'] { --plate-color: var(--deck-a); }
+.dw-plate[data-deck='b'] { --plate-color: var(--deck-b); }
+.dw-plate[data-deck='c'] { --plate-color: var(--deck-c); }
+.dw-plate[data-deck='d'] { --plate-color: var(--deck-d); }
+
+/* ---------- Tonart-Marke ---------------------------------------------------------- */
+.dw-keychip {
+  --chip: var(--key-none);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.dw-keychip__code {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.3rem;
+  height: 1.3rem;
+  padding: 0 0.3rem;
+  background: var(--chip);
+  color: var(--ink);
+  font: 600 var(--fs-2) / 1 var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+/* Dur (B) zusätzlich mit Kerbe oben rechts, Moll (A) als volles Rechteck */
+.dw-keychip[data-mode='major'] .dw-keychip__code {
+  clip-path: polygon(0 0, calc(100% - 0.35rem) 0, 100% 0.35rem, 100% 100%, 0 100%);
+}
+.dw-keychip[data-mode='none'] .dw-keychip__code {
+  background: none;
+  color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.dw-keychip[data-size='lg'] .dw-keychip__code {
+  min-width: 3.1rem;
+  height: 1.8rem;
+  font-size: var(--fs-4);
+}
+.dw-keychip__name {
+  font: 500 var(--fs-2) / 1 var(--font-text);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ---------- Zahlenanzeige ------------------------------------------------------------ */
+.dw-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.dw-readout[data-align='right'] {
+  align-items: flex-end;
+  text-align: right;
+}
+.dw-readout__value {
+  font-family: var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: var(--fs-3);
+  line-height: 1;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.dw-readout[data-size='lg'] .dw-readout__value {
+  font-size: var(--fs-6);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.dw-readout[data-size='md'] .dw-readout__value {
+  font-size: var(--fs-5);
+}
+.dw-readout[data-tone='muted'] .dw-readout__value {
+  color: var(--text-2);
+}
+.dw-readout__unit {
+  font: 600 var(--fs-1) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  color: var(--text-3);
+  margin-left: 0.3em;
+}
+
+/* ---------- Pegelanzeige ---------------------------------------------------------------- */
+.dw-meter {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.dw-meterbox {
+  position: relative;
+  flex: none;
+  height: 100%;
+}
+
+/* ---------- Phasenanzeige ------------------------------------------------------------------ */
+.dw-phase {
+  position: relative;
+  height: 1rem;
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  overflow: hidden;
+}
+.dw-phase__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-1);
+}
+.dw-phase__center {
+  position: absolute;
+  left: calc(50% - 1px);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-3);
+}
+.dw-phase__bar {
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 50%;
+  width: 50%;
+  transform-origin: left center;
+  background: var(--text-2);
+  transform: scaleX(0);
+}
+.dw-phase__marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0.4rem;
+  transform: translateX(-50%);
+  background: var(--text-1);
+}
+/* eingerastet: Marke wird zur Raute auf der Mittellinie */
+.dw-phase[data-lock='true'] .dw-phase__marker {
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  width: 1rem;
+}
+.dw-phase[data-off='true'] .dw-phase__marker,
+.dw-phase[data-off='true'] .dw-phase__bar {
+  display: none;
+}
+
+/* ---------- Listen-Zeile ---------------------------------------------------------------------- */
+.dw-row {
+  display: grid;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 var(--sp-3);
+  gap: var(--sp-3);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--text-2);
+  position: relative;
+  cursor: default;
+}
+.dw-row[data-head='true'] {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-2);
+  height: 1.7rem;
+}
+.dw-row:not([data-head='true']):hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.dw-row[data-selected='true'] {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+/* Auswahl zusätzlich als Balken links, nicht nur über die Fläche */
+.dw-row[data-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0.25rem;
+  background: var(--text-1);
+}
+.dw-row[data-dragging='true'] {
+  opacity: 0.5;
+}
+.dw-row__cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dw-row__cell[data-strong='true'] {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.dw-row__cell[data-num='true'] {
+  font-family: var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2);
+  text-align: right;
+}
+
+/* ---------- Kurzhilfe ------------------------------------------------------------------------------ */
+.dw-tip {
+  position: fixed;
+  z-index: var(--z-tip);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0.35rem 0.6rem;
+  background: var(--text-1);
+  color: var(--ink);
+  font: 500 var(--fs-2) / 1.2 var(--font-text);
+  white-space: nowrap;
+  clip-path: polygon(var(--cut-1) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut-1));
+}
+.dw-tip[data-static='true'] {
+  position: static;
+  display: inline-flex;
+}
+.dw-tip__name {
+  font-weight: 600;
+}
+.dw-tip__value {
+  font-family: var(--font-num);
+  font-stretch: var(--num-stretch);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-1);
+}
+.dw-tip__keys {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: center;
+}
+.dw-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border: 1px solid currentColor;
+  font: 500 var(--fs-1) / 1 var(--font-num);
+  font-stretch: var(--num-stretch);
+}
+
+/* ---------- Hinweis ---------------------------------------------------------------------------------- */
+.dw-notice {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--header-h) + var(--sp-3));
+  transform: translateX(-50%);
+  z-index: var(--z-tip);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0.55rem 0.9rem;
+  background: var(--status-warn);
+  color: var(--ink);
+  font: 600 var(--fs-3) / 1.2 var(--font-text);
+  clip-path: polygon(var(--cut-2) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut-2));
+}
+.dw-notice__icon {
+  font: 700 var(--fs-4) / 1 var(--font-label);
+}

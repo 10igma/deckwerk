@@ -1,0 +1,132 @@
+/*
+ * Deckwerk – Design-Tokens. Einzige Quelle für Farben, Schrift, Abstände, Formen und Zustände.
+ * Leitidee „Prüfstand“: rußschwarze Grundfläche, Wellenformen in drei Metallschichten
+ * (Kupfer, Messing, Zinn), kalte Signalfarben für die Decks, gefaste Ecken statt Rundungen.
+ * Längen in rem: Die Wurzelgröße folgt der Fenstergröße (src/app/scale.ts).
+ */
+:root {
+  /* --- Flächen (Ruß) ------------------------------------------------------ */
+  --bg-0: #0D0C0B; /* Grund, Wellenform-Bühne */
+  --bg-1: #151412; /* Platten: Decks, Mixer, Liste */
+  --bg-2: #201E1B; /* erhabene Teile: Tasten, Felder */
+  --bg-3: #2C2925; /* gedrückt, Zeile unter dem Zeiger */
+
+  /* --- Linien ------------------------------------------------------------- */
+  --line-1: #35322D; /* Haarlinie, rein gliedernd */
+  --line-2: #6E6960; /* Umriss von Bedienelementen (≥ 3:1 auf bg-0 … bg-2) */
+
+  /* --- Schrift (Kalk) ----------------------------------------------------- */
+  --text-1: #F2EEE6; /* Werte, Titel */
+  --text-2: #B8B2A6; /* Fließtext, Nebenwerte */
+  --text-3: #958F84; /* Beschriftungen (≥ 4,5:1 bis bg-3) */
+  --ink: #0D0C0B;    /* Schrift auf farbigen Flächen */
+
+  /* --- Deck-Farben (kalt, tragen nur die Bedeutung „Deck“) ------------------ */
+  --deck-a: #36DCEC; /* Eis */
+  --deck-b: #D78FF6; /* Malve */
+  --deck-c: #B6E551; /* Lind */
+  --deck-d: #6A9CFB; /* Azur */
+
+  /* --- Frequenzbänder (Metalle, von dunkel nach hell) ---------------------- */
+  --band-low: #D77343;  /* Kupfer – Tief < 200 Hz */
+  --band-mid: #E1B75C;  /* Messing – Mitte */
+  --band-high: #EDE8D6; /* Zinn – Hoch > 2,5 kHz */
+
+  /* --- Status und Warnung -------------------------------------------------- */
+  --status-ok: #5EDB81;
+  --status-warn: #F9E03F;
+  --status-danger: #FC4447;
+  --status-rec: #FC4447;
+
+  /* --- Tonarten nach Camelot-Position: 12 Farbtöne, A (Moll) dunkler, B (Dur) heller --- */
+  --key-1a: #E5756E;  --key-1b: #FEB5AE;
+  --key-2a: #DC813B;  --key-2b: #FFB98A;
+  --key-3a: #C39308;  --key-3b: #EBC573;
+  --key-4a: #99A52C;  --key-4b: #C8D37E;
+  --key-5a: #5EB262;  --key-5b: #9DDE9E;
+  --key-6a: #01B597;  --key-6b: #74E2C6;
+  --key-7a: #00B0BE;  --key-7b: #65DFED;
+  --key-8a: #1DA8E5;  --key-8b: #8ED5FE;
+  --key-9a: #7098F2;  --key-9b: #B2CAFE;
+  --key-10a: #A288E8; --key-10b: #CEC0FF;
+  --key-11a: #C67BCB; --key-11b: #EFB2F2;
+  --key-12a: #DD74A0; --key-12b: #FEB0CE;
+  --key-none: #958F84;
+
+  /* --- Schrift -------------------------------------------------------------- */
+  --font-text: 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --font-label: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --font-num: 'Martian Mono', ui-monospace, 'DejaVu Sans Mono', monospace;
+  --num-stretch: 80%;
+
+  --fs-1: 0.786rem; /* 11 px bei 1280×720 – kleinste Schrift */
+  --fs-2: 0.857rem; /* 12 px – Beschriftung */
+  --fs-3: 1rem;     /* 14 px – Text */
+  --fs-4: 1.214rem; /* 17 px – Titel im Deck */
+  --fs-5: 1.5rem;   /* 21 px – Nebenwerte groß */
+  --fs-6: 2rem;     /* 28 px – Hauptwerte: BPM, Restzeit */
+  --fs-7: 2.857rem; /* 40 px – Überschriften */
+
+  --lh-tight: 1.1;
+  --lh-text: 1.35;
+  --track-label: 0.08em; /* Sperrung der Versal-Beschriftung */
+
+  /* --- Abstände -------------------------------------------------------------- */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2.5rem;
+
+  /* --- Formen: keine Rundungen, dafür eine Fase an einer Ecke ---------------- */
+  --radius-0: 0;
+  --radius-1: 1px;  /* Lamellen, Schlitze */
+  --cut-1: 0.3rem;  /* Fase kleiner Tasten und Marken */
+  --cut-2: 0.5rem;  /* Fase großer Tasten und Deck-Schilder */
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+
+  /* --- Maße der Bedienelemente ------------------------------------------------ */
+  --ctl-h-sm: 1.5rem;
+  --ctl-h-md: 2rem;
+  --ctl-h-lg: 2.6rem;
+  --knob-sm: 2.5rem;
+  --knob-md: 3.1rem;
+  --knob-lg: 4rem;
+  --fader-cap: 1.3rem;
+  --header-h: 2.9rem;
+  --row-h: 1.8rem;
+
+  /* --- Zustände ----------------------------------------------------------------- */
+  --state-hover-line: var(--text-2);
+  --state-held-bg: var(--bg-3);
+  --state-disabled-opacity: 0.38;
+  --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--text-1);
+  --played-dim: 0.45;      /* Helligkeit des bereits gespielten Teils */
+  --hatch: repeating-linear-gradient(135deg, transparent 0 3px, rgba(242, 238, 230, 0.09) 3px 4px);
+  --hatch-fine: repeating-linear-gradient(135deg, transparent 0 5px, rgba(242, 238, 230, 0.06) 5px 6px);
+
+  /* --- Bewegung ------------------------------------------------------------------- */
+  --t-fast: 70ms;
+  --t-med: 140ms;
+
+  /* --- Ebenen ---------------------------------------------------------------------- */
+  --z-overlay: 20;
+  --z-tip: 40;
+}
+
+/* Kontrastreiches Design (VIS-11): reines Schwarz, hellere Linien und Schrift. */
+:root[data-theme='contrast'] {
+  --bg-0: #000000;
+  --bg-1: #050505;
+  --bg-2: #141414;
+  --bg-3: #242424;
+  --line-1: #5A5A5A;
+  --line-2: #A8A8A8;
+  --text-1: #FFFFFF;
+  --text-2: #E2E2E2;
+  --text-3: #C2C2C2;
+  --ink: #000000;
+  --played-dim: 0.55;
+}
