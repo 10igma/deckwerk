@@ -14,7 +14,7 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 2. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
 3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
 4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
-5. **Pipeline zum ersten Mal laufen lassen** (nach dem ersten Push) und Windows/macOS-Fehler beheben.
+5. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
 6. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
 
 ## Erledigte Anforderungen
@@ -47,7 +47,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
 - **Ausgabe am Gerät.** `dw-audio::device` ist nur übersetzt. Latenz, Kopfhörer-Weg und Stabilität am Interface sind ungemessen.
-- **Windows und macOS.** Gebaut und getestet wurde nur unter Linux. Die Pipeline in `.github/workflows/build.yml` ist geschrieben, aber noch nie gelaufen (kein GitHub-Repository).
+- **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Gestartet oder installiert hat sie dort noch niemand.
 - **Klang.** EQ, Filter, Limiter und Übergang sind gemessen, nicht gehört.
 - **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Ziehen von Reglern, Zahleneingabe, Ziehen aus der Liste aufs Deck und das Ablegen von Dateien auf dem Fenster sind dort nicht nachgestellt (im Browser schon).
 - **Grafik unter Linux.** In der Bauumgebung kommt WebGL 2 in WebKitGTK nicht direkt auf den Schirm; die Wellenformen werden dort über eine 2D-Fläche kopiert. Wie sich das mit echter Grafikkarte verhält und was es an Bildrate kostet, ist ungemessen.
@@ -104,7 +104,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 
 Stehen in der Spezifikation, Kapitel 12.2 (F1–F9). Für die Arbeit jetzt am wichtigsten:
 
-1. **Push freigeben:** Das Repository `10igma/deckwerk` ist als `origin` eingetragen, hochgeladen ist noch nichts.
+1. **Abnahme am Gerät:** die neun Schritte im Abschnitt „Abnahme am Gerät".
 2. **Eigene Tracks** mit bekannten BPM- und Tonart-Werten (F9), damit die Analyse an echter Musik gemessen werden kann.
 3. **System und Audio-Interface** (F3) für die Abnahme am Gerät.
 

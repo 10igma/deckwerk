@@ -20,7 +20,7 @@ Das Projekt ist im Aufbau. Fertig sind das Fundament und der größte Teil des K
 | Desktop-Anwendung: Oberfläche am echten Kern | läuft unter Linux; Import, Analyse, Laden und synchrone Wiedergabe dort gezeigt |
 | Automatischer Übergang: langer Blend mit Bass-Tausch | fertig für zwei Tracks, über die Kommandozeile |
 | Ton-Ausgabe am Audiogerät | geschrieben, aber noch an keinem Gerät geprüft |
-| Windows und macOS | noch nie gebaut; entwickelt und getestet wurde unter Linux |
+| Windows und macOS | Kern-Tests und Installer laufen in der Build-Pipeline durch; gestartet wurde die Anwendung dort noch nicht |
 | Key Lock, Loops, Hotcues, Effekte, Auto-Mix für ganze Sets, Stems, Remix-Decks, Import aus Traktor/Rekordbox | noch nicht begonnen (Stufen 2–8) |
 
 Den genauen Stand mit Messwerten, offenen Punkten und dem nächsten Schritt führt [docs/fortschritt.md](docs/fortschritt.md).
@@ -43,7 +43,7 @@ Voraussetzungen: Rust (stabil, ab 1.80), Node 22 mit pnpm 10, ein C-Compiler und
 sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libasound2-dev
 ```
 
-Anwendung bauen und starten:
+Fertige Installer für Linux, Windows und macOS hängen als Artefakte an jedem Lauf der Build-Pipeline (GitHub, Reiter „Actions"). Selbst bauen und starten:
 
 ```bash
 pnpm --dir ui install
