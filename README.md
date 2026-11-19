@@ -115,6 +115,7 @@ Der Ton entsteht vollständig im Rust-Kern in einem eigenen Echtzeit-Thread. Die
 | [Fortschritt](docs/fortschritt.md) | was fertig ist, was gemessen wurde, was offen ist, nächster Schritt |
 | [Designsystem](docs/designsystem.md) | Leitidee, Farben, Schriften, Komponenten |
 | [Schnittstelle Oberfläche–Kern](docs/kern-schnittstelle.md) | Befehle und Datenformate zwischen `ui/` und `app/` |
+| [CLAUDE.md](CLAUDE.md) | Einstieg für Claude Code: Befehle, Aufbau, Regeln |
 | [Prompts](docs/prompts/) | die beiden Aufträge, aus denen Spezifikation und Bau hervorgegangen sind |
 
 ## Lizenz
