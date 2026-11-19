@@ -3,6 +3,8 @@ name: Bauen und Testen
 on:
   push:
   pull_request:
+  # Erlaubt den Start von Hand im Reiter „Actions" (z. B. wenn GitHub einen Lauf abgebrochen hat).
+  workflow_dispatch:
 
 jobs:
   kern:
