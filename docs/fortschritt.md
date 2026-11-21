@@ -27,7 +27,7 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 | Mixer | MIX-01, 02, 04, 05, 06, 08, 09, 10, 13 | `cargo test -p dw-dsp`, `-p dw-engine`, `-p dw-audio` |
 | Engine | ENG-04, 06, 07, 09; ENG-01–03 nur übersetzt | `cargo test -p dw-engine --test realtime`, `-p dw-audio` |
 | Übergänge | T1 und T10 aus 5.10; TRANS-02, TRANS-03 für T1 | `cargo test -p dw-automix` |
-| Oberfläche | Designsystem, Hülle, Ansicht „Mixen"; VIS-01, 02, 03 (Beat-/Taktlinien), 04, 05, 06, 10, 11; BED-03, 05, 07; Live-Schutz nach 9.3 | `pnpm test` (117 Tests) und `pnpm shots` in `ui/`; das Skript misst Bühnenhöhe und Zielgrößen und bricht bei Unterschreitung ab |
+| Oberfläche | Designsystem, Hülle, Ansicht „Mixen"; VIS-01, 02, 03 (Beat-/Taktlinien), 04, 05, 06, 10, 11, 13 (Vorausblick); BED-03, 05, 07; Live-Schutz nach 9.3 | `pnpm test` (124 Tests) und `pnpm shots` in `ui/`; das Skript misst Bühnenhöhe und Zielgrößen und bricht bei Unterschreitung ab |
 | Desktop-Anwendung | Anschluss der Oberfläche an den Kern, Hintergrund-Analyse (ANA-01), Wellenform-Cache, Laden aufs Deck (DECK-04), Wahl des Ausgabegeräts im laufenden Betrieb (ENG-01, nur Gerät) | `cargo test -p deckwerk-app`; Bilder der laufenden Anwendung in `docs/bilder/` |
 
 Gemessene Werte (diese Maschine, 4 Kerne):
@@ -75,7 +75,8 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - CLAUDE.md nennt pnpm 10; unter macOS installiert `brew install pnpm` inzwischen Version 12.
 - Beim Ziehen eines Ordners über das Fenster gibt es keine Rückmeldung (kein Rahmen, kein Hinweis); die Anwendung reagiert nur auf das Loslassen (`app/src/lib.rs`). Der Import selbst geht.
 - Geräteauswahl: Die Engine behält die Abtastrate, mit der sie gestartet ist; ein Gerät, das diese Rate nicht annimmt, lässt sich im laufenden Betrieb nicht wählen (unter Windows wandelt das System um). Die Liste der Geräte wird beim Öffnen der Einstellungen gelesen; ein Gerät, das danach angesteckt wird, erscheint erst beim nächsten Öffnen. Fällt das gewählte Gerät im Betrieb weg, wechselt die Anwendung nicht von selbst.
-- `pnpm shots` (Maßprüfung der Bedienziele) lief unter Windows nicht: Playwright steht nicht in den Abhängigkeiten der Oberfläche. Die neue Geräteliste in den Einstellungen ist damit nicht nachgemessen.
+- `pnpm shots` (Maßprüfung der Bedienziele) lief unter Windows nicht: Playwright steht nicht in den Abhängigkeiten der Oberfläche. Die Geräteauswahl in den Einstellungen und die Tasten des Vorausblicks sind damit nicht nachgemessen.
+- Vorausblick (VIS-13): `PgDn`/`PgUp` gehören jetzt der Bühne und blättern nicht mehr in der Liste der Bibliothek. Der Vorausblick rechnet mit dem jetzigen Tempo; Tempowechsel im Track (mehrere Anker) und ein Deck, das später gestartet wird, bildet er nicht ab. Abschnitte und Cue-Punkte sind in der Detail-Wellenform noch nicht eingezeichnet, der Blick nach vorn zeigt also nur Wellenform, Beat-, Takt- und Phrasenlinien.
 - Ab vier Kanälen liegt der Kopfhörer-Weg fest auf den Kanälen 3/4. Bei einem Surround-Gerät (5.1, 7.1) sind das Center und Subwoofer, kein zweiter Stereo-Ausgang; die Zuweisung muss wählbar werden (nächster Schritt 2).
 - Bei 1280×720 zeigt die Bibliothek 5 ganze Zeilen (10 mit aufgezogener Liste); die Prüfer wollten 7. Bühne und Zielgröße hatten Vorrang.
 
@@ -110,6 +111,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 | Master-Automatik wählt das hörbare Deck | DECK-09; Tempo und Phase bleiben bei der Übergabe erhalten |
 | Tonart-Marke: Code in Schriftfarbe mit Farbbalken | gefüllte Marken waren von Deck-Schildern und aktiven Tasten nicht zu unterscheiden |
 | Fingerabdruck aus Dateigröße plus erstem und letztem Megabyte | 1 000 Dateien in Sekunden importierbar |
+| Vorausblick (VIS-13) verschiebt alle Decks gemeinsam, in Beats bei Clock-Tempo | nur so bleibt sichtbar, was zusammen erklingt; je Deck einzeln würde die Decks gegeneinander verschieben. Er ist Zustand der Oberfläche wie der Zoom, kein `Command` |
 | Gerätewechsel ist ein Befehl der Hülle (`audio_select`), kein `Command` der Engine | er betrifft die Ausgabe, nicht den Zustand der Engine; Automation und Offline-Render brauchen ihn nicht |
 | Beim Gerätewechsel wandert die Engine von der alten Ausgabe zur neuen, statt neu zu entstehen | geladene Decks und laufende Wiedergabe bleiben erhalten; dafür bleibt die Abtastrate fest |
 
@@ -165,6 +167,7 @@ Befund ohne Korrektur: Die Kick hebt sich in der Detail-Wellenform zu wenig ab. 
 
 Wünsche aus der Abnahme (neue Funktionen, keine Befunde):
 
+- **Vorausblick in der Wellenform** (gewünscht am 21.11.2026, gebaut als VIS-13): Ansicht beider Decks gemeinsam nach vorn schieben und zurückspringen, um den zweiten Track auf eine spätere Stelle abzustimmen.
 - **Was passt zum laufenden Track?** Zeichen je Zeile der Bibliothek für Tonart (passt / geht / reibt nach 5.11) und Tempo (Abstand zum laufenden Tempo), dazu Sortieren und Filtern danach. Entspricht dem zurückgestellten Befund UX 10; gewünscht vor Stufe 3.
 - **Weitere Darstellungen der Wellenform** zur Auswahl, etwa drei Bänder überlagert oder gestapelt.
 

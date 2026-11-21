@@ -522,6 +522,35 @@ export function moveSelection(dir: -1 | 1): void {
   setUi({ selectedId: visibleIds[next] });
 }
 
+// --- Vorausblick (VIS-13) --------------------------------------------------------
+
+/** Grenzen des Vorausblicks in Beats: ein Stück zurück, weit nach vorn. */
+export const PEEK_MIN = -64;
+export const PEEK_MAX = 4096;
+/** Schritt der Tasten in Beats: vier Takte, mit Shift ein Takt. */
+export const PEEK_STEP = 16;
+export const PEEK_STEP_FINE = 4;
+
+/** Neuer Vorausblick nach einem Schritt: ganze Beats, auf die Grenzen beschränkt. */
+export function peekAfter(current: number, beats: number): number {
+  return clamp(Math.round(current + beats), PEEK_MIN, PEEK_MAX);
+}
+
+/** Ansicht der Wellenformen um `beats` verschieben; die Wiedergabe läuft unverändert weiter. */
+export function peekBy(beats: number): void {
+  setUi((s) => ({ peekBeats: peekAfter(s.peekBeats, beats) }));
+}
+
+/** Schritt der Tasten: vier Takte vor oder zurück, fein ein Takt. */
+export function peekStep(dir: -1 | 1, fine: boolean): void {
+  peekBy(dir * (fine ? PEEK_STEP_FINE : PEEK_STEP));
+}
+
+/** Zurück zur Abspielstelle. */
+export function peekReset(): void {
+  if (getUi().peekBeats !== 0) setUi({ peekBeats: 0 });
+}
+
 export function toggleSnap(): void {
   setUi((s) => ({ snap: !s.snap }));
 }

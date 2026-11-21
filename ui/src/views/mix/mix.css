@@ -107,6 +107,16 @@
   gap: var(--sp-1);
   cursor: default;
 }
+/* Vorausblick: unten rechts, damit er die Zoom-Tasten oben nicht verdrängt. */
+.stage__peek {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: default;
+}
 .stage__zoomval {
   min-width: 4.6rem;
   text-align: center;

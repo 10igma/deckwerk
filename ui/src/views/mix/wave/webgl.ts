@@ -32,6 +32,7 @@ uniform vec3 u_bg;
 uniform vec3 u_gain;
 uniform vec3 u_share;
 uniform float u_playedDim;
+uniform float u_headX;
 uniform float u_dpr;
 out vec4 outColor;
 
@@ -78,7 +79,7 @@ void main() {
   col = mix(col, mix(u_bg, u_colHigh, vis(u_gain.z, hatch)), c3);
   col = mix(col, mix(u_bg, u_colMid, vis(u_gain.y, hatch)), c2);
   col = mix(col, mix(u_bg, u_colLow, vis(u_gain.x, hatch)), c1);
-  if (p.x < u_size.x * 0.5) col = mix(u_bg, col, u_playedDim);
+  if (p.x < u_headX) col = mix(u_bg, col, u_playedDim);
   outColor = vec4(col, 1.0);
 }`;
 
@@ -167,7 +168,7 @@ export class WebGLWaveRenderer implements WaveRenderer {
     this.info = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) + (present === 'blit' ? ' · über Canvas 2D gezeigt' : '');
     this.laneProg = link(gl, LANE_VS, LANE_FS);
     this.rectProg = link(gl, RECT_VS, RECT_FS);
-    for (const name of ['u_tex', 'u_texW', 'u_points', 'u_idxCenter', 'u_idxPerPx', 'u_origin', 'u_size', 'u_dir', 'u_colLow', 'u_colMid', 'u_colHigh', 'u_bg', 'u_gain', 'u_share', 'u_playedDim', 'u_dpr']) {
+    for (const name of ['u_tex', 'u_texW', 'u_points', 'u_idxCenter', 'u_idxPerPx', 'u_origin', 'u_size', 'u_dir', 'u_colLow', 'u_colMid', 'u_colHigh', 'u_bg', 'u_gain', 'u_share', 'u_playedDim', 'u_headX', 'u_dpr']) {
       this.laneU[name] = gl.getUniformLocation(this.laneProg, name);
     }
     this.rectCanvasU = gl.getUniformLocation(this.rectProg, 'u_canvas');
@@ -258,6 +259,7 @@ export class WebGLWaveRenderer implements WaveRenderer {
       gl.uniform1i(u.u_points, tex.points);
       gl.uniform1f(u.u_idxCenter, lane.idxCenter);
       gl.uniform1f(u.u_idxPerPx, lane.idxPerPx);
+      gl.uniform1f(u.u_headX, lane.headX);
       gl.uniform2f(u.u_origin, lane.x, yBottom);
       gl.uniform2f(u.u_size, lane.w, lane.h);
       gl.uniform1f(u.u_dir, lane.dir);

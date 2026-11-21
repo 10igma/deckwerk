@@ -2,7 +2,7 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, focusDeck, send } from '../../app/actions';
+import { bend, focusDeck, peekBy, peekReset, peekStep, send } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
@@ -10,7 +10,8 @@ import { getUi, setUi, useUi } from '../../app/store';
 import { deckIndex, type DeckId } from '../../core/types';
 import { DeckPlate, Icon, KeyBtn, useTip } from '../../design/components';
 import { cssVar, remPx } from '../../design/tokens';
-import { useT } from '../../i18n';
+import { useLang, useT } from '../../i18n';
+import { shortcutKeys } from '../../app/keymap';
 import { clamp } from '../../lib/curves';
 import { readStageColors } from './stageColors';
 import { Canvas2DWaveRenderer } from './wave/canvas2d';
@@ -56,6 +57,33 @@ function LaneOverlay({ deck, position }: { deck: DeckId; position: 'top' | 'bott
         )}
       </div>
       {drop.over && <div className="stage__drop dw-label">{t('deck.dropHere', { deck: name })}</div>}
+    </div>
+  );
+}
+
+/** Vorausblick (VIS-13): Tasten zum Verschieben der Ansicht und, solange verschoben, der Weg zurück. */
+function PeekControls() {
+  const t = useT();
+  const lang = useLang();
+  const peek = useUi((s) => s.peekBeats);
+  const bpm = useSnap((s) => s.clock_bpm);
+  const sec = (Math.abs(peek) * 60) / (bpm > 0 ? bpm : FALLBACK_BPM);
+  const amount = `${peek > 0 ? '+' : '−'}${t(Math.abs(peek) === 1 ? 'stage.beat' : 'stage.beats', { n: Math.abs(peek) })} · ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  return (
+    <div className="stage__peek" data-active={peek !== 0 ? 'true' : undefined} onPointerDown={(e) => e.stopPropagation()}>
+      <KeyBtn size="sm" onPress={() => peekStep(-1, false)} ariaLabel={t('stage.peekBack')} tip={{ name: t('stage.peekBack'), value: t('stage.peekHint'), keys: shortcutKeys('stage.peek_back', undefined, lang) }}>
+        <Icon name="slower" size="0.8em" />
+      </KeyBtn>
+      {peek !== 0 ? (
+        <KeyBtn size="sm" mode="toggle" active accent="var(--status-warn)" onPress={peekReset} ariaLabel={t('stage.peekReset')} tip={{ name: t('stage.peekReset'), keys: shortcutKeys('stage.peek_reset', undefined, lang) }} sub={amount}>
+          {t('stage.peekOn')}
+        </KeyBtn>
+      ) : (
+        <span className="stage__zoomval dw-num">{t('stage.peekOff')}</span>
+      )}
+      <KeyBtn size="sm" onPress={() => peekStep(1, false)} ariaLabel={t('stage.peekFwd')} tip={{ name: t('stage.peekFwd'), value: t('stage.peekHint'), keys: shortcutKeys('stage.peek_fwd', undefined, lang) }}>
+        <Icon name="faster" size="0.8em" />
+      </KeyBtn>
     </div>
   );
 }
@@ -118,12 +146,21 @@ export function WaveStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Mausrad zoomt (nicht-passiv, damit nichts rollt).
+  // Mausrad zoomt; mit Shift oder waagerecht verschiebt es die Ansicht (Vorausblick, VIS-13).
+  // Nicht-passiv, damit nichts rollt.
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      if (e.shiftKey || sideways) {
+        // Manche Systeme melden Shift + Rad als waagerechte Bewegung.
+        const delta = sideways ? e.deltaX : e.deltaY;
+        // Schritt: ein Viertel des sichtbaren Ausschnitts, mindestens ein Beat.
+        if (delta !== 0) peekBy(Math.sign(delta) * Math.max(1, getUi().zoomBeats / 4));
+        return;
+      }
       if (e.deltaY !== 0) stepZoom(e.deltaY > 0 ? 1 : -1);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -156,7 +193,7 @@ export function WaveStage() {
       }
     }
     const ui = getUi();
-    let key = `${w}x${h}|${ui.zoomBeats}|${snap.clock_bpm.toFixed(3)}`;
+    let key = `${w}x${h}|${ui.zoomBeats}|${ui.peekBeats}|${snap.clock_bpm.toFixed(3)}`;
     for (const deck of LANES) {
       const d = snap.decks[deckIndex(deck)];
       key += `|${d.loaded ? 1 : 0}${d.playing ? 1 : 0}:${d.pos.toFixed(4)}:${d.tempo_offset.toFixed(5)}:${d.eq_db.join(',')}`;
@@ -174,6 +211,7 @@ export function WaveStage() {
       railH: remPx() * RAIL_REM * dpr,
       unit: (remPx() / 14) * dpr,
       zoomBeats: ui.zoomBeats,
+      peekBeats: ui.peekBeats,
       clockBpm: snap.clock_bpm,
       lanes: [laneInput(LANES[0]), laneInput(LANES[1])],
       colors: colors.current.value,
@@ -250,6 +288,7 @@ export function WaveStage() {
           <Icon name="minus" size="0.8em" />
         </KeyBtn>
       </div>
+      <PeekControls />
     </div>
   );
 }

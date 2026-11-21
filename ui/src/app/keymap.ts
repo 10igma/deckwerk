@@ -38,6 +38,9 @@ export type ActionId =
   | 'view.bibliothek'
   | 'view.vorbereiten'
   | 'view.automix'
+  | 'stage.peek_fwd'
+  | 'stage.peek_back'
+  | 'stage.peek_reset'
   | 'global.quantize'
   | 'global.snap'
   | 'global.record';
@@ -121,6 +124,10 @@ export const DEFAULT_KEYMAP: Binding[] = [
   // Leertaste: Play/Pause des Decks mit Fokus (das zuletzt bediente).
   { code: 'Space', action: 'deck.play_focus', mode: 'trigger', stage: 1 },
   { code: 'Escape', action: 'focus.release', mode: 'trigger', stage: 1 },
+  // Vorausblick in den Wellenformen (VIS-13): vier Takte, mit Shift ein Takt; Pos1 oder Esc zurück.
+  { code: 'PageDown', shift: 'fine', action: 'stage.peek_fwd', mode: 'trigger', repeat: true, stage: 1 },
+  { code: 'PageUp', shift: 'fine', action: 'stage.peek_back', mode: 'trigger', repeat: true, stage: 1 },
+  { code: 'Home', action: 'stage.peek_reset', mode: 'trigger', stage: 1 },
   { code: 'F9', action: 'global.quantize', mode: 'trigger', stage: 2 },
   { code: 'KeyR', mod: true, action: 'global.record', mode: 'trigger', stage: 2 },
 ];
@@ -165,6 +172,8 @@ const CODE_LABELS: Record<string, string> = {
   ArrowDown: '↓',
   Space: '␣',
   Escape: 'Esc',
+  PageDown: 'PgDn',
+  PageUp: 'PgUp',
 };
 
 /** Beschriftung einer Taste nach US-Layout (wie in 8.7). */

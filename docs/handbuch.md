@@ -49,6 +49,8 @@ Von oben nach unten:
 - **Versatz:** Laufen zwei Decks auseinander, füllt sich die Lücke zwischen ihren Marken auf der Schiene gelb.
 - **Bedienung:** Ziehen in der Wellenform schiebt das Deck an oder bremst es, das Mausrad ändert den Ausschnitt.
 
+**Vorausblick:** Mit `Shift` + Mausrad, den Doppelpfeilen unten rechts in der Bühne oder `PgDn` / `PgUp` (vier Takte, mit `Shift` ein Takt) schiebst du die Ansicht beider Decks gemeinsam nach vorn oder zurück. Die Wiedergabe läuft dabei unverändert weiter. So siehst du, was in einer Minute zusammen erklingt, etwa ob der Einsatz des zweiten Tracks auf einen Wechsel im ersten fällt. Solange die Ansicht verschoben ist, steht in der Bildmitte eine gestrichelte gelbe Linie statt der Abspielmarke, und unten rechts zeigt die Taste „Zurück" den Abstand in Beats und Minuten. Ein Druck darauf, `Pos1` oder `Esc` bringt die Ansicht zurück zur Abspielstelle. Ein stehendes Deck verschiebt sich mit, als liefe es ab jetzt.
+
 ### Regler bedienen
 
 | Handgriff | Wirkung |

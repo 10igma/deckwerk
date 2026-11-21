@@ -20,6 +20,12 @@ export interface UiState {
   theme: Theme;
   /** Sichtbare Beats in den parallelen Wellenformen (1–32). */
   zoomBeats: number;
+  /**
+   * Vorausblick (VIS-13): Die Wellenformen aller Decks zeigen die Stelle, die in so vielen Beats
+   * (bei Clock-Tempo) an der Abspielmarke liegt. 0 = Ansicht an der Abspielstelle. Die Wiedergabe
+   * bleibt unberührt.
+   */
+  peekBeats: number;
   /** Snap: Sprünge im laufenden Deck rasten auf Beats (DECK-20). */
   snap: boolean;
   tracks: TrackInfo[];
@@ -83,6 +89,7 @@ let state: UiState = {
   lang: 'de',
   theme: 'dark',
   zoomBeats: 8,
+  peekBeats: 0,
   snap: true,
   tracks: [],
   deckTracks: perDeck(() => null),
