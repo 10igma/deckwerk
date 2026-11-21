@@ -1,16 +1,16 @@
 # Fortschritt
 
-Stand: 18.11.2026. Diese Datei zuerst lesen, dann `docs/spezifikation.md`.
+Stand: 21.11.2026. Diese Datei zuerst lesen, dann `docs/spezifikation.md`.
 
 ## Wo wir stehen
 
-Stufe 0 (Fundament) ist fertig, Stufe 1 (Kern-Mixing) bis auf die Abnahme am Gerät und die Audio-Einstellungen. Die Desktop-Anwendung läuft unter Linux mit echtem Kern: Musik importieren, Analyse im Hintergrund, zwei Tracks laden, synchron abspielen. Ob dabei Ton aus einem Audiogerät kommt, ist ungeprüft – in der Bauumgebung gibt es keines.
+Stufe 0 (Fundament) ist fertig, Stufe 1 (Kern-Mixing) bis auf die Abnahme am Gerät und die Audio-Einstellungen. Die Desktop-Anwendung läuft unter Linux mit echtem Kern: Musik importieren, Analyse im Hintergrund, zwei Tracks laden, synchron abspielen. Unter macOS ist sie seit dem 19.11.2026 aus den Quellen gebaut und gestartet; dort kommt Ton aus den eingebauten Lautsprechern. Die Abnahme am Gerät ist begonnen (Schritte 1, 2 und 4), die Schritte 5 bis 9 stehen aus.
 
 Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutachtet; ihre Befunde sind eingearbeitet, die zurückgestellten stehen unten.
 
 ## Nächster Schritt
 
-1. **Abnahme am Gerät** (braucht dich): Anwendung auf deinem Rechner bauen, Ton, Latenz und Kopfhörer-Weg prüfen. Die Abnahmeliste steht am Ende dieser Datei.
+1. **Abnahme am Gerät fortsetzen** (braucht dich): Ziehen aus der Liste aufs Deck und Crossfader bestätigen, dann Schritte 5 bis 9. Stand und Befunde im Abschnitt „Abnahme vom 19.11.2026 (macOS)".
 2. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
 3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
 4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
@@ -27,7 +27,7 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 | Mixer | MIX-01, 02, 04, 05, 06, 08, 09, 10, 13 | `cargo test -p dw-dsp`, `-p dw-engine`, `-p dw-audio` |
 | Engine | ENG-04, 06, 07, 09; ENG-01–03 nur übersetzt | `cargo test -p dw-engine --test realtime`, `-p dw-audio` |
 | Übergänge | T1 und T10 aus 5.10; TRANS-02, TRANS-03 für T1 | `cargo test -p dw-automix` |
-| Oberfläche | Designsystem, Hülle, Ansicht „Mixen"; VIS-01, 02, 03 (Beat-/Taktlinien), 04, 05, 06, 10, 11; BED-03, 05, 07; Live-Schutz nach 9.3 | `pnpm test` (110 Tests) und `pnpm shots` in `ui/`; das Skript misst Bühnenhöhe und Zielgrößen und bricht bei Unterschreitung ab |
+| Oberfläche | Designsystem, Hülle, Ansicht „Mixen"; VIS-01, 02, 03 (Beat-/Taktlinien), 04, 05, 06, 10, 11; BED-03, 05, 07; Live-Schutz nach 9.3 | `pnpm test` (114 Tests) und `pnpm shots` in `ui/`; das Skript misst Bühnenhöhe und Zielgrößen und bricht bei Unterschreitung ab |
 | Desktop-Anwendung | Anschluss der Oberfläche an den Kern, Hintergrund-Analyse (ANA-01), Wellenform-Cache, Laden aufs Deck (DECK-04) | `cargo test -p deckwerk-app`; Bilder der laufenden Anwendung in `docs/bilder/` |
 
 Gemessene Werte (diese Maschine, 4 Kerne):
@@ -46,8 +46,8 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 ## Nicht geprüft
 
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
-- **Ausgabe am Gerät.** `dw-audio::device` ist nur übersetzt. Latenz, Kopfhörer-Weg und Stabilität am Interface sind ungemessen.
-- **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Gestartet oder installiert hat sie dort noch niemand.
+- **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, WASAPI/ASIO und ALSA/JACK sind weiter nur übersetzt.
+- **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist nichts davon geschehen.
 - **Klang.** EQ, Filter, Limiter und Übergang sind gemessen, nicht gehört.
 - **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Ziehen von Reglern, Zahleneingabe, Ziehen aus der Liste aufs Deck und das Ablegen von Dateien auf dem Fenster sind dort nicht nachgestellt (im Browser schon).
 - **Grafik unter Linux.** In der Bauumgebung kommt WebGL 2 in WebKitGTK nicht direkt auf den Schirm; die Wellenformen werden dort über eine 2D-Fläche kopiert. Wie sich das mit echter Grafikkarte verhält und was es an Bildrate kostet, ist ungemessen.
@@ -66,7 +66,13 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - Cue-Punkt, CDJ-Cue und Live-Schutz liegen in der Oberfläche statt im Kern. Fader-Kurven zur Auswahl und 4-Band-EQ fehlen.
 - `DeckState` trägt keine Track-Kennung; die Oberfläche merkt sich selbst, was geladen ist.
 - Geräte, die kein 32-bit-Gleitkomma annehmen, werden nicht geöffnet (keine Umwandlung in 16 bit).
-- `dragDropEnabled` in `app/tauri.conf.json` ist für den Import durch Ablegen nötig, schaltet unter Windows aber laut Tauri das Ziehen innerhalb der Oberfläche ab (Liste → Deck). Unter Windows prüfen; Ausweg ist der Import per Dialog.
+- `dragDropEnabled` in `app/tauri.conf.json` ist für den Import durch Ablegen nötig und schaltet das Drag-and-drop des Browsers innerhalb der Oberfläche ab (unter macOS beobachtet, für Windows von Tauri dokumentiert). Das Ziehen Liste → Deck läuft deshalb über Zeiger-Ereignisse; unter Windows und im macOS-Fenster noch zu bestätigen.
+- Der Import-Bericht wird in der Anwendung verworfen (`let _ = state.import(…)`): Dateien, die sich nicht lesen lassen, fehlen ohne Meldung. Es braucht eine Anzeige in der Oberfläche.
+- Die Grundzuweisung am Crossfader setzt die Anwendung, nicht die Engine; Offline-Render und Kommandozeile laufen weiter mit „durch". Wählbar ist die Zuweisung noch nirgends (nächster Schritt 2).
+- Tempo-Werte außerhalb 110–170 BPM kommen trotz Techno-Voreinstellung vor (95 bis 110 und 200 BPM an echter Musik); der Punkt zur Oktavierung oben beschreibt das Verhalten also nicht vollständig.
+- Zwei Live-Sets von 90 Minuten erzeugen Wellenform-Dateien von je rund 44 MB und bekommen ein einziges Tempo.
+- `Cargo.toml`: `rust-version` unter `workspace.package` wird von keinem Crate übernommen, die Mindestversion 1.80 ist damit nirgends wirksam; `dw-cli` steht ungenutzt in den Workspace-Abhängigkeiten. Cargo 1.100 warnt bei jedem Lauf.
+- CLAUDE.md nennt pnpm 10; unter macOS installiert `brew install pnpm` inzwischen Version 12.
 - Bei 1280×720 zeigt die Bibliothek 5 ganze Zeilen (10 mit aufgezogener Liste); die Prüfer wollten 7. Bühne und Zielgröße hatten Vorrang.
 
 ## Zurückgestellte Prüfbefunde
@@ -112,6 +118,8 @@ Stehen in der Spezifikation, Kapitel 12.2 (F1–F9). Für die Arbeit jetzt am wi
 
 Nur du kannst das prüfen. Bauen und Starten: siehe README.
 
+Ergebnisse der ersten Abnahme stehen im Abschnitt „Abnahme vom 19.11.2026 (macOS)" darunter.
+
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | 1 | Anwendung starten | Fenster erscheint, kein Hinweis „Kein Audio" |
@@ -123,6 +131,35 @@ Nur du kannst das prüfen. Bauen und Starten: siehe README.
 | 7 | Mit Kopfhörer an Ausgang 3/4 (Interface mit vier Kanälen): Kopfhörer-Cue an B | B nur im Kopfhörer, nicht auf dem Master |
 | 8 | Zehn Minuten laufen lassen, Lastanzeige beobachten | keine Aussetzer, Last stabil |
 | 9 | `deckwerk mix` mit zwei eigenen Tracks, Ergebnis anhören | Übergang klingt wie ein sauberer Bass-Tausch; wenn nicht: was stört? |
+
+## Abnahme vom 19.11.2026 (macOS)
+
+Rechner: MacBook Air (Apple Silicon), macOS 27.0.1. Ausgabe über die eingebauten Lautsprecher (2 Kanäle, 48 kHz), kein externes Interface. Musik: 144 eigene MP3-Dateien (2,7 GB), darunter zwei Live-Sets von rund 90 Minuten.
+
+Werkzeuge: Rust 1.100.0, Node 22.22.2, pnpm 12.21.0 (Homebrew liefert 12 statt der geforderten 10; das Lockfile lief mit `--frozen-lockfile` unverändert durch), CMake 4.5.0, Apple clang 21. Oberfläche und Anwendung bauten ohne Eingriff (Release in 1 min 08 s); macOS-spezifisch war nichts zu beheben. `cargo test --workspace`: 93 bestanden, 1 übersprungen, vor den Korrekturen.
+
+| Nr. | Ergebnis | Beobachtet |
+|---|---|---|
+| 1 | bestanden | Fenster erscheint vollständig, kein Hinweis „Kein Audio", Schriften und Wellenformen sauber. macOS fragt einmal nach Ordnerzugriff, unter dem Namen „Visual Studio Code", weil die Anwendung aus dessen Terminal gestartet wurde. |
+| 2 | bestanden nach Korrektur | 142 von 144 Tracks nach rund 1 s in der Liste; Analyse aller 142 in 2 min 26 s, erste Werte nach Sekunden, Oberfläche blieb bedienbar. Zwei Dateien fehlten ohne Meldung (siehe Fehler 2). Nach der Korrektur 144 Tracks, alle analysiert, keine Doppelten. |
+| 3 | nicht geprüft | Keine Referenzwerte zur Hand; die Dateien tragen weder BPM noch Tonart in den Tags. Auffällig, aber unbeurteilt: zwei Tracks mit 200,0 BPM, fünf zwischen 95 und 110 BPM, vier mit einer Tempo-Sicherheit unter 30 %. |
+| 4 | teilweise bestanden | Ton kommt sofort und läuft passend zur Wellenform. Die Kick ist in der Wellenform schwer zu erkennen. Ziehen aus der Liste aufs Deck ging nicht (Fehler 3); Laden über die Tasten A und B ging. Knacken bei Start und Stopp, Lage der Beat-Linien und Springen in der Übersicht sind nicht ausdrücklich beurteilt. |
+| 5–9 | offen | Noch nicht durchgegangen. Schritt 7 lässt sich an diesem Rechner nicht prüfen (nur zwei Ausgangskanäle). |
+
+Gefundene Fehler:
+
+1. **Crossfader ohne Wirkung** (MIX-06). Die Engine startet alle Kanäle mit der Zuweisung „durch", und die Anwendung wies nie eine Seite zu; der Simulator im Browser belegt A/C links und B/D rechts vor, deshalb fiel es dort nicht auf. Behoben: Die Anwendung weist beim Start A/C links und B/D rechts zu (`app/src/audio.rs`). Test: `crossfader_fades_deck_a_out` in `app/tests/state.rs`. Am Gerät noch nicht ausdrücklich bestätigt; das geschieht in Schritt 6.
+2. **Dateien mit fehlerhaftem Tag fehlen in der Bibliothek** (BIB-01). Ein Datum im Jahres-Feld („08-05-2026" in `TYER`) ließ lofty die ganze Datei ablehnen. Behoben: Tags werden nachsichtig gelesen, zur Not ganz ohne Tags (`crates/dw-library/src/import.rs`). Test: `malformed_tag_does_not_block_import` in `crates/dw-library/tests/library.rs`. Am Gerät bestätigt.
+3. **Ziehen aus der Liste aufs Deck ohne Wirkung** (DECK-04), unter macOS. Mit `dragDropEnabled` fängt die Hülle jedes Ziehen über dem Fenster ab (wry ruft das Verhalten des Webviews dann nicht mehr auf), `dragover` und `drop` erreichen die Seite nicht. Für Windows war das als Verdacht vermerkt, es trifft macOS ebenso. Behoben: Das Ziehen läuft über Zeiger-Ereignisse statt über das Drag-and-drop des Browsers (`ui/src/app/dnd.ts`), mit Marke am Zeiger und Abbruch per Esc. Tests: `ui/src/app/dnd.test.ts`; zusätzlich im Browser mit simuliertem Kern nachgestellt (Ziehen auf Deck B lädt, Loslassen daneben nicht, 2 px Weg bleibt ein Klick). Im macOS-Fenster noch nicht bestätigt.
+
+Fehler 1 und 2 sind nicht macOS-spezifisch.
+
+Befund ohne Korrektur: Die Kick hebt sich in der Detail-Wellenform zu wenig ab. Ob es an der Höhe oder an den Farben der Bänder liegt, ist offen.
+
+Wünsche aus der Abnahme (neue Funktionen, keine Befunde):
+
+- **Was passt zum laufenden Track?** Zeichen je Zeile der Bibliothek für Tonart (passt / geht / reibt nach 5.11) und Tempo (Abstand zum laufenden Tempo), dazu Sortieren und Filtern danach. Entspricht dem zurückgestellten Befund UX 10; gewünscht vor Stufe 3.
+- **Weitere Darstellungen der Wellenform** zur Auswahl, etwa drei Bänder überlagert oder gestapelt.
 
 ## Befehle
 

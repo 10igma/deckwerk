@@ -267,3 +267,25 @@ body[data-scroll='true'] {
   line-height: 1.45;
   color: var(--text-2);
 }
+
+/* Ziehen eines Tracks aus der Liste (app/dnd.ts): Marke am Zeiger, keine Textauswahl. */
+:root[data-track-drag] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+.drag-ghost {
+  position: fixed;
+  left: var(--sp-3);
+  top: var(--sp-3);
+  z-index: var(--z-tip);
+  max-width: 20rem;
+  padding: var(--sp-1) var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  background: var(--bg-3);
+  border: var(--stroke-1) solid var(--line-2);
+  pointer-events: none;
+}

@@ -1,6 +1,8 @@
 //! Import von Dateien und Ordnern (BIB-01, BIB-03, BIB-05).
 
 use crate::{now, search_text, Library, Result};
+use lofty::config::{ParseOptions, ParsingMode};
+use lofty::file::TaggedFile;
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use rusqlite::{params, OptionalExtension};
@@ -75,8 +77,22 @@ struct Meta {
     channels: u8,
 }
 
+/// Liest Eigenschaften und Tags. Fehlerhafte Angaben (etwa ein Datum im Jahres-Feld) sollen den
+/// Track nicht aus der Bibliothek halten: erst nachsichtig lesen, zur Not ganz ohne Tags.
+fn read_tagged(path: &Path) -> std::result::Result<TaggedFile, String> {
+    let attempts = [ParseOptions::new().parsing_mode(ParsingMode::Relaxed), ParseOptions::new().read_tags(false)];
+    let mut first_error = None;
+    for options in attempts {
+        match Probe::open(path).map_err(|e| e.to_string())?.options(options).read() {
+            Ok(tagged) => return Ok(tagged),
+            Err(e) => first_error = first_error.or(Some(e.to_string())),
+        }
+    }
+    Err(first_error.unwrap_or_default())
+}
+
 fn read_meta(path: &Path) -> std::result::Result<Meta, String> {
-    let tagged = Probe::open(path).map_err(|e| e.to_string())?.read().map_err(|e| e.to_string())?;
+    let tagged = read_tagged(path)?;
     let props = tagged.properties();
     let mut m = Meta {
         duration: props.duration().as_secs_f64(),

@@ -3,6 +3,7 @@
 
 use dw_audio::device;
 use dw_audio::{create, Controller, Routing};
+use dw_core::{Command, DeckId, XfAssign};
 use serde::Serialize;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -57,7 +58,19 @@ pub fn start() -> (Controller, AudioInfo) {
             run_without_device(tx, Some(error));
         })
         .expect("Audio-Thread konnte nicht gestartet werden");
-    rx.recv().expect("Audio-Thread hat sich nicht gemeldet")
+    let (mut ctl, info) = rx.recv().expect("Audio-Thread hat sich nicht gemeldet");
+    assign_crossfader(&mut ctl);
+    (ctl, info)
+}
+
+/// Grundzuweisung am Crossfader (MIX-06): A und C links, B und D rechts. Die Engine selbst
+/// startet mit „durch", damit der Offline-Render ohne Crossfader auskommt; in der Anwendung
+/// wäre der Regler so ohne Wirkung.
+fn assign_crossfader(ctl: &mut Controller) {
+    for deck in DeckId::ALL {
+        let assign = if deck.index() % 2 == 0 { XfAssign::Left } else { XfAssign::Right };
+        ctl.send(Command::XfAssign { deck, assign });
+    }
 }
 
 fn run_without_device(tx: mpsc::Sender<(Controller, AudioInfo)>, error: Option<String>) {

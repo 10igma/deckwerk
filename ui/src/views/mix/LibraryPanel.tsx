@@ -1,8 +1,8 @@
 // Bibliothek in der Ansicht „Mixen": Suche, sortierbare Spalten, Laden auf Deck A/B
 // per Lade-Taste, Shift + Pfeil oder Drag-and-drop; Doppelklick lädt nur in ein leeres Deck (9.3).
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { loadDown, loadToFreeDeck, loadUp, setVisibleTrackIds, toggleLibraryBig } from '../../app/actions';
-import { startTrackDrag } from '../../app/dnd';
+import { beginTrackDrag, useDraggedTrack } from '../../app/dnd';
 import { shortcutKeys } from '../../app/keymap';
 import { setUi, useUi, type SortKey } from '../../app/store';
 import type { DeckId, TrackInfo } from '../../core/types';
@@ -122,7 +122,7 @@ export function LibraryPanel() {
   const big = useUi((s) => s.libraryBig);
   const onA = useUi((s) => s.deckTracks.a?.id ?? null);
   const onB = useUi((s) => s.deckTracks.b?.id ?? null);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const dragId = useDraggedTrack();
   const body = useRef<HTMLDivElement | null>(null);
 
   const rows = useMemo(() => sortTracks(filterTracks(tracks, search), sortKey, sortDir, lang), [tracks, search, sortKey, sortDir, lang]);
@@ -214,12 +214,9 @@ export function LibraryPanel() {
               dim={tr.missing}
               zebra={n % 2 === 1}
               data-track={tr.id}
-              draggable={!tr.missing}
-              onDragStart={(e) => {
-                startTrackDrag(e, tr.id);
-                setDragId(tr.id);
+              onPointerDown={(e) => {
+                if (!tr.missing) beginTrackDrag(e, tr.id, tr.artist ? `${tr.artist} – ${tr.title}` : tr.title);
               }}
-              onDragEnd={() => setDragId(null)}
               onClick={() => setUi({ selectedId: tr.id })}
               onDoubleClick={() => loadToFreeDeck(tr.id)}
             >

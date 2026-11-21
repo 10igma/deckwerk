@@ -264,3 +264,48 @@ fn search_and_sort_are_fast_with_20000_tracks() {
     println!("langsamste Abfrage bei 20 000 Tracks: {worst:.1} ms");
     assert!(worst <= 100.0, "{worst:.1} ms");
 }
+
+/// Baut eine MP3-Datei mit ID3v2.3-Angaben, deren Jahres-Feld ein ganzes Datum in falscher
+/// Form enthält („08-05-2026"). So kam sie in der Abnahme am Gerät vor.
+fn mp3_with_bad_year(target: &Path) {
+    let original = std::fs::read(data().join("tagged.mp3")).unwrap();
+    // Vorhandene ID3v2-Angaben abtrennen: Kopf 10 Bytes, Länge in 4 × 7 Bit.
+    let audio = if original.starts_with(b"ID3") {
+        let len = original[6..10].iter().fold(0usize, |n, &b| (n << 7) | (b & 0x7f) as usize);
+        &original[10 + len..]
+    } else {
+        &original[..]
+    };
+    let frame = |id: &[u8; 4], text: &str| {
+        let mut f = id.to_vec();
+        f.extend_from_slice(&(text.len() as u32 + 1).to_be_bytes());
+        f.extend_from_slice(&[0, 0, 0]); // Flags, Kodierung Latin-1
+        f.extend_from_slice(text.as_bytes());
+        f
+    };
+    let frames = [frame(b"TIT2", "Schiefes Datum"), frame(b"TPE1", "Antje Kovac"), frame(b"TYER", "08-05-2026")].concat();
+    let n = frames.len();
+    let mut file = b"ID3\x03\x00\x00".to_vec();
+    file.extend_from_slice(&[(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    file.extend_from_slice(&frames);
+    file.extend_from_slice(audio);
+    std::fs::write(target, file).unwrap();
+}
+
+/// BIB-01: Eine fehlerhafte Angabe in den Tags darf den Track nicht aus der Bibliothek halten.
+/// Die lesbaren Angaben bleiben erhalten.
+#[test]
+fn malformed_tag_does_not_block_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("schief.mp3");
+    mp3_with_bad_year(&file);
+
+    let mut lib = Library::open(&tmp.path().join("bib")).unwrap();
+    let report = lib.import_paths(&[file]).unwrap();
+    assert_eq!((report.added, report.failed.len()), (1, 0), "{:?}", report.failed);
+
+    let tracks = lib.tracks(&TrackQuery::default()).unwrap();
+    assert_eq!(tracks[0].title, "Schiefes Datum");
+    assert_eq!(tracks[0].artist, "Antje Kovac");
+    assert!(tracks[0].duration > 0.2 && tracks[0].duration < 0.5, "Länge {}", tracks[0].duration);
+}
