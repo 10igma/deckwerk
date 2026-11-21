@@ -4,20 +4,19 @@ Stand: 21.11.2026. Diese Datei zuerst lesen, dann `docs/spezifikation.md`.
 
 ## Wo wir stehen
 
-Stufe 0 (Fundament) ist fertig, Stufe 1 (Kern-Mixing) bis auf die Abnahme am Gerät und die Audio-Einstellungen. Die Desktop-Anwendung läuft unter Linux mit echtem Kern: Musik importieren, Analyse im Hintergrund, zwei Tracks laden, synchron abspielen. Unter macOS ist sie seit dem 19.11.2026 aus den Quellen gebaut und gestartet; dort kommt Ton aus den eingebauten Lautsprechern. Die Abnahme am Gerät ist begonnen (Schritte 1, 2 und 4), die Schritte 5 bis 9 stehen aus.
+Stufe 0 (Fundament) ist fertig, Stufe 1 (Kern-Mixing) bis auf die Abnahme am Gerät und die Audio-Einstellungen. Die Desktop-Anwendung läuft unter Linux mit echtem Kern: Musik importieren, Analyse im Hintergrund, zwei Tracks laden, synchron abspielen. Unter macOS ist sie seit dem 19.11.2026 aus den Quellen gebaut und gestartet; dort kommt Ton aus den eingebauten Lautsprechern. Die Abnahme am Gerät ist begonnen (Schritte 1, 2 und 4), die Schritte 5 bis 9 stehen aus. Unter Windows ist sie seit dem 21.11.2026 ebenfalls aus den Quellen gebaut und gestartet; dort ist die Abnahme am 21.11.2026 durchgegangen: Schritte 1, 2, 4, 5, 6, 8 und 9 bestanden, Schritt 3 mit nur einem Referenz-Track (falsch erkannt), Schritt 7 nicht prüfbar.
 
 Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutachtet; ihre Befunde sind eingearbeitet, die zurückgestellten stehen unten.
 
 ## Nächster Schritt
 
-Die Abnahme geht auf einem Windows-Rechner weiter; siehe „Übergabe: Weiter unter Windows" weiter unten.
-
-1. **Abnahme am Gerät fortsetzen** (braucht dich): Ziehen aus der Liste aufs Deck und Crossfader bestätigen, dann Schritte 5 bis 9. Stand und Befunde im Abschnitt „Abnahme vom 19.11.2026 (macOS)".
-2. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
-3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
-4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
-5. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
-6. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
+1. **Reste der Abnahme** (braucht dich): Schritt 3 mit Referenzwerten für rund 20 Tracks; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
+2. **cpal und WASAPI-Geräte mit strenger Formatprüfung** (als Nächstes; eigene Aufgabe, weil es eine festgelegte Abhängigkeit berührt): Ein 7.1-Headset lässt sich unter Windows gar nicht öffnen, siehe Fehler 4 im Windows-Abschnitt. Zu klären: behebt eine neuere cpal-Version das, oder wird cpal 0.15.3 mit korrigierter Lautsprecher-Zuordnung mitgeführt.
+3. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
+4. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
+5. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
+6. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
+7. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
 
 ## Erledigte Anforderungen
 
@@ -48,10 +47,10 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 ## Nicht geprüft
 
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
-- **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, WASAPI/ASIO und ALSA/JACK sind weiter nur übersetzt.
-- **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist nichts davon geschehen.
+- **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich nicht öffnen (Fehler 4 im Windows-Abschnitt).
+- **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist sie ebenfalls aus den Quellen gebaut und gestartet (21.11.2026), mit der Toolchain `stable-msvc`; den Windows-Installer hat noch niemand gestartet.
 - **Klang.** EQ, Filter, Limiter und Übergang sind gemessen, nicht gehört.
-- **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Ziehen von Reglern, Zahleneingabe, Ziehen aus der Liste aufs Deck und das Ablegen von Dateien auf dem Fenster sind dort nicht nachgestellt (im Browser schon).
+- **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Zahleneingabe ist dort nicht nachgestellt (im Browser schon). Ziehen von Reglern, Ziehen aus der Liste aufs Deck und das Ablegen eines Ordners auf dem Fenster sind unter Windows am 21.11.2026 von Hand geprüft, unter macOS und Linux nicht.
 - **Grafik unter Linux.** In der Bauumgebung kommt WebGL 2 in WebKitGTK nicht direkt auf den Schirm; die Wellenformen werden dort über eine 2D-Fläche kopiert. Wie sich das mit echter Grafikkarte verhält und was es an Bildrate kostet, ist ungemessen.
 - **Rot-Grün-Simulation** der Farben (VIS-12).
 
@@ -68,20 +67,24 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - Cue-Punkt, CDJ-Cue und Live-Schutz liegen in der Oberfläche statt im Kern. Fader-Kurven zur Auswahl und 4-Band-EQ fehlen.
 - `DeckState` trägt keine Track-Kennung; die Oberfläche merkt sich selbst, was geladen ist.
 - Geräte, die kein 32-bit-Gleitkomma annehmen, werden nicht geöffnet (keine Umwandlung in 16 bit).
-- `dragDropEnabled` in `app/tauri.conf.json` ist für den Import durch Ablegen nötig und schaltet das Drag-and-drop des Browsers innerhalb der Oberfläche ab (unter macOS beobachtet, für Windows von Tauri dokumentiert). Das Ziehen Liste → Deck läuft deshalb über Zeiger-Ereignisse; unter Windows und im macOS-Fenster noch zu bestätigen.
+- `dragDropEnabled` in `app/tauri.conf.json` ist für den Import durch Ablegen nötig und schaltet das Drag-and-drop des Browsers innerhalb der Oberfläche ab (unter macOS beobachtet, für Windows von Tauri dokumentiert). Das Ziehen Liste → Deck läuft deshalb über Zeiger-Ereignisse; unter Windows am 21.11.2026 bestätigt, im macOS-Fenster noch nicht.
 - Der Import-Bericht wird in der Anwendung verworfen (`let _ = state.import(…)`): Dateien, die sich nicht lesen lassen, fehlen ohne Meldung. Es braucht eine Anzeige in der Oberfläche.
-- Die Grundzuweisung am Crossfader setzt die Anwendung, nicht die Engine; Offline-Render und Kommandozeile laufen weiter mit „durch". Wählbar ist die Zuweisung noch nirgends (nächster Schritt 2).
+- Die Grundzuweisung am Crossfader setzt die Anwendung, nicht die Engine; Offline-Render und Kommandozeile laufen weiter mit „durch". Wählbar ist die Zuweisung noch nirgends (nächster Schritt 3).
 - Tempo-Werte außerhalb 110–170 BPM kommen trotz Techno-Voreinstellung vor (95 bis 110 und 200 BPM an echter Musik); der Punkt zur Oktavierung oben beschreibt das Verhalten also nicht vollständig.
 - Zwei Live-Sets von 90 Minuten erzeugen Wellenform-Dateien von je rund 44 MB und bekommen ein einziges Tempo.
 - `Cargo.toml`: `rust-version` unter `workspace.package` wird von keinem Crate übernommen, die Mindestversion 1.80 ist damit nirgends wirksam; `dw-cli` steht ungenutzt in den Workspace-Abhängigkeiten. Cargo 1.100 warnt bei jedem Lauf.
 - CLAUDE.md nennt pnpm 10; unter macOS installiert `brew install pnpm` inzwischen Version 12.
+- Beim Ziehen eines Ordners über das Fenster gibt es keine Rückmeldung (kein Rahmen, kein Hinweis); die Anwendung reagiert nur auf das Loslassen (`app/src/lib.rs`). Der Import selbst geht.
+- Das Ausgabegerät ist nicht wählbar: Die Anwendung öffnet beim Start das Standardgerät des Systems; ein Wechsel verlangt einen Neustart (nächster Schritt 3).
+- Ab vier Kanälen liegt der Kopfhörer-Weg fest auf den Kanälen 3/4. Bei einem Surround-Gerät (5.1, 7.1) sind das Center und Subwoofer, kein zweiter Stereo-Ausgang; die Zuweisung muss wählbar werden (nächster Schritt 3).
+- cpal 0.15.3 übergibt WASAPI bei 32-bit-Gleitkomma Formate ohne Lautsprecher-Zuordnung; Geräte mit strenger Prüfung lehnen damit alles ab (Fehler 4 im Windows-Abschnitt, nächster Schritt 2).
 - Bei 1280×720 zeigt die Bibliothek 5 ganze Zeilen (10 mit aufgezogener Liste); die Prüfer wollten 7. Bühne und Zielgröße hatten Vorrang.
 
 ## Zurückgestellte Prüfbefunde
 
 | Befund | Kommt mit |
 |---|---|
-| Einstellungen für Mixer und Clock (UX 9) | nächster Schritt 2 |
+| Einstellungen für Mixer und Clock (UX 9) | nächster Schritt 3 |
 | Verträglichkeits-Spalte in der Bibliothek (UX 10) | Stufe 3 |
 | Cover und „nächster Abschnitt" am Deck (UX 13) | Stufe 3 |
 | „Rückgängig" nach dem Laden in ein stehendes Deck (UX 4) | Stufe 2 |
@@ -150,7 +153,7 @@ Werkzeuge: Rust 1.100.0, Node 22.22.2, pnpm 12.21.0 (Homebrew liefert 12 statt d
 
 Gefundene Fehler:
 
-1. **Crossfader ohne Wirkung** (MIX-06). Die Engine startet alle Kanäle mit der Zuweisung „durch", und die Anwendung wies nie eine Seite zu; der Simulator im Browser belegt A/C links und B/D rechts vor, deshalb fiel es dort nicht auf. Behoben: Die Anwendung weist beim Start A/C links und B/D rechts zu (`app/src/audio.rs`). Test: `crossfader_fades_deck_a_out` in `app/tests/state.rs`. Am Gerät noch nicht ausdrücklich bestätigt; das geschieht in Schritt 6.
+1. **Crossfader ohne Wirkung** (MIX-06). Die Engine startet alle Kanäle mit der Zuweisung „durch", und die Anwendung wies nie eine Seite zu; der Simulator im Browser belegt A/C links und B/D rechts vor, deshalb fiel es dort nicht auf. Behoben: Die Anwendung weist beim Start A/C links und B/D rechts zu (`app/src/audio.rs`). Test: `crossfader_fades_deck_a_out` in `app/tests/state.rs`. Am Gerät bestätigt am 21.11.2026 unter Windows (Schritt 6).
 2. **Dateien mit fehlerhaftem Tag fehlen in der Bibliothek** (BIB-01). Ein Datum im Jahres-Feld („08-05-2026" in `TYER`) ließ lofty die ganze Datei ablehnen. Behoben: Tags werden nachsichtig gelesen, zur Not ganz ohne Tags (`crates/dw-library/src/import.rs`). Test: `malformed_tag_does_not_block_import` in `crates/dw-library/tests/library.rs`. Am Gerät bestätigt.
 3. **Ziehen aus der Liste aufs Deck ohne Wirkung** (DECK-04), unter macOS. Mit `dragDropEnabled` fängt die Hülle jedes Ziehen über dem Fenster ab (wry ruft das Verhalten des Webviews dann nicht mehr auf), `dragover` und `drop` erreichen die Seite nicht. Für Windows war das als Verdacht vermerkt, es trifft macOS ebenso. Behoben: Das Ziehen läuft über Zeiger-Ereignisse statt über das Drag-and-drop des Browsers (`ui/src/app/dnd.ts`), mit Marke am Zeiger und Abbruch per Esc. Tests: `ui/src/app/dnd.test.ts`; zusätzlich im Browser mit simuliertem Kern nachgestellt (Ziehen auf Deck B lädt, Loslassen daneben nicht, 2 px Weg bleibt ein Klick). Im macOS-Fenster noch nicht bestätigt.
 
@@ -163,40 +166,47 @@ Wünsche aus der Abnahme (neue Funktionen, keine Befunde):
 - **Was passt zum laufenden Track?** Zeichen je Zeile der Bibliothek für Tonart (passt / geht / reibt nach 5.11) und Tempo (Abstand zum laufenden Tempo), dazu Sortieren und Filtern danach. Entspricht dem zurückgestellten Befund UX 10; gewünscht vor Stufe 3.
 - **Weitere Darstellungen der Wellenform** zur Auswahl, etwa drei Bänder überlagert oder gestapelt.
 
-## Übergabe: Weiter unter Windows
+## Abnahme vom 21.11.2026 (Windows)
 
-Die Abnahme wurde am 19.11.2026 unter macOS begonnen und wird auf einem Windows-Rechner fortgesetzt. Dieser Abschnitt enthält alles, was die nächste Sitzung dafür braucht; nach Abschluss der Abnahme kann er entfallen.
+Rechner: Windows 11 Pro (10.0.26300), x64. Ausgabe über WASAPI auf dem Standardgerät des Systems, kein Interface mit vier Kanälen; Schritt 7 bleibt damit ungeprüft. Musik: 142 der 144 MP3-Dateien vom Mac (2,25 GB), ohne die beiden Live-Sets von 90 Minuten.
 
-**Stand im Repository.** Die Arbeit liegt auf dem Branch `abnahme-macos` (ein Commit über `main`). Dort weiterarbeiten oder ihn zuerst nach `main` übernehmen.
+Werkzeuge: Rust 1.100.0 mit der Toolchain `stable-x86_64-pc-windows-msvc` (Standard auf dem Rechner ist `gnullvm`, gebaut wurde mit `cargo +stable-msvc`), MSVC 14.52 aus Visual Studio Enterprise 2026, Windows SDK 10.0.26100, CMake und Ninja aus Visual Studio (über `vcvars64.bat`), Node 24.18.0 statt 22, pnpm 10.34.9 über `corepack pnpm@10` (nicht installiert). Am Projekt war für den Bau nichts zu ändern; Release-Bau der Anwendung in 72 s. Ein erster Testlauf scheiterte an `LNK1181: dbghelp.lib`, weil der Visual Studio Installer das Windows SDK noch einspielte; kein Fehler des Projekts.
 
-**Musik.** Der Ordner `mp3/` (144 Dateien, 2,7 GB) ist von Git ausgenommen und liegt nur auf dem Mac. Auf den Windows-Rechner von Hand kopieren, am besten wieder nach `mp3/` im Wurzelordner. Bibliothek, Analyse und Wellenform-Cache sind je Rechner getrennt; unter Windows wird neu importiert und analysiert.
+Tests: `cargo test --workspace` 95 bestanden, 1 übersprungen, vor der Korrektur; danach 98 bestanden. Oberfläche: Typprüfung ohne Fehler, 114 Tests.
 
-**Voraussetzungen unter Windows.** Rust (stabil, ab 1.80, MSVC-Toolchain), Visual Studio Build Tools mit „Desktopentwicklung mit C++", Node 22, pnpm, CMake, WebView2-Laufzeit (bei Windows 11 vorhanden). Unter macOS liefen pnpm 12 und CMake 4.5 ohne Probleme, obwohl CLAUDE.md pnpm 10 nennt. Erst prüfen, was fehlt, und nur nach Zustimmung installieren.
+| Nr. | Ergebnis | Beobachtet |
+|---|---|---|
+| 1 | bestanden | Fenster erscheint vollständig, Schriften sauber, kein Hinweis „Kein Audio" (am ersten Standardgerät), kein zusätzliches Konsolenfenster, keine Abfrage von Windows. |
+| 2 | bestanden | Ordner aufs Fenster gezogen: wird angenommen, 142 Tracks nach rund 0,5 s in der Liste, Analyse läuft sofort an mit rund einem Track je Sekunde, Oberfläche bleibt bedienbar; im Datenordner liegen danach 142 Wellenform-Dateien. Die beiden Antix-Dateien mit dem kaputten Jahres-Feld sind dabei (Gegenprobe zu Fehler 2). Beim Ziehen über das Fenster fehlt eine Rückmeldung (offener Punkt). |
+| 3 | ein Track geprüft, falsch | Erste Referenz: `09-ikon-1000_different_stories.mp3` hat 100 BPM und steht in e-Moll (9A); angezeigt werden 200,00 BPM und 12B (E-Dur, als unsicher markiert). Mit `deckwerk analyze` nachgestellt. Tempo: der offene Punkt zur Oktavierung außerhalb 110–170 BPM, jetzt mit einem belegten Fall. Tonart: Grundton richtig, Tongeschlecht falsch (Dur statt Moll). Weitere Referenzwerte fehlen. |
+| 4 | bestanden, mit Befund | Ausgabe über „Odyssey G95SC (NVIDIA High Definition Audio)", Stereo, 48 kHz. Ziehen aus der Liste aufs Deck geht (Gegenprobe zu Fehler 3 der macOS-Abnahme), Klick und Doppelklick ebenso. Ton kommt sofort, kein Knacken bei Start und Stopp, Wellenform läuft mit dem Ton, Springen in der Übersicht ohne Knacken. Befund wie am Mac: Die Kick ist in der Detail-Wellenform schwer zu erkennen; am unteren Band und an den Beat-Linien ist sie zu sehen, im oberen Teil gehen die Bänder in ähnlichen Orange- und Gelbtönen ineinander über. Das spricht für die Farben, nicht für die Höhe. |
+| 5 | bestanden | Zweiter Track auf B, Sync und Start: Beide Kicks liegen hörbar übereinander, beide Decks zeigen dasselbe Tempo. Wie lange gehört wurde, ist nicht festgehalten; die fünf Minuten sind damit nicht ausdrücklich belegt. |
+| 6 | bestanden | Crossfader blendet A und B aus (Gegenprobe zu Fehler 1 der macOS-Abnahme, damit erstmals am Gerät bestätigt), EQ-Kills nehmen das Band heraus, EQ-Regler, Filter und Kanalfader ohne Knackser. Die Regler lassen sich mit der Maus ziehen. |
+| 7 | nicht prüfbar | Kein Gerät mit vier nutzbaren Ausgangskanälen. |
+| 8 | bestanden laut Rückmeldung | Beide Decks synchron laufen lassen: „passt so". Dauer und Stand der Lastanzeige sind nicht festgehalten; zu Beginn der Abnahme zeigte sie 0 bis 1 %. |
+| 9 | bestanden laut Rückmeldung | `deckwerk mix` mit `05-antix-the_hoard_john_monkman_remix.mp3` und `08-antix-cavalier_emok_remix.mp3` (beide 125 BPM, 8A → 7A), 32 Takte: in 1,0 s gerendert, größter Beat-Versatz 0,0000 Beats; angehört, „passt so". Einzelheiten zum Klang des Bass-Tauschs sind nicht festgehalten. |
 
-**Ablauf.**
+Gefundene Fehler (Zählung setzt die der macOS-Abnahme fort):
 
-1. `pnpm --dir ui install && pnpm --dir ui build`, dann `cargo run --release -p deckwerk-app`. Schlägt der Bau fehl: Ursache beheben und festhalten, was Windows-spezifisch war.
-2. `cargo test --workspace` sowie `pnpm --dir ui typecheck && pnpm --dir ui test`. Stand vom Mac: 95 bestanden, 1 übersprungen; Oberfläche 114 Tests.
-3. Die Abnahmeliste von Schritt 1 an neu durchgehen. Es ist ein anderes System mit anderer Audio-Schnittstelle (WASAPI), die Ergebnisse vom Mac gelten hier nicht. Ergebnisse in einen eigenen Abschnitt „Abnahme vom … (Windows)" eintragen, nach dem Muster des macOS-Abschnitts.
+4. **7.1-Headset lässt sich nicht öffnen** (ENG-01, ENG-02), unter Windows. Mit „CORSAIR ST100 Headset Output" als Standardgerät meldet die Anwendung „Kein Audio: Gerät unterstützt die gewünschte Einstellung nicht: 48000 Hz, 4 Kanäle". Zwei Ursachen:
+   - Die Voreinstellung begrenzte die Kanalzahl fest auf 2 bis 4; das Gerät meldet 8 Kanäle, und WASAPI nimmt im geteilten Modus neben Stereo nur die Kanalzahl des Geräts an. Behoben: Die Kanalzahl wird in fester Reihenfolge probeweise geöffnet (begrenzte Zahl, Zahl des Geräts, Stereo; `channel_candidates` in `crates/dw-audio/src/device.rs`); ein Gerät mit nur einer Möglichkeit wird wie bisher direkt geöffnet. Tests: drei Tests zu `channel_candidates` ebenda. An einem Gerät, dem das hilft, nicht bestätigt.
+   - **Offen:** Auch danach öffnet das Gerät nicht. Direkt an WASAPI gemessen: Es nimmt 8 Kanäle mit Lautsprecher-Zuordnung (Maske 0x63F) und Stereo mit Zuordnung (Maske 0x3) an, lehnt beide ohne Zuordnung (Maske 0) aber ab. cpal 0.15.3 übergibt bei 32-bit-Gleitkomma immer die Maske 0 (`KSAUDIO_SPEAKER_DIRECTOUT`) und wertet die Antwort „ähnliches Format möglich" als Ablehnung; es meldet für das Gerät kein einziges unterstütztes Format. Die drei anderen Ausgänge des Rechners (Stereo) melden je vier Formate und öffnen. In unserem Code nicht zu beheben; nächster Schritt 2.
 
-**Worauf unter Windows besonders zu achten ist.**
+## Bauen unter Windows
 
-- **Ziehen aus der Liste aufs Deck.** Unter macOS ging es nicht (Fehler 3); die Korrektur über Zeiger-Ereignisse ist bisher nur im Browser nachgestellt, in keinem echten Fenster bestätigt. Prüfen: Marke am Zeiger, Markierung des Zieldecks, Laden beim Loslassen; Klick und Doppelklick auf die Zeile müssen weiter gehen.
-- **Musikordner aufs Fenster ziehen** (Import). Hängt an `dragDropEnabled`; unter Windows nie ausprobiert.
-- **Crossfader.** Korrektur (Fehler 1) ist am Gerät nicht ausdrücklich bestätigt: Track auf A, Crossfader ganz nach rechts, A muss verstummen.
-- **Import.** Es müssen 144 Tracks erscheinen. Die beiden Antix-Dateien mit dem kaputten Jahres-Feld (`03-antix-human_nature_vosne_and_clutch_remix.mp3`, `10-antix-oma_rapeti_red_project_remix.mp3`) sind die Gegenprobe für Fehler 2.
-- **Audiogerät.** Geräte, die kein 32-bit-Gleitkomma annehmen, werden nicht geöffnet (offener Punkt); erscheint „Kein Audio", ist das der erste Verdacht. ASIO ist nur übersetzt.
-- **Schritt 7 (Kopfhörer auf 3/4)** braucht ein Interface mit vier Ausgangskanälen; am Mac war er nicht prüfbar.
-- **Schritt 3 (BPM und Tonart)** braucht Referenzwerte für 20 Tracks; die Dateien tragen keine in den Tags. Ohne Referenz bleibt er ungeprüft. Auffällige Werte stehen in der Tabelle des macOS-Abschnitts.
-- **Installer.** Den Windows-Installer aus der Pipeline hat noch niemand gestartet (nächster Schritt 5).
+So lief es am 21.11.2026 (Einzelheiten im Abschnitt „Abnahme vom 21.11.2026 (Windows)"): Visual Studio mit den MSVC-Buildtools und dem Windows SDK, Rust mit der Toolchain `stable-msvc`, Node, pnpm über corepack. CMake und Ninja kommen aus Visual Studio, wenn die Befehle in dessen Umgebung laufen (Eingabeaufforderung):
 
-**Am Mac noch offen** (dort oder unter Windows nachholen): Schritte 5, 6, 8 und 9; in Schritt 4 das Knacken bei Start und Stopp, die Lage der Beat-Linien auf den Kicks und das Springen in der Übersicht; die Frage, ob die Kick in der Wellenform wegen der Höhe oder wegen der Farben schwer zu erkennen ist.
+```bat
+"C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+corepack pnpm@10 --dir ui install --frozen-lockfile
+corepack pnpm@10 --dir ui build
+cargo +stable-msvc test --workspace
+cargo +stable-msvc run --release -p deckwerk-app
+```
 
-**Regeln der Zusammenarbeit**, wie in der ersten Sitzung vereinbart: je Schritt sagen, was zu tun und worauf zu achten ist, und auf die Rückmeldung warten; nur eindeutig eingrenzbare Fehler beheben, jeweils mit Test, alles andere als offenen Punkt aufschreiben; unter „Nicht geprüft" nur streichen, was wirklich geprüft wurde; erst bei grünen Tests committen und vor dem Push fragen.
+Die Musik (`mp3/`, von Git ausgenommen) liegt je Rechner getrennt; Bibliothek, Analyse und Wellenform-Cache ebenso (unter Windows in `%APPDATA%\app.deckwerk.desktop`).
 
-**Einstieg für die neue Sitzung** (so eingeben):
-
-> Lies CLAUDE.md und docs/fortschritt.md, dort vor allem „Übergabe: Weiter unter Windows". Ich setze die Abnahme am Gerät auf diesem Windows-Rechner fort. Prüfe die Voraussetzungen, baue und starte die Anwendung, lass die Tests laufen und geh dann die Abnahmeliste Schritt für Schritt mit mir durch. Mein Audio-Interface: … Meine Musik liegt in: …
+**Regeln der Zusammenarbeit bei der Abnahme:** je Schritt sagen, was zu tun und worauf zu achten ist, und auf die Rückmeldung warten; nur eindeutig eingrenzbare Fehler beheben, jeweils mit Test, alles andere als offenen Punkt aufschreiben; unter „Nicht geprüft" nur streichen, was wirklich geprüft wurde; erst bei grünen Tests committen und vor dem Push fragen.
 
 ## Befehle
 

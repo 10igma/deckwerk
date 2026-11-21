@@ -71,22 +71,55 @@ pub fn list_devices() -> Vec<DeviceInfo> {
     out
 }
 
+/// Kanalzahlen für die Ausgabe (ENG-02) in der Reihenfolge, in der sie versucht werden: die
+/// Vorgabe des Geräts, auf 2 bis 4 begrenzt, sofern das Gerät diese Zahl anbietet; dann die
+/// Vorgabe selbst; zuletzt Stereo. WASAPI im geteilten Modus nimmt neben Stereo nur die
+/// Kanalzahl des Geräts an; eine feste Begrenzung auf 4 scheitert dort an jedem 7.1-Gerät.
+pub fn channel_candidates(default_channels: u16, offered: &[u16]) -> Vec<u16> {
+    let mut out = Vec::with_capacity(3);
+    let wanted = default_channels.clamp(2, 4);
+    if offered.contains(&wanted) {
+        out.push(wanted);
+    }
+    for channels in [default_channels, 2] {
+        if !out.contains(&channels) {
+            out.push(channels);
+        }
+    }
+    out
+}
+
+/// Öffnet die Ausgabe probeweise mit stummem Signal und schließt sie wieder. Die Angaben des
+/// Geräts über seine Formate reichen nicht: Unter WASAPI meldet ein 7.1-Gerät 8 Kanäle als
+/// Vorgabe und kann genau diese beim Öffnen ablehnen.
+fn opens(device: &cpal::Device, channels: u16, sample_rate: u32) -> bool {
+    let config = cpal::StreamConfig { channels, sample_rate: cpal::SampleRate(sample_rate), buffer_size: cpal::BufferSize::Default };
+    device.build_output_stream(&config, |data: &mut [f32], _: &cpal::OutputCallbackInfo| data.fill(0.0), |_err| {}, None).is_ok()
+}
+
 /// Sinnvolle Voreinstellung für das Standardgerät: 48 kHz, wenn das Gerät sie kann, sonst seine
-/// eigene Abtastrate; die Kanalzahl des Geräts (mindestens 2, höchstens 4).
+/// eigene Abtastrate; die erste Kanalzahl aus `channel_candidates`, mit der sich das Gerät
+/// tatsächlich öffnen lässt.
 pub fn default_config() -> Result<OutputConfig, DeviceError> {
     let device = cpal::default_host().default_output_device().ok_or(DeviceError::NoDevice)?;
     let default = device.default_output_config().map_err(|e| DeviceError::Backend(e.to_string()))?;
-    let supports_48k = device.supported_output_configs().is_ok_and(|mut configs| {
-        configs.any(|c| c.sample_format() == cpal::SampleFormat::F32 && c.min_sample_rate().0 <= 48_000 && 48_000 <= c.max_sample_rate().0)
-    });
-    Ok(OutputConfig {
-        device: None,
-        sample_rate: if supports_48k { 48_000 } else { default.sample_rate().0 },
-        buffer_frames: None,
-        channels: default.channels().clamp(2, 4),
-    })
+    let configs: Vec<_> = device
+        .supported_output_configs()
+        .map(|configs| configs.filter(|c| c.sample_format() == cpal::SampleFormat::F32).collect())
+        .unwrap_or_default();
+    let covers = |c: &cpal::SupportedStreamConfigRange, rate: u32| c.min_sample_rate().0 <= rate && rate <= c.max_sample_rate().0;
+    let sample_rate = if configs.iter().any(|c| covers(c, 48_000)) { 48_000 } else { default.sample_rate().0 };
+    let offered: Vec<u16> = configs.iter().filter(|c| covers(c, sample_rate)).map(|c| c.channels()).collect();
+    let candidates = channel_candidates(default.channels(), &offered);
+    // Probiert wird nur, wenn es eine Wahl gibt; ein Stereo-Gerät wird wie bisher direkt geöffnet.
+    // Lässt sich keine Kanalzahl öffnen, meldet `start` den Fehler für die erste.
+    let channels = if candidates.len() == 1 {
+        candidates[0]
+    } else {
+        candidates.iter().copied().find(|&c| opens(&device, c, sample_rate)).unwrap_or(candidates[0])
+    };
+    Ok(OutputConfig { device: None, sample_rate, buffer_frames: None, channels })
 }
-
 /// Laufende Ausgabe. Beim Verwerfen endet sie.
 pub struct OutputStream {
     _stream: cpal::Stream,
@@ -133,4 +166,32 @@ pub fn start(config: &OutputConfig, controller: &Controller, mut processor: Proc
         })?;
     stream.play().map_err(|e| DeviceError::Backend(e.to_string()))?;
     Ok(OutputStream { _stream: stream, sample_rate: config.sample_rate, channels: config.channels, buffer_frames: config.buffer_frames })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::channel_candidates;
+
+    /// ENG-02: Ein 7.1-Gerät unter WASAPI meldet 8 Kanäle und bietet sonst nichts an. Die
+    /// frühere feste Begrenzung auf 4 ließ die Ausgabe scheitern („48000 Hz, 4 Kanäle“);
+    /// versucht werden die 8 Kanäle des Geräts und danach Stereo.
+    #[test]
+    fn surround_device_tries_its_own_channel_count_then_stereo() {
+        assert_eq!(channel_candidates(8, &[8]), [8, 2]);
+        assert_eq!(channel_candidates(8, &[]), [8, 2]);
+        assert_eq!(channel_candidates(6, &[6]), [6, 2]);
+    }
+
+    #[test]
+    fn channel_count_is_limited_to_four_where_the_device_offers_it() {
+        assert_eq!(channel_candidates(8, &[2, 4, 8]), [4, 8, 2]);
+        assert_eq!(channel_candidates(4, &[2, 4]), [4, 2]);
+    }
+
+    #[test]
+    fn stereo_and_mono_devices() {
+        assert_eq!(channel_candidates(2, &[2]), [2]);
+        assert_eq!(channel_candidates(1, &[1, 2]), [2, 1]);
+        assert_eq!(channel_candidates(1, &[1]), [1, 2]);
+    }
 }
