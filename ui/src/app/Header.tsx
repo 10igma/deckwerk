@@ -162,39 +162,24 @@ function AudioOutput() {
     });
   };
   const systemDefault = devices.find((d) => d.is_default);
+  // Das gewählte Gerät bleibt in der Liste, auch wenn das System es gerade nicht meldet.
+  const missing = st.device !== null && !devices.some((d) => d.name === st.device) ? st.device : null;
   return (
-    <div className="settings__block">
-      <span className="dw-label">{t('settings.audio')}</span>
-      <div className="settings__devices" role="group" aria-label={t('settings.audio')}>
-        <KeyBtn
-          mode="toggle"
-          size="sm"
-          block
-          className="settings__device"
-          active={st.device === null}
-          disabled={busy}
-          onPress={() => choose(null)}
-          sub={systemDefault ? systemDefault.name : undefined}
-          tip={{ name: t('settings.audioDefault'), value: systemDefault?.name }}
-        >
-          {t('settings.audioDefault')}
-        </KeyBtn>
-        {devices.map((d) => (
-          <KeyBtn
-            key={`${d.host}/${d.name}`}
-            mode="toggle"
-            size="sm"
-            block
-            className="settings__device"
-            active={st.device === d.name}
-            disabled={busy}
-            onPress={() => choose(d.name)}
-            sub={t('settings.audioChannels', { n: d.max_channels })}
-            tip={{ name: d.name, value: `${d.host} · ${t('settings.audioChannels', { n: d.max_channels })}` }}
-          >
-            {d.name}
-          </KeyBtn>
-        ))}
+    <>
+      <div className="settings__row">
+        <label className="dw-label" htmlFor="settings-audio">
+          {t('settings.audio')}
+        </label>
+        {/* Leerer Wert = Standardgerät des Systems; Gerätenamen sind nie leer. */}
+        <select id="settings-audio" className="settings__select" value={st.device ?? ''} disabled={busy} onChange={(e) => choose(e.target.value === '' ? null : e.target.value)}>
+          <option value="">{systemDefault ? `${t('settings.audioDefault')} (${systemDefault.name})` : t('settings.audioDefault')}</option>
+          {missing !== null && <option value={missing}>{missing}</option>}
+          {devices.map((d) => (
+            <option key={`${d.host}/${d.name}`} value={d.name}>
+              {`${d.name} · ${t('settings.audioChannels', { n: d.max_channels })}`}
+            </option>
+          ))}
+        </select>
       </div>
       {error !== null && (
         <p className="settings__note" data-tone="error" role="alert">
@@ -202,7 +187,7 @@ function AudioOutput() {
         </p>
       )}
       <p className="settings__note">{t('settings.audioNote')}</p>
-    </div>
+    </>
   );
 }
 
