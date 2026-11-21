@@ -11,12 +11,11 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 ## Nächster Schritt
 
 1. **Reste der Abnahme** (braucht dich): Schritt 3 mit Referenzwerten für rund 20 Tracks; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
-2. **cpal und WASAPI-Geräte mit strenger Formatprüfung** (als Nächstes; eigene Aufgabe, weil es eine festgelegte Abhängigkeit berührt): Ein 7.1-Headset lässt sich unter Windows gar nicht öffnen, siehe Fehler 4 im Windows-Abschnitt. Zu klären: behebt eine neuere cpal-Version das, oder wird cpal 0.15.3 mit korrigierter Lautsprecher-Zuordnung mitgeführt.
-3. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
-4. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
-5. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
-6. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
-7. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
+2. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
+3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
+4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
+5. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
+6. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
 
 ## Erledigte Anforderungen
 
@@ -47,7 +46,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 ## Nicht geprüft
 
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
-- **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich nicht öffnen (Fehler 4 im Windows-Abschnitt).
+- **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich erst mit cpal 0.18 öffnen (Fehler 4 im Windows-Abschnitt), gehört wurde darüber noch nichts. cpal 0.18 ist unter macOS und Linux weder gebaut noch gestartet; das zeigt erst die Pipeline.
 - **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist sie ebenfalls aus den Quellen gebaut und gestartet (21.11.2026), mit der Toolchain `stable-msvc`; den Windows-Installer hat noch niemand gestartet.
 - **Klang.** EQ, Filter, Limiter und Übergang sind gemessen, nicht gehört.
 - **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Zahleneingabe ist dort nicht nachgestellt (im Browser schon). Ziehen von Reglern, Ziehen aus der Liste aufs Deck und das Ablegen eines Ordners auf dem Fenster sind unter Windows am 21.11.2026 von Hand geprüft, unter macOS und Linux nicht.
@@ -69,22 +68,21 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - Geräte, die kein 32-bit-Gleitkomma annehmen, werden nicht geöffnet (keine Umwandlung in 16 bit).
 - `dragDropEnabled` in `app/tauri.conf.json` ist für den Import durch Ablegen nötig und schaltet das Drag-and-drop des Browsers innerhalb der Oberfläche ab (unter macOS beobachtet, für Windows von Tauri dokumentiert). Das Ziehen Liste → Deck läuft deshalb über Zeiger-Ereignisse; unter Windows am 21.11.2026 bestätigt, im macOS-Fenster noch nicht.
 - Der Import-Bericht wird in der Anwendung verworfen (`let _ = state.import(…)`): Dateien, die sich nicht lesen lassen, fehlen ohne Meldung. Es braucht eine Anzeige in der Oberfläche.
-- Die Grundzuweisung am Crossfader setzt die Anwendung, nicht die Engine; Offline-Render und Kommandozeile laufen weiter mit „durch". Wählbar ist die Zuweisung noch nirgends (nächster Schritt 3).
+- Die Grundzuweisung am Crossfader setzt die Anwendung, nicht die Engine; Offline-Render und Kommandozeile laufen weiter mit „durch". Wählbar ist die Zuweisung noch nirgends (nächster Schritt 2).
 - Tempo-Werte außerhalb 110–170 BPM kommen trotz Techno-Voreinstellung vor (95 bis 110 und 200 BPM an echter Musik); der Punkt zur Oktavierung oben beschreibt das Verhalten also nicht vollständig.
 - Zwei Live-Sets von 90 Minuten erzeugen Wellenform-Dateien von je rund 44 MB und bekommen ein einziges Tempo.
-- `Cargo.toml`: `rust-version` unter `workspace.package` wird von keinem Crate übernommen, die Mindestversion 1.80 ist damit nirgends wirksam; `dw-cli` steht ungenutzt in den Workspace-Abhängigkeiten. Cargo 1.100 warnt bei jedem Lauf.
+- `Cargo.toml`: `rust-version` unter `workspace.package` wird von keinem Crate übernommen, die Mindestversion 1.85 ist damit nirgends wirksam; `dw-cli` steht ungenutzt in den Workspace-Abhängigkeiten. Cargo 1.100 warnt bei jedem Lauf.
 - CLAUDE.md nennt pnpm 10; unter macOS installiert `brew install pnpm` inzwischen Version 12.
 - Beim Ziehen eines Ordners über das Fenster gibt es keine Rückmeldung (kein Rahmen, kein Hinweis); die Anwendung reagiert nur auf das Loslassen (`app/src/lib.rs`). Der Import selbst geht.
-- Das Ausgabegerät ist nicht wählbar: Die Anwendung öffnet beim Start das Standardgerät des Systems; ein Wechsel verlangt einen Neustart (nächster Schritt 3).
-- Ab vier Kanälen liegt der Kopfhörer-Weg fest auf den Kanälen 3/4. Bei einem Surround-Gerät (5.1, 7.1) sind das Center und Subwoofer, kein zweiter Stereo-Ausgang; die Zuweisung muss wählbar werden (nächster Schritt 3).
-- cpal 0.15.3 übergibt WASAPI bei 32-bit-Gleitkomma Formate ohne Lautsprecher-Zuordnung; Geräte mit strenger Prüfung lehnen damit alles ab (Fehler 4 im Windows-Abschnitt, nächster Schritt 2).
+- Das Ausgabegerät ist nicht wählbar: Die Anwendung öffnet beim Start das Standardgerät des Systems; ein Wechsel verlangt einen Neustart (nächster Schritt 2).
+- Ab vier Kanälen liegt der Kopfhörer-Weg fest auf den Kanälen 3/4. Bei einem Surround-Gerät (5.1, 7.1) sind das Center und Subwoofer, kein zweiter Stereo-Ausgang; die Zuweisung muss wählbar werden (nächster Schritt 2).
 - Bei 1280×720 zeigt die Bibliothek 5 ganze Zeilen (10 mit aufgezogener Liste); die Prüfer wollten 7. Bühne und Zielgröße hatten Vorrang.
 
 ## Zurückgestellte Prüfbefunde
 
 | Befund | Kommt mit |
 |---|---|
-| Einstellungen für Mixer und Clock (UX 9) | nächster Schritt 3 |
+| Einstellungen für Mixer und Clock (UX 9) | nächster Schritt 2 |
 | Verträglichkeits-Spalte in der Bibliothek (UX 10) | Stufe 3 |
 | Cover und „nächster Abschnitt" am Deck (UX 13) | Stufe 3 |
 | „Rückgängig" nach dem Laden in ein stehendes Deck (UX 4) | Stufe 2 |
@@ -96,7 +94,8 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 | Entscheidung | Grund |
 |---|---|
 | Kern in Rust, Oberfläche mit Tauri 2, React, WebGL 2 | Spezifikation 7.1 |
-| Symphonia 0.5 statt 0.6, cpal 0.15, rusqlite 0.32, lofty 0.22 | bekannte, stabile Schnittstellen; Anheben als eigene Aufgabe |
+| Symphonia 0.5 statt 0.6, rusqlite 0.32, lofty 0.22 | bekannte, stabile Schnittstellen; Anheben als eigene Aufgabe |
+| cpal 0.18 statt 0.15 (21.11.2026) | cpal 0.15 öffnet unter WASAPI keine Geräte mit strenger Formatprüfung (Fehler 4 der Windows-Abnahme); 0.18 lässt Windows das Format umwandeln. Folge: Mindestversion von Rust 1.85 statt 1.80 |
 | Opus über libopus (mitgebaut) | Symphonia hat keinen eigenen Opus-Decoder |
 | Abtastratenwandlung selbst geschrieben statt rubato | wenig Code, vollständig testbar, keine fremde Schnittstelle |
 | Beat-Sync als feste Kopplung an die Clock, kein Regelkreis | Abweichung bleibt unter einem Sample; Anschieben verschiebt den Versatz |
@@ -190,7 +189,7 @@ Gefundene Fehler (Zählung setzt die der macOS-Abnahme fort):
 
 4. **7.1-Headset lässt sich nicht öffnen** (ENG-01, ENG-02), unter Windows. Mit „CORSAIR ST100 Headset Output" als Standardgerät meldet die Anwendung „Kein Audio: Gerät unterstützt die gewünschte Einstellung nicht: 48000 Hz, 4 Kanäle". Zwei Ursachen:
    - Die Voreinstellung begrenzte die Kanalzahl fest auf 2 bis 4; das Gerät meldet 8 Kanäle, und WASAPI nimmt im geteilten Modus neben Stereo nur die Kanalzahl des Geräts an. Behoben: Die Kanalzahl wird in fester Reihenfolge probeweise geöffnet (begrenzte Zahl, Zahl des Geräts, Stereo; `channel_candidates` in `crates/dw-audio/src/device.rs`); ein Gerät mit nur einer Möglichkeit wird wie bisher direkt geöffnet. Tests: drei Tests zu `channel_candidates` ebenda. An einem Gerät, dem das hilft, nicht bestätigt.
-   - **Offen:** Auch danach öffnet das Gerät nicht. Direkt an WASAPI gemessen: Es nimmt 8 Kanäle mit Lautsprecher-Zuordnung (Maske 0x63F) und Stereo mit Zuordnung (Maske 0x3) an, lehnt beide ohne Zuordnung (Maske 0) aber ab. cpal 0.15.3 übergibt bei 32-bit-Gleitkomma immer die Maske 0 (`KSAUDIO_SPEAKER_DIRECTOUT`) und wertet die Antwort „ähnliches Format möglich" als Ablehnung; es meldet für das Gerät kein einziges unterstütztes Format. Die drei anderen Ausgänge des Rechners (Stereo) melden je vier Formate und öffnen. In unserem Code nicht zu beheben; nächster Schritt 2.
+   - Auch danach öffnete das Gerät nicht. Direkt an WASAPI gemessen: Es nimmt 8 Kanäle mit Lautsprecher-Zuordnung (Maske 0x63F) und Stereo mit Zuordnung (Maske 0x3) an, lehnt beide ohne Zuordnung (Maske 0) aber ab. cpal 0.15.3 übergibt bei 32-bit-Gleitkomma immer die Maske 0 (`KSAUDIO_SPEAKER_DIRECTOUT`) und wertet die Antwort „ähnliches Format möglich" als Ablehnung; es meldet für das Gerät kein einziges unterstütztes Format. Die drei anderen Ausgänge des Rechners (Stereo) melden je vier Formate und öffnen. Behoben durch das Anheben von cpal auf 0.18.2: Dort öffnet die Ausgabe mit der Umwandlung durch Windows (`AUTOCONVERTPCM`), das Gerät meldet 112 statt 0 Formate. Gemessen über `dw_audio::device::start` mit stummem Signal: 2, 4 und 8 Kanäle bei 48 kHz öffnen. In der Anwendung mit Ton noch nicht bestätigt. `cargo test --workspace` danach: 98 bestanden, 1 übersprungen.
 
 ## Bauen unter Windows
 

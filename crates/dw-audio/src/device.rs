@@ -40,15 +40,20 @@ pub struct OutputConfig {
 
 const RATES: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
 
+/// Name des Geräts, wie ihn das System anzeigt.
+fn device_name(device: &cpal::Device) -> Option<String> {
+    device.description().ok().map(|d| d.name().to_string())
+}
+
 /// Listet die Ausgabegeräte aller verfügbaren Schnittstellen.
 pub fn list_devices() -> Vec<DeviceInfo> {
     let mut out = Vec::new();
     for host_id in cpal::available_hosts() {
         let Ok(host) = cpal::host_from_id(host_id) else { continue };
-        let default_name = host.default_output_device().and_then(|d| d.name().ok());
+        let default_name = host.default_output_device().and_then(|d| device_name(&d));
         let Ok(devices) = host.output_devices() else { continue };
         for device in devices {
-            let Ok(name) = device.name() else { continue };
+            let Some(name) = device_name(&device) else { continue };
             let Ok(configs) = device.supported_output_configs() else { continue };
             let configs: Vec<_> = configs.collect();
             if configs.is_empty() {
@@ -57,7 +62,7 @@ pub fn list_devices() -> Vec<DeviceInfo> {
             let max_channels = configs.iter().map(|c| c.channels()).max().unwrap_or(0);
             let sample_rates = RATES
                 .into_iter()
-                .filter(|&r| configs.iter().any(|c| c.min_sample_rate().0 <= r && r <= c.max_sample_rate().0))
+                .filter(|&r| configs.iter().any(|c| c.min_sample_rate() <= r && r <= c.max_sample_rate()))
                 .collect();
             out.push(DeviceInfo {
                 host: host_id.name().to_string(),
@@ -93,8 +98,8 @@ pub fn channel_candidates(default_channels: u16, offered: &[u16]) -> Vec<u16> {
 /// Geräts über seine Formate reichen nicht: Unter WASAPI meldet ein 7.1-Gerät 8 Kanäle als
 /// Vorgabe und kann genau diese beim Öffnen ablehnen.
 fn opens(device: &cpal::Device, channels: u16, sample_rate: u32) -> bool {
-    let config = cpal::StreamConfig { channels, sample_rate: cpal::SampleRate(sample_rate), buffer_size: cpal::BufferSize::Default };
-    device.build_output_stream(&config, |data: &mut [f32], _: &cpal::OutputCallbackInfo| data.fill(0.0), |_err| {}, None).is_ok()
+    let config = cpal::StreamConfig { channels, sample_rate, buffer_size: cpal::BufferSize::Default };
+    device.build_output_stream(config, |data: &mut [f32], _: &cpal::OutputCallbackInfo| data.fill(0.0), |_err| {}, None).is_ok()
 }
 
 /// Sinnvolle Voreinstellung für das Standardgerät: 48 kHz, wenn das Gerät sie kann, sonst seine
@@ -107,8 +112,8 @@ pub fn default_config() -> Result<OutputConfig, DeviceError> {
         .supported_output_configs()
         .map(|configs| configs.filter(|c| c.sample_format() == cpal::SampleFormat::F32).collect())
         .unwrap_or_default();
-    let covers = |c: &cpal::SupportedStreamConfigRange, rate: u32| c.min_sample_rate().0 <= rate && rate <= c.max_sample_rate().0;
-    let sample_rate = if configs.iter().any(|c| covers(c, 48_000)) { 48_000 } else { default.sample_rate().0 };
+    let covers = |c: &cpal::SupportedStreamConfigRange, rate: u32| c.min_sample_rate() <= rate && rate <= c.max_sample_rate();
+    let sample_rate = if configs.iter().any(|c| covers(c, 48_000)) { 48_000 } else { default.sample_rate() };
     let offered: Vec<u16> = configs.iter().filter(|c| covers(c, sample_rate)).map(|c| c.channels()).collect();
     let candidates = channel_candidates(default.channels(), &offered);
     // Probiert wird nur, wenn es eine Wahl gibt; ein Stereo-Gerät wird wie bisher direkt geöffnet.
@@ -137,12 +142,12 @@ pub fn start(config: &OutputConfig, controller: &Controller, mut processor: Proc
             .filter_map(|id| cpal::host_from_id(id).ok())
             .filter_map(|h| h.output_devices().ok())
             .flatten()
-            .find(|d| d.name().is_ok_and(|n| &n == wanted))
+            .find(|d| device_name(d).as_ref() == Some(wanted))
             .ok_or_else(|| DeviceError::NotFound(wanted.clone()))?,
     };
     let stream_config = cpal::StreamConfig {
         channels: config.channels,
-        sample_rate: cpal::SampleRate(config.sample_rate),
+        sample_rate: config.sample_rate,
         buffer_size: match config.buffer_frames {
             Some(n) => cpal::BufferSize::Fixed(n),
             None => cpal::BufferSize::Default,
@@ -153,16 +158,16 @@ pub fn start(config: &OutputConfig, controller: &Controller, mut processor: Proc
     let on_error = controller.error_counter();
     let stream = device
         .build_output_stream(
-            &stream_config,
+            stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| processor.process(data, channels, sample_rate),
             move |_err| on_error(),
             None,
         )
-        .map_err(|e| match e {
-            cpal::BuildStreamError::StreamConfigNotSupported => {
+        .map_err(|e| match e.kind() {
+            cpal::ErrorKind::UnsupportedConfig => {
                 DeviceError::Unsupported(format!("{} Hz, {} Kanäle", config.sample_rate, config.channels))
             }
-            other => DeviceError::Backend(other.to_string()),
+            _ => DeviceError::Backend(e.to_string()),
         })?;
     stream.play().map_err(|e| DeviceError::Backend(e.to_string()))?;
     Ok(OutputStream { _stream: stream, sample_rate: config.sample_rate, channels: config.channels, buffer_frames: config.buffer_frames })

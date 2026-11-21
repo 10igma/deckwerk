@@ -10,7 +10,7 @@ Desktop-DJ-Software für Techno. Kern in Rust (`crates/`), Desktop-Hülle mit Ta
 
 ## Voraussetzungen
 
-Rust (stabil, ab 1.80), Node 22, pnpm 10, C-Compiler, CMake (für den mitgebauten Opus-Decoder).
+Rust (stabil, ab 1.85), Node 22, pnpm 10, C-Compiler, CMake (für den mitgebauten Opus-Decoder).
 
 - macOS: `xcode-select --install`, `brew install cmake pnpm`
 - Linux: `sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libasound2-dev cmake`
@@ -55,7 +55,7 @@ Umgebungsvariablen der Anwendung: `DECKWERK_DATA` (Ordner für Bibliothek und Ca
 - **Messbar prüfen:** Signalverarbeitung, Analyse und Übergänge werden gegen Zahlen aus der Spezifikation getestet (Frequenzgang, Abweichung in ms, Trefferquote), über den Offline-Render. Kein Test, der nur „läuft durch" prüft.
 - **Zeit-Tests:** Mehrfach messen und den schnellsten Lauf werten; die Build-Maschinen sind unterschiedlich ausgelastet.
 - **Lizenzen:** Keine Abhängigkeiten unter GPL. Erlaubt sind MIT, Apache-2.0, BSD, MPL-2.0.
-- **Abhängigkeiten:** Symphonia 0.5, cpal 0.15, rusqlite 0.32, lofty 0.22, Tauri 2 sind bewusst festgelegt; ein Versionssprung ist eine eigene Aufgabe.
+- **Abhängigkeiten:** Symphonia 0.5, cpal 0.18, rusqlite 0.32, lofty 0.22, Tauri 2 sind bewusst festgelegt; ein Versionssprung ist eine eigene Aufgabe.
 - **Sprache:** Bezeichner englisch; Kommentare, Dokumentation, Commit-Nachrichten und Texte der Oberfläche deutsch. Texte der Oberfläche stehen in `ui/src/i18n/` (Deutsch und Englisch).
 - **Oberfläche:** Farben, Abstände und Schriften nur über die Tokens in `ui/src/design/tokens.css`. Animierte Flächen (Wellenformen, Pegel) zeichnen in einer eigenen Bildschleife, nicht über React. Bedienziele mindestens 28 px hoch bei 1280×720; `pnpm shots` misst das.
 - **Vor jedem Commit:** `cargo test --workspace` und, wenn `ui/` berührt wurde, `pnpm --dir ui typecheck && pnpm --dir ui test` müssen grün sein. Kein Commit mit fehlschlagenden Tests.
