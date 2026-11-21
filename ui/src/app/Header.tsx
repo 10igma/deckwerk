@@ -1,12 +1,13 @@
 // Kopfzeile (8.2): Ansichten · Master-Clock · Q/S · Aufnahme · Last · Uhr · Einstellungen.
 import { useEffect, useRef, useState } from 'react';
-import { toggleSnap } from './actions';
+import { listAudioDevices, selectAudioDevice, toggleSnap } from './actions';
 import { getDeckAssets } from './assets';
 import { nowDate } from './env';
 import { useEngineStatus, useFrame, useSnap } from './frame';
 import { bindingKeys, findBinding, shortcutKeys } from './keymap';
 import { navigate, VIEWS, type RouteId, type ViewId } from './router';
 import { setLang, setLiveGuard, setUi, useUi } from './store';
+import type { AudioDevice } from '../core/types';
 import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../design/components';
 import { useLang, useT, type MsgKey } from '../i18n';
 import { formatBpm } from '../lib/format';
@@ -135,6 +136,76 @@ function WallClock() {
   );
 }
 
+/** Wahl des Ausgabegeräts (ENG-01). Der Wechsel wirkt sofort; geladene Decks bleiben erhalten. */
+function AudioOutput() {
+  const t = useT();
+  const st = useEngineStatus();
+  const [devices, setDevices] = useState<AudioDevice[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void listAudioDevices().then((list) => {
+      if (alive) setDevices(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const choose = (name: string | null) => {
+    if (busy || name === st.device) return;
+    setBusy(true);
+    setError(null);
+    void selectAudioDevice(name).then((failure) => {
+      setError(failure);
+      setBusy(false);
+    });
+  };
+  const systemDefault = devices.find((d) => d.is_default);
+  return (
+    <div className="settings__block">
+      <span className="dw-label">{t('settings.audio')}</span>
+      <div className="settings__devices" role="group" aria-label={t('settings.audio')}>
+        <KeyBtn
+          mode="toggle"
+          size="sm"
+          block
+          className="settings__device"
+          active={st.device === null}
+          disabled={busy}
+          onPress={() => choose(null)}
+          sub={systemDefault ? systemDefault.name : undefined}
+          tip={{ name: t('settings.audioDefault'), value: systemDefault?.name }}
+        >
+          {t('settings.audioDefault')}
+        </KeyBtn>
+        {devices.map((d) => (
+          <KeyBtn
+            key={`${d.host}/${d.name}`}
+            mode="toggle"
+            size="sm"
+            block
+            className="settings__device"
+            active={st.device === d.name}
+            disabled={busy}
+            onPress={() => choose(d.name)}
+            sub={t('settings.audioChannels', { n: d.max_channels })}
+            tip={{ name: d.name, value: `${d.host} · ${t('settings.audioChannels', { n: d.max_channels })}` }}
+          >
+            {d.name}
+          </KeyBtn>
+        ))}
+      </div>
+      {error !== null && (
+        <p className="settings__note" data-tone="error" role="alert">
+          {t('settings.audioFailed', { reason: error })}
+        </p>
+      )}
+      <p className="settings__note">{t('settings.audioNote')}</p>
+    </div>
+  );
+}
+
 function SettingsPanel() {
   const t = useT();
   const lang = useLang();
@@ -143,6 +214,7 @@ function SettingsPanel() {
   const renderer = useUi((s) => s.rendererInfo);
   return (
     <div className="settings" role="dialog" aria-label={t('hdr.settings')}>
+      <AudioOutput />
       <div className="settings__row">
         <span className="dw-label">{t('settings.guard')}</span>
         <div className="settings__opts">

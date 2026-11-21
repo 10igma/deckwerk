@@ -2,7 +2,7 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
@@ -479,6 +479,29 @@ export async function importPaths(paths: string[]): Promise<void> {
     showNotice(say('notice.imported', { added: r.added, failed: r.failed.length }));
   } catch (err) {
     showNotice(say('notice.importFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+// --- Audio-Ausgabe ---------------------------------------------------------------
+
+/** Ausgabegeräte für die Einstellungen; ohne Kern oder bei einem Fehler eine leere Liste. */
+export async function listAudioDevices(): Promise<AudioDevice[]> {
+  if (!core) return [];
+  try {
+    return await core.listAudioDevices();
+  } catch {
+    return [];
+  }
+}
+
+/** Wechselt das Ausgabegerät (null = Standardgerät des Systems). Ergebnis: Fehlertext oder null. */
+export async function selectAudioDevice(name: string | null): Promise<string | null> {
+  if (!core) return null;
+  try {
+    await core.selectAudioDevice(name);
+    return null;
+  } catch (err) {
+    return errorText(err);
   }
 }
 

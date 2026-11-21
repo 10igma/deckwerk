@@ -1,10 +1,11 @@
 //! Gemeinsamer Zustand der Anwendung: Audio-Steuerung, Bibliothek, Cache.
 
-use crate::audio::{self, AudioInfo};
+use crate::audio::{self, AudioHandle, AudioInfo};
 use dw_audio::Controller;
 use dw_core::{AudioBuf, DeckId, TrackAnalysis, Waveform, ANALYSIS_VERSION};
 use dw_engine::Track;
 use dw_library::{ImportReport, Library, TrackId};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -12,9 +13,34 @@ use std::sync::{Arc, Condvar, Mutex};
 /// Referenz-Lautheit für den Auto-Gain (MIX-01).
 const REFERENCE_LUFS: f32 = -14.0;
 
+/// Einstellungen, die einen Neustart überdauern (`settings.json` im Datenordner).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Settings {
+    /// Gewähltes Ausgabegerät; `None` = Standardgerät des Systems.
+    #[serde(default)]
+    pub audio_device: Option<String>,
+}
+
+impl Settings {
+    /// Liest die Einstellungen; fehlt die Datei oder ist sie unlesbar, gelten die Vorgaben.
+    pub fn load(file: &Path) -> Settings {
+        std::fs::read(file).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    }
+
+    pub fn save(&self, file: &Path) -> Result<(), String> {
+        let json = serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?;
+        std::fs::write(file, json).map_err(|e| format!("{}: {e}", file.display()))
+    }
+}
+
 pub struct Inner {
     pub ctl: Mutex<Controller>,
-    pub audio: AudioInfo,
+    /// Stand der Ausgabe; ändert sich beim Gerätewechsel.
+    pub audio: Mutex<AudioInfo>,
+    audio_handle: AudioHandle,
+    /// Abtastrate der Engine; bleibt über einen Gerätewechsel hinweg gleich.
+    pub engine_rate: u32,
+    settings_file: PathBuf,
     pub lib: Mutex<Library>,
     pub loaded: Mutex<[Option<TrackId>; 4]>,
     cache_dir: PathBuf,
@@ -47,16 +73,39 @@ impl AppState {
             },
             Err(e) => return Err(e.to_string()),
         };
-        let (ctl, audio) = audio::start();
+        let settings_file = data_dir.join("settings.json");
+        let (ctl, audio, audio_handle) = audio::start(Settings::load(&settings_file).audio_device);
         Ok(AppState(Arc::new(Inner {
             ctl: Mutex::new(ctl),
-            audio,
+            engine_rate: audio.sample_rate,
+            audio: Mutex::new(audio),
+            audio_handle,
+            settings_file,
             lib: Mutex::new(lib),
             loaded: Mutex::new([None; 4]),
             cache_dir,
             library_rev: AtomicU64::new(1),
             work: (Mutex::new(true), Condvar::new()),
         })))
+    }
+
+    /// Wechselt das Ausgabegerät (ENG-01); `None` = Standardgerät des Systems. Geladene Decks
+    /// und laufende Wiedergabe bleiben erhalten. Scheitert der Wechsel, läuft das bisherige
+    /// Gerät weiter und die Wahl wird nicht gespeichert.
+    pub fn select_device(&self, device: Option<String>) -> Result<AudioInfo, String> {
+        let (info, failure) = match self.audio_handle.select(device) {
+            Ok(info) => (info, None),
+            Err((error, info)) => (info, Some(error)),
+        };
+        self.ctl.lock().unwrap().set_routing(audio::routing_for(info.channels));
+        *self.audio.lock().unwrap() = info.clone();
+        match failure {
+            Some(error) => Err(error),
+            None => {
+                Settings { audio_device: info.device.clone() }.save(&self.settings_file)?;
+                Ok(info)
+            }
+        }
     }
 
     pub fn touch_library(&self) {
@@ -108,7 +157,7 @@ impl AppState {
             // Noch nicht analysiert: jetzt nachholen, die dekodierten Daten gleich weiterverwenden.
             None => self.analyze_track(id)?,
         };
-        let audio = dw_decode::resample(&audio, self.audio.sample_rate);
+        let audio = dw_decode::resample(&audio, self.engine_rate);
         let track = Arc::new(Track { audio, grid: analysis.grid.clone(), gain_db: analysis.auto_gain_db(REFERENCE_LUFS) });
         if !self.ctl.lock().unwrap().load(deck, track) {
             return Err("Die Audio-Engine nimmt keine Befehle an.".into());

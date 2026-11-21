@@ -8,6 +8,8 @@ Bauen und Starten beschreibt die [README](../README.md#schnellstart). Beim erste
 
 ![Leere Ansicht nach dem ersten Start](bilder/mixen-leer.png)
 
+Das Ausgabegerät wählst du in den Einstellungen (Zahnrad oben rechts) unter „Audio-Ausgabe": „Systemstandard" oder eines der aufgeführten Geräte. Der Wechsel wirkt sofort, geladene Decks laufen weiter, und die Wahl bleibt über einen Neustart erhalten. Lässt sich ein Gerät nicht öffnen, steht der Grund unter der Liste und das bisherige Gerät läuft weiter.
+
 Findet die Anwendung kein Audiogerät, erscheint in der Kopfzeile ein Warnhinweis. Die Engine läuft dann stumm weiter: Alles lässt sich bedienen, es ist nur nichts zu hören.
 
 ## Musik importieren
@@ -177,7 +179,7 @@ Mit der Umgebungsvariable `DECKWERK_DATA` lässt sich ein anderer Ordner wählen
 
 ## Was noch fehlt
 
-- **Ton am Gerät ist ungeprüft.** Die Ausgabe ist geschrieben, lief aber noch an keinem Audio-Interface. Gerät, Kanäle und Puffergröße lassen sich noch nicht einstellen; verwendet wird das Standardgerät des Systems, ab vier Kanälen liegt der Kopfhörer auf Kanal 3/4.
+- **Ton am Gerät ist ungeprüft.** Die Ausgabe ist geschrieben, lief aber noch an keinem Audio-Interface. Das Gerät ist in den Einstellungen wählbar; Kanäle und Puffergröße lassen sich noch nicht einstellen. Ab vier Kanälen liegt der Kopfhörer auf Kanal 3/4.
 - **Analyse an echter Musik ist ungemessen.** Die Trefferquoten stammen von synthetischen Tracks.
 - **Import nur durch Ablegen** auf das Fenster; einen Ordner-Dialog gibt es noch nicht. Unter Linux ist das Ablegen selbst noch nicht von Hand geprüft.
 - **Nur zwei Decks in der Oberfläche**, obwohl der Kern vier kann.

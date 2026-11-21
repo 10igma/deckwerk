@@ -12,7 +12,8 @@ Die Oberfläche spricht den Kern nur über `CoreApi` (`ui/src/core/api.ts`) an. 
 | `deck_loaded` | – | `{ a, b, c, d: string \| null }` | Tracks auf den Decks |
 | `track_waveform` | `trackId: string` | `ArrayBuffer` | Wellenform im Binärformat „DWWF" |
 | `track_analysis` | `trackId: string` | `TrackAnalysis` | Analyseergebnis |
-| `audio_devices` | – | `DeviceEntry[]` | Ausgabegeräte |
+| `audio_devices` | – | `AudioDevice[]` | Ausgabegeräte aller Schnittstellen des Systems |
+| `audio_select` | `device: string \| null` | – | Ausgabegerät wechseln (`null` = Standardgerät des Systems); wirkt sofort, geladene Decks bleiben erhalten. Lässt sich das Gerät nicht öffnen, wird abgelehnt und das bisherige läuft weiter |
 
 Fehler kommen als abgelehntes Promise mit einem deutschen Klartext (`string`).
 
@@ -28,9 +29,18 @@ interface Poll {
     buffer_size: number;         // 0 = Vorgabe des Geräts
     has_device: boolean;         // false: kein Audiogerät, Engine läuft stumm
     device_error: string | null;
+    device: string | null;       // gewähltes Ausgabegerät; null = Standardgerät des Systems
   };
   library_rev: number;           // ändert sich → library_list neu abrufen
   pending_analysis: number;      // Tracks in der Analyse-Warteschlange
+}
+
+interface AudioDevice {
+  host: string;                  // Schnittstelle, z. B. "WASAPI", "CoreAudio", "ALSA"
+  name: string;
+  is_default: boolean;           // Standardgerät des Systems
+  max_channels: number;
+  sample_rates: number[];
 }
 
 interface TrackInfo {
@@ -65,6 +75,10 @@ Bei der Übersicht ist „Samples je Punkt" abgerundet; die genaue Zuordnung erg
 ## Ereignisse des Fensters
 
 Dateien und Ordner, die auf das Fenster gezogen werden, importiert die Hülle selbst. Die Oberfläche bemerkt das über `library_rev`.
+
+## Einstellungen
+
+Das gewählte Ausgabegerät steht in `settings.json` im Datenordner (`{ "audio_device": string | null }`) und wird beim Start wieder geöffnet. Fehlt das Gerät dann, nimmt die Anwendung das Standardgerät des Systems. Die Engine behält über einen Gerätewechsel hinweg die Abtastrate, mit der sie gestartet ist.
 
 ## Umgebungsvariablen
 

@@ -239,6 +239,39 @@ body[data-scroll='true'] {
   font-size: var(--fs-2);
   color: var(--text-3);
 }
+.settings__note[data-tone='error'] {
+  color: var(--status-warn);
+  overflow-wrap: anywhere;
+}
+.settings__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settings__devices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.settings__device {
+  justify-content: flex-start;
+}
+.settings__device .dw-key__content {
+  min-width: 0;
+  flex: 1;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.settings__device .dw-key__sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .placeholder {
   height: 100%;

@@ -182,6 +182,19 @@ export interface EngineStatus {
   /** false: kein Audiogerät, die Engine läuft stumm. */
   has_device: boolean;
   device_error: string | null;
+  /** Gewähltes Ausgabegerät; null = Standardgerät des Systems. */
+  device: string | null;
+}
+
+/** Ausgabegerät für die Einstellungen (`audio_devices`, ENG-01). */
+export interface AudioDevice {
+  /** Schnittstelle, z. B. „WASAPI", „CoreAudio", „ALSA". */
+  host: string;
+  name: string;
+  /** Standardgerät des Systems. */
+  is_default: boolean;
+  max_channels: number;
+  sample_rates: number[];
 }
 
 /** Antwort von `core_poll`. */
@@ -217,6 +230,7 @@ export const emptyEngineStatus = (): EngineStatus => ({
   buffer_size: 0,
   has_device: true,
   device_error: null,
+  device: null,
 });
 
 export function emptyDeckState(): DeckState {

@@ -6,6 +6,7 @@ import {
   VALUES_PER_POINT,
   bandIndex,
   deckIndex,
+  type AudioDevice,
   type Command,
   type DeckId,
   type DeckState,
@@ -82,6 +83,13 @@ const WAVE_CACHE_SIZE = 6;
 const ANALYSIS_SECONDS = 0.8;
 const NO_DEVICE_TEXT = 'Kein Ausgabegerät gefunden (ALSA: Standardgerät nicht verfügbar).';
 
+/** Geräte des simulierten Kerns: Lautsprecher, ein Interface mit vier Ausgängen, ein Gerät, das sich nicht öffnen lässt. */
+export const MOCK_DEVICES: AudioDevice[] = [
+  { host: 'Mock', name: 'Lautsprecher (eingebaut)', is_default: true, max_channels: 2, sample_rates: [44100, 48000] },
+  { host: 'Mock', name: 'Interface 4 Ausgänge', is_default: false, max_channels: 4, sample_rates: [44100, 48000, 96000] },
+  { host: 'Mock', name: 'Gerät belegt', is_default: false, max_channels: 2, sample_rates: [48000] },
+];
+
 function newDeck(id: DeckId): MockDeck {
   return {
     track: null,
@@ -130,6 +138,8 @@ export class MockCore implements CoreApi {
   private libraryRev = 1;
   private analysisClock = 0;
   private readonly noDevice: boolean;
+  /** Gewähltes Ausgabegerät; null = Standardgerät des Systems. */
+  private device: string | null = null;
   private readonly loadDelayMs: number;
   private waves = new Map<TrackId, Waveform>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -293,6 +303,25 @@ export class MockCore implements CoreApi {
     const t = MOCK_TRACKS.find((x) => x.id === trackId);
     if (!t) return Promise.reject(new Error(`unknown track ${trackId}`));
     return Promise.resolve(trackAnalysis(t));
+  }
+
+  listAudioDevices(): Promise<AudioDevice[]> {
+    return Promise.resolve(this.noDevice ? [] : MOCK_DEVICES.map((d) => ({ ...d })));
+  }
+
+  /** Wie der Kern: Unbekanntes oder nicht zu öffnendes Gerät wird abgelehnt, die bisherige Wahl bleibt. */
+  selectAudioDevice(name: string | null): Promise<void> {
+    if (name !== null) {
+      const known = !this.noDevice && MOCK_DEVICES.some((d) => d.name === name);
+      if (!known) return Promise.reject(`Gerät „${name}“ nicht gefunden`);
+      if (name === 'Gerät belegt') return Promise.reject('Audio-Schnittstelle meldet: Gerät wird von einer anderen Anwendung benutzt');
+    } else if (this.noDevice) {
+      return Promise.reject('kein Ausgabegerät gefunden');
+    }
+    this.device = name;
+    const st = this.status();
+    this.statusListeners.forEach((l) => l(st));
+    return Promise.resolve();
   }
 
   // --- Simulation ----------------------------------------------------------
@@ -587,6 +616,7 @@ export class MockCore implements CoreApi {
       buffer_size: 256,
       has_device: !this.noDevice,
       device_error: this.noDevice ? NO_DEVICE_TEXT : null,
+      device: this.device,
     };
   }
 

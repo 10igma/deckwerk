@@ -29,6 +29,8 @@ pub struct EngineStatus {
     buffer_size: u32,
     has_device: bool,
     device_error: Option<String>,
+    /// Gewähltes Ausgabegerät; `None` = Standardgerät des Systems.
+    device: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -48,15 +50,17 @@ pub fn core_poll(state: State<AppState>) -> Poll {
         (ctl.snapshot().clone(), ctl.take_dsp_load_peak(), ctl.xruns())
     };
     let pending_analysis = state.lib.lock().unwrap().pending_analysis(ANALYSIS_VERSION).map_or(0, |p| p.len());
+    let audio = state.audio.lock().unwrap().clone();
     Poll {
         snapshot,
         status: EngineStatus {
             dsp_load,
             xruns,
-            sample_rate: state.audio.sample_rate,
-            buffer_size: state.audio.buffer_size,
-            has_device: state.audio.has_device,
-            device_error: state.audio.error.clone(),
+            sample_rate: audio.sample_rate,
+            buffer_size: audio.buffer_size,
+            has_device: audio.has_device,
+            device_error: audio.error,
+            device: audio.device,
         },
         library_rev: state.library_rev.load(Ordering::Relaxed),
         pending_analysis,
@@ -158,4 +162,10 @@ pub fn audio_devices() -> Vec<DeviceEntry> {
         .into_iter()
         .map(|d| DeviceEntry { host: d.host, name: d.name, is_default: d.is_default, max_channels: d.max_channels, sample_rates: d.sample_rates })
         .collect()
+}
+
+/// Wechselt das Ausgabegerät; `device: null` = Standardgerät des Systems (ENG-01).
+#[tauri::command(async)]
+pub fn audio_select(state: State<AppState>, device: Option<String>) -> Result<(), String> {
+    state.select_device(device).map(|_| ())
 }

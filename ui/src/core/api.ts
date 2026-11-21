@@ -1,4 +1,5 @@
 import type {
+  AudioDevice,
   Command,
   DeckId,
   EngineStatus,
@@ -39,6 +40,13 @@ export interface CoreApi {
   getLoadedTracks(): Promise<LoadedTracks>;
   getWaveform(trackId: TrackId): Promise<Waveform>;
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis>;
+  /** Ausgabegeräte des Systems (ENG-01). */
+  listAudioDevices(): Promise<AudioDevice[]>;
+  /**
+   * Wechselt das Ausgabegerät; null = Standardgerät des Systems. Geladene Decks bleiben erhalten.
+   * Abgelehnt mit einem Klartext, wenn sich das Gerät nicht öffnen lässt; dann läuft das bisherige weiter.
+   */
+  selectAudioDevice(name: string | null): Promise<void>;
 }
 
 /** Fehlertext aus einer Ablehnung der Hülle (dort ein string) oder einem Error. */

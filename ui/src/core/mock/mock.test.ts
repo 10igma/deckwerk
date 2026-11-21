@@ -230,6 +230,27 @@ describe('MockCore', () => {
     expect(st.has_device).toBe(false);
     expect(st.device_error).toMatch(/Ausgabegerät/);
   });
+  it('Ausgabegerät: Wechsel meldet den Status, Ablehnung lässt die Wahl stehen (ENG-01)', async () => {
+    const core = new MockCore({ manualClock: true });
+    const chosen: (string | null)[] = [];
+    core.subscribeStatus((s) => chosen.push(s.device));
+    const devices = await core.listAudioDevices();
+    expect(devices.filter((d) => d.is_default).length).toBe(1);
+    expect(devices.some((d) => d.max_channels >= 4)).toBe(true);
+
+    await core.selectAudioDevice('Interface 4 Ausgänge');
+    expect(chosen).toEqual([null, 'Interface 4 Ausgänge']);
+    await expect(core.selectAudioDevice('Gerät belegt')).rejects.toMatch(/Audio-Schnittstelle/);
+    await expect(core.selectAudioDevice('gibt es nicht')).rejects.toMatch(/nicht gefunden/);
+    expect(core.status().device).toBe('Interface 4 Ausgänge');
+    expect(chosen.length).toBe(2);
+    await core.selectAudioDevice(null);
+    expect(core.status().device).toBe(null);
+
+    const silent = new MockCore({ manualClock: true, noDevice: true });
+    expect(await silent.listAudioDevices()).toEqual([]);
+    await expect(silent.selectAudioDevice(null)).rejects.toMatch(/kein Ausgabegerät/);
+  });
   it('eingefrorener Kern nimmt Befehle an und meldet sofort', () => {
     const core = new MockCore({ scene: 'loaded', frozen: true });
     const seen: Snapshot[] = [];

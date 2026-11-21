@@ -5,6 +5,7 @@ import { decodeWaveform } from './dwwf';
 import {
   emptyEngineStatus,
   emptySnapshot,
+  type AudioDevice,
   type Command,
   type DeckId,
   type EngineStatus,
@@ -38,7 +39,8 @@ function sameStatus(a: EngineStatus, b: EngineStatus): boolean {
     a.sample_rate === b.sample_rate &&
     a.buffer_size === b.buffer_size &&
     a.has_device === b.has_device &&
-    a.device_error === b.device_error
+    a.device_error === b.device_error &&
+    a.device === b.device
   );
 }
 
@@ -149,5 +151,13 @@ export class TauriCore implements CoreApi {
 
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis> {
     return this.invoke<TrackAnalysis>('track_analysis', { trackId });
+  }
+
+  listAudioDevices(): Promise<AudioDevice[]> {
+    return this.invoke<AudioDevice[]>('audio_devices');
+  }
+
+  selectAudioDevice(name: string | null): Promise<void> {
+    return this.invoke<void>('audio_select', { device: name });
   }
 }

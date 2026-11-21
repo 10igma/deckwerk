@@ -1,7 +1,7 @@
 //! Der Weg durch die Anwendung ohne Fenster: Import → Hintergrund-Analyse → Laden → Abspielen.
 //! In dieser Umgebung gibt es kein Audiogerät; die Engine läuft dann stumm im Zeittakt.
 
-use deckwerk_app::state::AppState;
+use deckwerk_app::state::{AppState, Settings};
 use deckwerk_app::worker;
 use dw_core::{Command, DeckId, Key, Waveform, XfAssign, ANALYSIS_VERSION};
 use dw_library::{SortColumn, TrackQuery};
@@ -72,7 +72,7 @@ fn import_analyse_load_and_play() {
     assert!((snap.decks[1].bpm - 128.0).abs() < 0.05, "B läuft mit {}", snap.decks[1].bpm);
     assert!(snap.decks[1].phase.abs() < 0.01, "Phase {}", snap.decks[1].phase);
     assert!((snap.decks[0].duration - rows[0].duration).abs() < 0.01);
-    println!("Audiogerät: {:?}", state.audio);
+    println!("Audiogerät: {:?}", state.audio.lock().unwrap());
 }
 
 /// Spitzenpegel von Deck A (vor dem Fader) und Master über ein Zeitfenster.
@@ -121,4 +121,64 @@ fn crossfader_fades_deck_a_out() {
     let (deck, master) = peaks_over(&state, Duration::from_millis(600));
     assert!(deck > 0.05, "Deck A läuft nicht mehr: {deck}");
     assert!(master < 1e-4, "Crossfader bei B, A noch auf dem Master: {master}");
+}
+
+/// ENG-01: Ein Gerätewechsel behält die Engine. Das geladene Deck läuft danach weiter, die
+/// Wahl steht in den Einstellungen; ein unbekanntes Gerät wird abgelehnt, ohne den Stand der
+/// Ausgabe oder die gespeicherte Wahl zu ändern. Läuft mit und ohne Audiogerät.
+#[test]
+fn switching_the_output_device_keeps_the_engine_running() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let data = tmp.path().join("daten");
+    let settings_file = data.join("settings.json");
+
+    let state = AppState::start(&data).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: true });
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].pos > 0.2);
+    let before = state.audio.lock().unwrap().clone();
+    assert_eq!(before.device, None);
+
+    // Unbekanntes Gerät: Fehler mit dem Namen, Ausgabe wie zuvor, nichts gespeichert.
+    let error = state.select_device(Some("Gerät, das es nicht gibt".into())).unwrap_err();
+    assert!(error.contains("Gerät, das es nicht gibt"), "{error}");
+    let after = state.audio.lock().unwrap().clone();
+    assert_eq!((after.has_device, after.device.clone(), after.sample_rate), (before.has_device, None, before.sample_rate));
+    assert!(!settings_file.exists());
+
+    // Wechsel auf das Standardgerät: Gelingt er (es gibt ein Gerät), wird die Wahl gespeichert.
+    let chosen = state.select_device(None);
+    if before.has_device {
+        assert_eq!(chosen.unwrap().device, None);
+        assert_eq!(Settings::load(&settings_file), Settings { audio_device: None });
+        assert!(settings_file.exists());
+    }
+
+    // Das Deck ist nach zwei Wechseln noch geladen und läuft weiter.
+    let pos = state.ctl.lock().unwrap().snapshot().decks[0].pos;
+    wait_for("Wiedergabe nach dem Wechsel", || {
+        let mut ctl = state.ctl.lock().unwrap();
+        let s = ctl.snapshot();
+        s.decks[0].loaded && s.decks[0].playing && s.decks[0].pos > pos + 0.3
+    });
+    assert_eq!(state.engine_rate, before.sample_rate);
+}
+
+/// Die Einstellungen überstehen Schreiben und Lesen; eine fehlende oder kaputte Datei ergibt
+/// die Vorgaben statt eines Fehlers.
+#[test]
+fn settings_roundtrip_and_fallback() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("settings.json");
+    assert_eq!(Settings::load(&file), Settings::default());
+    let chosen = Settings { audio_device: Some("Kopfhörer (Beispiel)".into()) };
+    chosen.save(&file).unwrap();
+    assert_eq!(Settings::load(&file), chosen);
+    std::fs::write(&file, b"{ kaputt").unwrap();
+    assert_eq!(Settings::load(&file), Settings::default());
 }

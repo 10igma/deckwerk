@@ -182,11 +182,20 @@ impl Controller {
         self.shared.overruns.load(Ordering::Relaxed) + self.shared.device_errors.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn error_counter(&self) -> impl Fn() + Send + 'static {
-        let shared = self.shared.clone();
-        move || {
-            shared.device_errors.fetch_add(1, Ordering::Relaxed);
-        }
+    /// Zähler für Fehler, die das Gerät meldet; er geht in `xruns` ein. Wer die Ausgabe
+    /// öffnet, reicht ihn an `device::start` weiter, auch bei einem späteren Gerätewechsel.
+    pub fn error_counter(&self) -> ErrorCounter {
+        ErrorCounter(self.shared.clone())
+    }
+}
+
+/// Zählt vom Gerät gemeldete Fehler (siehe `Controller::error_counter`).
+#[derive(Clone)]
+pub struct ErrorCounter(Arc<Shared>);
+
+impl ErrorCounter {
+    pub fn count(&self) {
+        self.0.device_errors.fetch_add(1, Ordering::Relaxed);
     }
 }
 
