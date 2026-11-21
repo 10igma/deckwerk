@@ -10,6 +10,8 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 
 ## Nächster Schritt
 
+Die Abnahme geht auf einem Windows-Rechner weiter; siehe „Übergabe: Weiter unter Windows" weiter unten.
+
 1. **Abnahme am Gerät fortsetzen** (braucht dich): Ziehen aus der Liste aufs Deck und Crossfader bestätigen, dann Schritte 5 bis 9. Stand und Befunde im Abschnitt „Abnahme vom 19.11.2026 (macOS)".
 2. **Einstellungen:** Audiogerät, Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
 3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
@@ -160,6 +162,41 @@ Wünsche aus der Abnahme (neue Funktionen, keine Befunde):
 
 - **Was passt zum laufenden Track?** Zeichen je Zeile der Bibliothek für Tonart (passt / geht / reibt nach 5.11) und Tempo (Abstand zum laufenden Tempo), dazu Sortieren und Filtern danach. Entspricht dem zurückgestellten Befund UX 10; gewünscht vor Stufe 3.
 - **Weitere Darstellungen der Wellenform** zur Auswahl, etwa drei Bänder überlagert oder gestapelt.
+
+## Übergabe: Weiter unter Windows
+
+Die Abnahme wurde am 19.11.2026 unter macOS begonnen und wird auf einem Windows-Rechner fortgesetzt. Dieser Abschnitt enthält alles, was die nächste Sitzung dafür braucht; nach Abschluss der Abnahme kann er entfallen.
+
+**Stand im Repository.** Die Arbeit liegt auf dem Branch `abnahme-macos` (ein Commit über `main`). Dort weiterarbeiten oder ihn zuerst nach `main` übernehmen.
+
+**Musik.** Der Ordner `mp3/` (144 Dateien, 2,7 GB) ist von Git ausgenommen und liegt nur auf dem Mac. Auf den Windows-Rechner von Hand kopieren, am besten wieder nach `mp3/` im Wurzelordner. Bibliothek, Analyse und Wellenform-Cache sind je Rechner getrennt; unter Windows wird neu importiert und analysiert.
+
+**Voraussetzungen unter Windows.** Rust (stabil, ab 1.80, MSVC-Toolchain), Visual Studio Build Tools mit „Desktopentwicklung mit C++", Node 22, pnpm, CMake, WebView2-Laufzeit (bei Windows 11 vorhanden). Unter macOS liefen pnpm 12 und CMake 4.5 ohne Probleme, obwohl CLAUDE.md pnpm 10 nennt. Erst prüfen, was fehlt, und nur nach Zustimmung installieren.
+
+**Ablauf.**
+
+1. `pnpm --dir ui install && pnpm --dir ui build`, dann `cargo run --release -p deckwerk-app`. Schlägt der Bau fehl: Ursache beheben und festhalten, was Windows-spezifisch war.
+2. `cargo test --workspace` sowie `pnpm --dir ui typecheck && pnpm --dir ui test`. Stand vom Mac: 95 bestanden, 1 übersprungen; Oberfläche 114 Tests.
+3. Die Abnahmeliste von Schritt 1 an neu durchgehen. Es ist ein anderes System mit anderer Audio-Schnittstelle (WASAPI), die Ergebnisse vom Mac gelten hier nicht. Ergebnisse in einen eigenen Abschnitt „Abnahme vom … (Windows)" eintragen, nach dem Muster des macOS-Abschnitts.
+
+**Worauf unter Windows besonders zu achten ist.**
+
+- **Ziehen aus der Liste aufs Deck.** Unter macOS ging es nicht (Fehler 3); die Korrektur über Zeiger-Ereignisse ist bisher nur im Browser nachgestellt, in keinem echten Fenster bestätigt. Prüfen: Marke am Zeiger, Markierung des Zieldecks, Laden beim Loslassen; Klick und Doppelklick auf die Zeile müssen weiter gehen.
+- **Musikordner aufs Fenster ziehen** (Import). Hängt an `dragDropEnabled`; unter Windows nie ausprobiert.
+- **Crossfader.** Korrektur (Fehler 1) ist am Gerät nicht ausdrücklich bestätigt: Track auf A, Crossfader ganz nach rechts, A muss verstummen.
+- **Import.** Es müssen 144 Tracks erscheinen. Die beiden Antix-Dateien mit dem kaputten Jahres-Feld (`03-antix-human_nature_vosne_and_clutch_remix.mp3`, `10-antix-oma_rapeti_red_project_remix.mp3`) sind die Gegenprobe für Fehler 2.
+- **Audiogerät.** Geräte, die kein 32-bit-Gleitkomma annehmen, werden nicht geöffnet (offener Punkt); erscheint „Kein Audio", ist das der erste Verdacht. ASIO ist nur übersetzt.
+- **Schritt 7 (Kopfhörer auf 3/4)** braucht ein Interface mit vier Ausgangskanälen; am Mac war er nicht prüfbar.
+- **Schritt 3 (BPM und Tonart)** braucht Referenzwerte für 20 Tracks; die Dateien tragen keine in den Tags. Ohne Referenz bleibt er ungeprüft. Auffällige Werte stehen in der Tabelle des macOS-Abschnitts.
+- **Installer.** Den Windows-Installer aus der Pipeline hat noch niemand gestartet (nächster Schritt 5).
+
+**Am Mac noch offen** (dort oder unter Windows nachholen): Schritte 5, 6, 8 und 9; in Schritt 4 das Knacken bei Start und Stopp, die Lage der Beat-Linien auf den Kicks und das Springen in der Übersicht; die Frage, ob die Kick in der Wellenform wegen der Höhe oder wegen der Farben schwer zu erkennen ist.
+
+**Regeln der Zusammenarbeit**, wie in der ersten Sitzung vereinbart: je Schritt sagen, was zu tun und worauf zu achten ist, und auf die Rückmeldung warten; nur eindeutig eingrenzbare Fehler beheben, jeweils mit Test, alles andere als offenen Punkt aufschreiben; unter „Nicht geprüft" nur streichen, was wirklich geprüft wurde; erst bei grünen Tests committen und vor dem Push fragen.
+
+**Einstieg für die neue Sitzung** (so eingeben):
+
+> Lies CLAUDE.md und docs/fortschritt.md, dort vor allem „Übergabe: Weiter unter Windows". Ich setze die Abnahme am Gerät auf diesem Windows-Rechner fort. Prüfe die Voraussetzungen, baue und starte die Anwendung, lass die Tests laufen und geh dann die Abnahmeliste Schritt für Schritt mit mir durch. Mein Audio-Interface: … Meine Musik liegt in: …
 
 ## Befehle
 
