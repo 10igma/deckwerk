@@ -16,6 +16,7 @@ import {
   type RefreshResult,
   type Transition,
   type TransitionRun,
+  type TransitionWhen,
   type LibraryStatus,
   type LoadedTracks,
   type Snapshot,
@@ -259,21 +260,33 @@ export class MockCore implements CoreApi {
     return Promise.resolve([make('bass_swap', l / 8, l - l / 4), make('fade', l / 2, l / 2)]);
   }
 
-  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun> {
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun> {
     const out = this.decks[deckIndex(from)];
     const inn = this.decks[deckIndex(to)];
     if (this.run && this.clockBeats < this.run.end_beat) return Promise.reject(`Es läuft schon ein Übergang von Deck ${this.run.from.toUpperCase()} nach Deck ${this.run.to.toUpperCase()}.`);
     if (!out.track || !out.playing) return Promise.reject(`Deck ${from.toUpperCase()} läuft nicht; der Übergang geht vom laufenden Deck aus.`);
     if (!inn.track) return Promise.reject(`Auf Deck ${to.toUpperCase()} liegt kein Track.`);
-    if (inn.playing) return Promise.reject(`Deck ${to.toUpperCase()} läuft schon; der Übergang startet es selbst am Einstieg.`);
-    // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
-    const span = 4 * Math.max(1, alignBars);
+    const l = transition.bars * 4;
     const outBeat = this.beatOf(out);
-    const boundary = Math.ceil((outBeat + 3) / span) * span;
+    let boundary: number;
+    if (when.type === 'next') {
+      // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
+      const span = 4 * Math.max(1, when.align_bars);
+      boundary = Math.ceil((outBeat + 3) / span) * span;
+    } else {
+      // Ende vorgegeben: auf den nächsten Taktanfang gerückt, der Beginn um die Länge davor.
+      const end = Math.round((outBeat + when.beats) / 4) * 4;
+      boundary = end - l;
+      if (boundary < outBeat + 3) return Promise.reject(`Bis zum gewählten Ende sind es ${Math.round(end - outBeat)} Beats; der Übergang über ${transition.bars} Takte braucht ${l + 3}.`);
+    }
     const t0 = this.clockBeats + (boundary - outBeat);
-    this.run = { from, to, name: transition.name, bars: transition.bars, t0_beat: t0, end_beat: t0 + transition.bars * 4 + 1 };
-    inn.sync = 'beat';
-    inn.pos = Math.max(0, secAt(inn.track.grid, Math.round(beatAt(inn.track.grid, inn.pos) / 4) * 4));
+    this.run = { from, to, name: transition.name, bars: transition.bars, t0_beat: t0, end_beat: t0 + l + 1 };
+    if (!inn.playing) {
+      inn.sync = 'beat';
+      const mark = Math.round(beatAt(inn.track.grid, inn.pos) / 4) * 4;
+      // Mit vorgegebenem Ende erreicht das Deck seine jetzige Stelle erst dort: Es startet um die Länge früher.
+      inn.pos = when.type === 'next' ? Math.max(0, secAt(inn.track.grid, mark)) : secAt(inn.track.grid, mark - l);
+    }
     return Promise.resolve({ ...this.run });
   }
 
@@ -291,7 +304,12 @@ export class MockCore implements CoreApi {
     const l = run.bars * 4;
     const t = this.clockBeats - run.t0_beat;
     if (t < 0) return;
-    if (!inn.playing && t < l) this.apply({ type: 'play', deck: run.to, on: true });
+    if (!inn.playing && t < l) {
+      // Direkt starten: Das Deck steht schon im Takt, auch vor seinem Anfang (stummer Vorlauf).
+      inn.playing = true;
+      inn.playTime = 0;
+      this.pickMaster();
+    }
     inn.fader = Math.min(1, Math.max(0, t / (l / 2)));
     out.fader = Math.min(1, Math.max(0, (l - t) / (l / 2)));
     if (t >= l) {

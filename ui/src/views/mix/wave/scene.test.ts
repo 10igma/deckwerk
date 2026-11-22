@@ -143,4 +143,20 @@ describe('Vorausblick in den Wellenformen (VIS-13)', () => {
     expect(peekAfter(PEEK_MAX - 4, 16)).toBe(PEEK_MAX);
     expect(peekAfter(PEEK_MIN + 4, -16)).toBe(PEEK_MIN);
   });
+
+  it('Zone eines Übergangs: Balken von Beginn bis Ende, im Vorausblick mitverschoben (TRANS-05)', () => {
+    // 8 Beats füllen 1000 px: 125 px je Beat. Zone von +1 bis +3 Beats.
+    const zoneRects = (peek: number, preview: boolean) => {
+      const scene = buildScene({ ...input([a, idle], peek), zone: { startBeats: 1, endBeats: 3, preview } });
+      return scene.rects.filter((r) => r.color[0] === 1 && r.color[1] === 0.8 && r.color[2] === 0 && r.y === 0 && r.h < 20);
+    };
+    const [bar] = zoneRects(0, false);
+    expect([bar.x, bar.x + bar.w]).toEqual([625, 875]);
+    expect(bar.color[3]).toBeCloseTo(0.9, 6);
+    // Vorausblick +2 Beats: Die Zone rückt um 250 px nach links, ihr Ende liegt 125 px rechts der Mitte.
+    const [shifted] = zoneRects(2, true);
+    expect([shifted.x, shifted.x + shifted.w]).toEqual([375, 625]);
+    expect(shifted.color[3]).toBeCloseTo(0.45, 6);
+    expect(buildScene(input([a, idle], 0)).rects.filter((r) => r.y === 0 && r.h < 20 && r.color[1] === 0.8).length).toBe(0);
+  });
 });

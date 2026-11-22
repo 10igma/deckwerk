@@ -118,9 +118,9 @@ pub fn transition_start(
     from: DeckId,
     to: DeckId,
     transition: dw_automix::Transition,
-    align_bars: u32,
+    when: dw_automix::When,
 ) -> Result<crate::state::TransitionRun, String> {
-    state.start_transition(from, to, &transition, align_bars)
+    state.start_transition(from, to, &transition, when)
 }
 
 #[tauri::command]

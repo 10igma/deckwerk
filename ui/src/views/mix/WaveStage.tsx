@@ -2,7 +2,7 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, cancelTransition, focusDeck, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, transitionRoles } from '../../app/actions';
+import { bend, cancelTransition, focusDeck, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
@@ -99,6 +99,22 @@ export function transitionProgress(clockBeats: number, t0: number, bars: number)
 }
 
 /**
+ * Zone des Übergangs für die Wellenform, in Clock-Beats ab jetzt: der eingeplante Übergang, sonst –
+ * bei verschobenem Vorausblick – die Vorschau eines Übergangs, der an der Linie in der Bildmitte endet.
+ */
+export function transitionZone(
+  run: { t0_beat: number; bars: number } | null,
+  clockBeats: number,
+  peekBeats: number,
+  bars: number,
+  possible: boolean,
+): { startBeats: number; endBeats: number; preview: boolean } | null {
+  if (run) return { startBeats: run.t0_beat - clockBeats, endBeats: run.t0_beat - clockBeats + run.bars * 4, preview: false };
+  if (peekBeats > 0 && possible) return { startBeats: peekBeats - bars * 4, endBeats: peekBeats, preview: true };
+  return null;
+}
+
+/**
  * Übergang auf Knopfdruck (TRANS-05): Vorlage und Länge wählen, starten. Der Kern beginnt an der
  * nächsten Grenze im Vier-Takt-Raster und fährt die Regler; hier steht, wie weit er ist.
  */
@@ -115,7 +131,11 @@ function TransitionBar() {
   useEffect(() => {
     if (over) setUi({ transition: null });
   }, [over]);
-  const roles = transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB });
+  const master = useSnap((s) => s.master);
+  const peek = useUi((s) => s.peekBeats);
+  const roles = transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB }, master);
+  // Mit Vorausblick endet der Übergang an der Linie in der Bildmitte; dafür muss sie weit genug voraus liegen.
+  const tooLate = peek > 0 && peek < bars * 4 + TRANSITION_LEAD;
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
   if (run) {
@@ -158,12 +178,15 @@ function TransitionBar() {
       </select>
       <KeyBtn
         size="sm"
-        disabled={!roles}
+        disabled={!roles || tooLate}
         onPress={() => void startTransition()}
-        tip={{ name: t('trans.start'), value: roles ? t('trans.startHint') : t('trans.needDecks') }}
+        tip={{
+          name: t('trans.start'),
+          value: !roles ? t('trans.needDecks') : tooLate ? t('trans.tooLate', { n: bars * 4 + TRANSITION_LEAD }) : peek > 0 ? t('trans.endHint') : t('trans.startHint'),
+        }}
         ariaLabel={t('trans.start')}
       >
-        {roles ? t('trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
+        {roles ? t(peek > 0 ? 'trans.fromToEnd' : 'trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
       </KeyBtn>
     </div>
   );
@@ -274,7 +297,14 @@ export function WaveStage() {
       }
     }
     const ui = getUi();
-    let key = `${w}x${h}|${ui.zoomBeats}|${ui.peekBeats}|${snap.clock_bpm.toFixed(3)}`;
+    const zone = transitionZone(
+      ui.transition,
+      snap.clock_beats,
+      ui.peekBeats,
+      ui.transitionBars,
+      transitionRoles(snap.decks[0], snap.decks[1], snap.master) !== null,
+    );
+    let key = `${w}x${h}|${ui.zoomBeats}|${ui.peekBeats}|${snap.clock_bpm.toFixed(3)}|${zone ? `${zone.startBeats.toFixed(3)}:${zone.endBeats.toFixed(3)}:${zone.preview}` : ''}`;
     for (const deck of LANES) {
       const d = snap.decks[deckIndex(deck)];
       key += `|${d.loaded ? 1 : 0}${d.playing ? 1 : 0}:${d.pos.toFixed(4)}:${d.tempo_offset.toFixed(5)}:${d.eq_db.join(',')}`;
@@ -296,6 +326,7 @@ export function WaveStage() {
       clockBpm: snap.clock_bpm,
       lanes: [laneInput(LANES[0]), laneInput(LANES[1])],
       colors: colors.current.value,
+      zone,
     });
     r.draw(scene, colors.current.value);
     // Einmal nach dem ersten Bild prüfen, ob WebGL wirklich zeichnet; sonst auf Canvas 2D wechseln.

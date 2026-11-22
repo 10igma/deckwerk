@@ -91,6 +91,11 @@ export interface StageInput {
   clockBpm: number;
   lanes: [LaneInput, LaneInput];
   colors: StageColors;
+  /**
+   * Zone eines Übergangs (TRANS-05): Beginn und Ende in Clock-Beats ab jetzt (negativ = vorbei).
+   * `preview`: noch nicht eingeplant, nur Vorschau, wo er läge.
+   */
+  zone?: { startBeats: number; endBeats: number; preview: boolean } | null;
 }
 
 /** Anteil der Bahnhöhe je Band bei Vollausschlag (gestapelt: Tief unten, darüber Mitte, Hoch). */
@@ -247,6 +252,22 @@ export function buildScene(input: StageInput): StageScene {
     }
   }
   rects.push(...marks);
+
+  // Zone eines Übergangs: Balken am oberen Rand von Beginn bis Ende, Linien an Beginn, Mitte
+  // (Tauschpunkt) und Ende. Die Zeitachse ist die der laufenden Decks, im Vorausblick mitverschoben.
+  if (input.zone) {
+    const pxPerBeat = 60 / refBpm / secPerPx;
+    const xAt = (beats: number) => center + (beats - (input.peekBeats ?? 0)) * pxPerBeat;
+    const strong = input.zone.preview ? 0.45 : 0.9;
+    const [x0, x1] = [xAt(input.zone.startBeats), xAt(input.zone.endBeats)];
+    const bar = Math.max(3 * px, Math.round(rem * 0.3));
+    const from = Math.max(0, Math.round(x0));
+    const to = Math.min(width, Math.round(x1));
+    if (to > from) rects.push({ x: from, y: 0, w: to - from, h: bar, color: [...colors.warn, strong] });
+    for (const [x, alpha, w] of [[x0, strong, 2 * px], [(x0 + x1) / 2, strong * 0.5, px], [x1, strong, 2 * px]] as const) {
+      if (x >= 0 && x <= width) rects.push({ x: Math.round(x - w / 2), y: 0, w, h: height, color: [...colors.warn, alpha] });
+    }
+  }
 
   // Abspielmarke über alles, mit Kappen oben und unten; ohne geladenes Deck nur als graue Linie.
   const anyLoaded = lanes.some((l) => l.loaded);

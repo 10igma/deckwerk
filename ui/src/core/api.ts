@@ -8,6 +8,7 @@ import type {
   RefreshResult,
   Transition,
   TransitionRun,
+  TransitionWhen,
   LibraryStatus,
   LoadedTracks,
   Snapshot,
@@ -52,11 +53,12 @@ export interface CoreApi {
   /** Eingebaute Vorlagen für Übergänge in der gewünschten Länge (TRANS-01). */
   listTransitions(bars: number): Promise<Transition[]>;
   /**
-   * Plant einen Übergang vom laufenden Deck `from` zum stehenden Deck `to` ein (TRANS-05): Er beginnt an der
-   * nächsten Taktgrenze im Raster von `alignBars` Takten, der Kern fährt die Regler. Abgelehnt mit Klartext,
-   * wenn die Voraussetzungen fehlen.
+   * Plant einen Übergang vom laufenden Deck `from` zum Deck `to` ein (TRANS-05); der Kern fährt die Regler.
+   * `when` legt fest, ob er an der nächsten Taktgrenze beginnt oder an einer vorgegebenen Stelle endet. Steht
+   * `to`, wird es gestellt und gestartet; läuft es schon im Takt mit, werden nur die Regler gefahren.
+   * Abgelehnt mit Klartext, wenn die Voraussetzungen fehlen.
    */
-  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun>;
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun>;
   /** Bricht den eingeplanten oder laufenden Übergang ab; die Regler bleiben stehen. */
   cancelTransition(): Promise<void>;
   /** Ausgabegeräte des Systems (ENG-01). */

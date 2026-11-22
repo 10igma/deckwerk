@@ -3,7 +3,7 @@
 //! TRANS-02 (Taktgrenzen), TRANS-03 (Bass-Regel), DECK-08 (Sync) – für jede eingebaute Vorlage.
 
 use dw_analysis::{analyze, AnalysisConfig};
-use dw_automix::{plan_live, LiveDeck, LivePlan, Roles, Transition};
+use dw_automix::{plan_live, LiveDeck, LivePlan, Roles, Transition, When};
 use dw_core::{AudioBuf, Command, DeckId, Key, TrackAnalysis};
 use dw_dsp::{Biquad, Coeffs};
 use dw_engine::{Engine, Track};
@@ -97,9 +97,9 @@ fn prepare(transition: &Transition, align_bars: u32) -> Live {
         transition,
         ROLES,
         s.clock_beats,
-        LiveDeck { grid: &da.3, pos: da.0, duration: da.1, track_bpm: da.2 },
-        LiveDeck { grid: &db.3, pos: db.0, duration: db.1, track_bpm: db.2 },
-        align_bars,
+        LiveDeck { grid: &da.3, playing: true, pos: da.0, duration: da.1, track_bpm: da.2 },
+        LiveDeck { grid: &db.3, playing: false, pos: db.0, duration: db.1, track_bpm: db.2 },
+        When::Next { align_bars },
     )
     .unwrap();
     // TRANS-02: T0 liegt auf einem Taktanfang von A im gewählten Raster, der Einstieg auf einem von B.
@@ -180,5 +180,66 @@ fn cancelling_leaves_the_controls_where_they_are() {
     assert!(later.decks[0].playing && later.decks[1].playing);
     for i in 0..2 {
         assert_eq!((later.decks[i].eq_db, later.decks[i].fader), (at_cancel.decks[i].eq_db, at_cancel.decks[i].fader), "Deck {i} hat sich nach dem Abbruch bewegt");
+    }
+}
+
+/// Ende vorgegeben (TRANS-05): Der Übergang endet auf dem gewählten Taktanfang von A, und das
+/// stehende Deck B hat dann genau die Stelle erreicht, an der es stand. Auch aus dem Stand am
+/// eigenen Anfang – dann startet B vor seinem Anfang und läuft bis dorthin stumm.
+#[test]
+fn an_end_anchored_transition_lands_on_the_mark() {
+    for (b_beat, label) in [(130.3, "mitten im Track"), (2.2, "am Anfang")] {
+        let (a, an_a) = full_track(132.0, Key::from_camelot(8, 'A').unwrap(), 112, 0.21, 0, 11);
+        let (b, an_b) = full_track(134.5, Key::from_camelot(9, 'A').unwrap(), 112, 0.05, 2, 12);
+        let mut e = Engine::new(SR);
+        e.load(A, a);
+        e.load(B, b);
+        e.apply(Command::Seek { deck: B, pos: an_b.grid.sec_at(b_beat) });
+        e.apply(Command::Play { deck: A, on: true });
+        let mut out = Vec::new();
+        let pressed = e.clock_beats() + 21.7;
+        run_until(&mut e, pressed, &mut out, &mut []);
+
+        let s = e.snapshot();
+        let transition = Transition::bass_swap(16);
+        let plan = plan_live(
+            &transition,
+            ROLES,
+            s.clock_beats,
+            LiveDeck { grid: &an_a.grid, playing: true, pos: s.decks[0].pos, duration: s.decks[0].duration, track_bpm: s.decks[0].track_bpm },
+            LiveDeck { grid: &an_b.grid, playing: false, pos: s.decks[1].pos, duration: s.decks[1].duration, track_bpm: s.decks[1].track_bpm },
+            When::EndIn { beats: 100.0 },
+        )
+        .unwrap();
+        // Das Ende liegt auf dem Taktanfang von A, der 100 Beats voraus am nächsten ist.
+        let end_clock = plan.t0 + transition.beats();
+        let a_at_end = an_a.grid.beat_at(s.decks[0].pos) + (end_clock - s.clock_beats);
+        assert!((a_at_end - a_at_end.round()).abs() < 1e-6 && an_a.grid.is_downbeat(a_at_end.round() as i64), "{label}: Ende bei Beat {a_at_end} von A");
+        assert!((end_clock - s.clock_beats - 100.0).abs() <= 2.0 + 1e-6, "{label}: Ende in {} Beats", end_clock - s.clock_beats);
+        // Marke von B: der Taktanfang neben seiner Stelle.
+        let mark = an_b.grid.beat_at(plan.in_pos) + transition.beats();
+        assert!((mark - mark.round()).abs() < 1e-6 && an_b.grid.is_downbeat(mark.round() as i64) && (mark - b_beat).abs() <= 2.0 + 1e-6, "{label}: Marke bei Beat {mark}");
+
+        for cmd in &plan.now {
+            e.apply(*cmd);
+        }
+        for (beat, cmd) in &plan.scheduled {
+            assert!(e.schedule(*beat, *cmd));
+        }
+        // Vor T0 steht B, am Start liegt es um die Länge vor der Marke.
+        run_until(&mut e, plan.t0 - 0.5, &mut out, &mut []);
+        let s = e.snapshot();
+        assert!(!s.decks[1].playing, "{label}: B läuft vor T0");
+        assert!((an_b.grid.beat_at(s.decks[1].pos) - (mark - transition.beats())).abs() < 1e-6, "{label}");
+        if b_beat < 10.0 {
+            assert!(s.decks[1].pos < 0.0, "{label}: B steht bei {} s, erwartet vor dem Anfang", s.decks[1].pos);
+        }
+        // Am Ende hat B die Marke erreicht, auf 1/1000 Beat, und läuft im Takt.
+        let worst = run_until(&mut e, end_clock, &mut out, &mut []);
+        let s = e.snapshot();
+        let reached = an_b.grid.beat_at(s.decks[1].pos) - (s.clock_beats - end_clock);
+        println!("{label}: B am Ende bei Beat {reached:.4}, Marke {mark}; größter Versatz {worst:.5}");
+        assert!((reached - mark).abs() < 1e-3, "{label}: B am Ende bei Beat {reached}, Marke {mark}");
+        assert!(worst < 1e-3 && s.decks[1].phase.abs() < 1e-3, "{label}: Versatz {worst}");
     }
 }

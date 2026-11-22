@@ -2,7 +2,7 @@
 
 use crate::audio::{self, AudioHandle, AudioInfo};
 use dw_audio::Controller;
-use dw_automix::{plan_live, LiveDeck, Roles, Transition};
+use dw_automix::{plan_live, LiveDeck, Roles, Transition, When};
 use dw_core::{AudioBuf, Command, DeckId, SyncMode, TrackAnalysis, Waveform, ANALYSIS_VERSION};
 use dw_engine::Track;
 use dw_library::{ImportReport, Library, TrackId};
@@ -170,11 +170,11 @@ impl AppState {
         }
     }
 
-    /// Plant einen vorbereiteten Übergang vom laufenden Deck `from` zum stehenden Deck `to` ein
-    /// (TRANS-05, AUTO-08): Er beginnt an der nächsten Taktgrenze im Raster von `align_bars` Takten,
-    /// die Engine fährt die Regler sample-genau. Das neue Deck rückt auf den Taktanfang neben seiner
-    /// Position und bekommt Beat-Sync.
-    pub fn start_transition(&self, from: DeckId, to: DeckId, transition: &Transition, align_bars: u32) -> Result<TransitionRun, String> {
+    /// Plant einen vorbereiteten Übergang vom laufenden Deck `from` zum Deck `to` ein (TRANS-05,
+    /// AUTO-08). `when` legt fest, ob er an der nächsten Taktgrenze beginnt oder an einer vorgegebenen
+    /// Stelle endet; die Engine fährt die Regler sample-genau. Steht das neue Deck, wird es gestellt,
+    /// bekommt Beat-Sync und startet von selbst; läuft es schon im Takt mit, werden nur die Regler gefahren.
+    pub fn start_transition(&self, from: DeckId, to: DeckId, transition: &Transition, when: When) -> Result<TransitionRun, String> {
         let name = |d: DeckId| ["A", "B", "C", "D"][d.index()];
         let snap = self.ctl.lock().unwrap().snapshot().clone();
         if let Some(run) = self.transition.lock().unwrap().as_ref() {
@@ -189,8 +189,9 @@ impl AppState {
         if !inn.loaded {
             return Err(format!("Auf Deck {} liegt kein Track.", name(to)));
         }
-        if inn.playing {
-            return Err(format!("Deck {} läuft schon; der Übergang startet es selbst am Einstieg.", name(to)));
+        // Läuft das neue Deck schon, muss es wie das alte im Gleichschritt mit der Clock sein.
+        if inn.playing && !(inn.is_master || inn.sync == SyncMode::Beat) {
+            return Err(format!("Deck {} läuft schon, aber nicht im Beat-Sync; so lässt sich der Übergang nicht im Takt fahren.", name(to)));
         }
         // Nur dann laufen die Beats des Decks und die der Clock im Gleichschritt.
         if !(out.is_master || out.sync == SyncMode::Beat) {
@@ -206,9 +207,9 @@ impl AppState {
             transition,
             Roles { out: from, inn: to },
             snap.clock_beats,
-            LiveDeck { grid: &grid_out, pos: out.pos, duration: out.duration, track_bpm: out.track_bpm },
-            LiveDeck { grid: &grid_in, pos: inn.pos, duration: inn.duration, track_bpm: inn.track_bpm },
-            align_bars,
+            LiveDeck { grid: &grid_out, playing: true, pos: out.pos, duration: out.duration, track_bpm: out.track_bpm },
+            LiveDeck { grid: &grid_in, playing: inn.playing, pos: inn.pos, duration: inn.duration, track_bpm: inn.track_bpm },
+            when,
         )
         .map_err(|e| e.to_string())?;
         let mut ctl = self.ctl.lock().unwrap();

@@ -14,6 +14,7 @@ import {
   type RefreshResult,
   type Transition,
   type TransitionRun,
+  type TransitionWhen,
   type LibraryStatus,
   type LoadedTracks,
   type Poll,
@@ -173,8 +174,8 @@ export class TauriCore implements CoreApi {
     return this.invoke<Transition[]>('transition_templates', { bars });
   }
 
-  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun> {
-    return this.invoke<TransitionRun>('transition_start', { from, to, transition, alignBars });
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun> {
+    return this.invoke<TransitionRun>('transition_start', { from, to, transition, when });
   }
 
   cancelTransition(): Promise<void> {

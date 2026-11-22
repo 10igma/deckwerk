@@ -285,8 +285,8 @@
   "trans.bars": "{n} Takte",
   "trans.start": "Übergang starten",
   "trans.startShort": "Übergang",
-  "trans.startHint": "beginnt an der nächsten Vier-Takt-Grenze; das stehende Deck rückt auf seine Eins, bekommt Beat-Sync und startet von selbst",
-  "trans.needDecks": "Ein Deck muss laufen, das andere geladen sein und stehen.",
+  "trans.startHint": "ohne Vorausblick: beginnt an der nächsten Vier-Takt-Grenze; ein stehendes Deck steigt an seiner Stelle ein. Mit Vorausblick: endet an der Linie in der Bildmitte",
+  "trans.needDecks": "Ein Deck muss laufen und das andere geladen sein. Laufen beide, geht der Übergang vom Master aus.",
   "trans.fromTo": "Übergang {from} → {to}",
   "trans.inBeats": "Start in {n} Beats",
   "trans.inBeat": "Start in {n} Beat",
@@ -296,5 +296,8 @@
   "trans.cancelShort": "Abbrechen",
   "trans.cancelHint": "die Regler bleiben stehen, wo sie sind",
   "trans.cancelled": "Übergang abgebrochen. Die Regler stehen, wo sie waren.",
-  "trans.failed": "Übergang nicht möglich: {reason}"
+  "trans.failed": "Übergang nicht möglich: {reason}",
+  "trans.endHint": "endet an der gestrichelten Linie; der Beginn wird zurückgerechnet. Ein stehendes Deck erreicht seine Stelle genau am Ende und startet entsprechend früher",
+  "trans.tooLate": "Die Linie liegt zu nah: Für diese Länge muss der Vorausblick mindestens {n} Beats betragen.",
+  "trans.fromToEnd": "Übergang {from} → {to} endet hier"
 }

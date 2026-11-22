@@ -2,7 +2,7 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type TransitionWhen } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
@@ -537,20 +537,33 @@ export const TRANSITION_BARS = [4, 8, 16, 32] as const;
 /** Der Übergang beginnt an der nächsten Grenze dieses Rasters (Takte). */
 export const TRANSITION_ALIGN = 4;
 
+/** Kleinster Abstand in Beats zwischen „jetzt" und dem Beginn eines Übergangs (Vorlauf des Kerns plus der Beat davor). */
+export const TRANSITION_LEAD = 4;
+
 /**
- * Welches Deck geht und welches kommt (Ansicht mit zwei Decks): Es läuft genau eines der beiden,
- * das andere ist geladen und steht. Sonst null.
+ * Welches Deck geht und welches kommt (Ansicht mit zwei Decks). Läuft genau eines, geht dieses und
+ * das stehende kommt. Laufen beide, geht der Master und das andere kommt. Sonst null.
  */
-export function transitionRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>): { from: DeckId; to: DeckId } | null {
-  if (!a.loaded || !b.loaded || a.playing === b.playing) return null;
+export function transitionRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>, master: DeckId | null = null): { from: DeckId; to: DeckId } | null {
+  if (!a.loaded || !b.loaded) return null;
+  if (a.playing && b.playing) return master === 'a' ? { from: 'a', to: 'b' } : master === 'b' ? { from: 'b', to: 'a' } : null;
+  if (!a.playing && !b.playing) return null;
   return a.playing ? { from: 'a', to: 'b' } : { from: 'b', to: 'a' };
 }
 
-/** Plant den gewählten Übergang ein (TRANS-05): Start an der nächsten Grenze im Vier-Takt-Raster. */
+/**
+ * Wann der Übergang liegt: Ist der Vorausblick nach vorn verschoben, endet er an der Linie in der
+ * Bildmitte (der Kern rechnet den Beginn zurück); sonst beginnt er an der nächsten Vier-Takt-Grenze.
+ */
+export function transitionWhen(peekBeats: number): TransitionWhen {
+  return peekBeats > 0 ? { type: 'end_in', beats: peekBeats } : { type: 'next', align_bars: TRANSITION_ALIGN };
+}
+
+/** Plant den gewählten Übergang ein (TRANS-05). */
 export async function startTransition(): Promise<void> {
   if (!core) return;
   const snap = latestSnapshot();
-  const roles = transitionRoles(snap.decks[0], snap.decks[1]);
+  const roles = transitionRoles(snap.decks[0], snap.decks[1], snap.master);
   if (!roles) {
     showNotice(say('trans.needDecks'));
     return;
@@ -560,8 +573,9 @@ export async function startTransition(): Promise<void> {
     const templates = await core.listTransitions(ui.transitionBars);
     const transition = templates.find((t) => t.name === ui.transitionName) ?? templates[0];
     if (!transition) return;
-    const run = await core.startTransition(roles.from, roles.to, transition, TRANSITION_ALIGN);
-    setUi({ transition: run });
+    const run = await core.startTransition(roles.from, roles.to, transition, transitionWhen(ui.peekBeats));
+    // Der Vorausblick hat seinen Dienst getan: zurück zur Abspielstelle, die Zone bleibt eingezeichnet.
+    setUi({ transition: run, peekBeats: 0 });
   } catch (err) {
     showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
   }

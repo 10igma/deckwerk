@@ -295,7 +295,8 @@ fn incomplete_files_are_marked_in_the_library() {
 /// Taktgrenze und fährt die Regler; danach läuft nur noch das neue Deck, offen und als Master.
 #[test]
 fn a_prepared_transition_plays_live() {
-    use dw_automix::Transition;
+    use dw_automix::{Transition, When};
+    let next = When::Next { align_bars: 1 };
     let tmp = tempfile::tempdir().unwrap();
     let music = tmp.path().join("musik");
     std::fs::create_dir_all(&music).unwrap();
@@ -307,22 +308,22 @@ fn a_prepared_transition_plays_live() {
     let fade = Transition::fade(4);
 
     // Ohne geladene Decks, ohne laufendes Deck, mit laufendem Ziel: jeweils eine klare Absage.
-    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, 1).unwrap_err().contains("Deck A läuft nicht"));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Deck A läuft nicht"));
     state.load_deck(DeckId::A, rows[0].id).unwrap();
     state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: true });
     wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].pos > 0.3);
-    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, 1).unwrap_err().contains("Auf Deck B liegt kein Track"));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Auf Deck B liegt kein Track"));
     state.load_deck(DeckId::B, rows[1].id).unwrap();
     wait_for("Deck B geladen", || state.ctl.lock().unwrap().snapshot().decks[1].loaded);
-    assert!(state.start_transition(DeckId::A, DeckId::A, &fade, 1).is_err());
+    assert!(state.start_transition(DeckId::A, DeckId::A, &fade, next).is_err());
 
     // Einplanen: T0 liegt mindestens den Vorlauf und höchstens gut einen Takt voraus.
     let before = state.ctl.lock().unwrap().snapshot().clock_beats;
-    let run = state.start_transition(DeckId::A, DeckId::B, &fade, 1).unwrap();
+    let run = state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap();
     assert_eq!((run.from, run.to, run.bars, run.name.as_str()), (DeckId::A, DeckId::B, 4, "fade"));
     assert!(run.t0_beat - before >= dw_automix::LEAD_BEATS && run.t0_beat - before < 9.0, "T0 in {} Beats", run.t0_beat - before);
     assert!((run.end_beat - (run.t0_beat + 17.0)).abs() < 1e-9);
-    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, 1).unwrap_err().contains("Es läuft schon ein Übergang"));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Es läuft schon ein Übergang"));
 
     // Kurz nach T0 läuft B im Takt und A noch mit.
     wait_for("Start von B", || state.ctl.lock().unwrap().snapshot().clock_beats > run.t0_beat + 2.0);
@@ -342,7 +343,7 @@ fn a_prepared_transition_plays_live() {
 
     // Abbrechen: Die Regler bleiben stehen. Von B zurück nach A, nach dem ersten Stück abgebrochen.
     state.ctl.lock().unwrap().send(Command::Seek { deck: DeckId::A, pos: 10.0 });
-    let run = state.start_transition(DeckId::B, DeckId::A, &Transition::bass_swap(8), 1).unwrap();
+    let run = state.start_transition(DeckId::B, DeckId::A, &Transition::bass_swap(8), next).unwrap();
     wait_for("zweiter Übergang", || state.ctl.lock().unwrap().snapshot().clock_beats > run.t0_beat + 6.0);
     state.cancel_transition().unwrap();
     std::thread::sleep(Duration::from_millis(200));
@@ -352,6 +353,18 @@ fn a_prepared_transition_plays_live() {
     let later = state.ctl.lock().unwrap().snapshot().clone();
     assert!(later.decks[0].playing && later.decks[1].playing);
     assert_eq!((later.decks[0].eq_db, later.decks[0].fader), (at_cancel.decks[0].eq_db, at_cancel.decks[0].fader));
-    // Danach lässt sich wieder einer einplanen (hier scheitert er nur daran, dass A schon läuft).
-    assert!(state.start_transition(DeckId::B, DeckId::A, &fade, 1).unwrap_err().contains("läuft schon"));
+    // Beide Decks laufen im Takt (A im Beat-Sync): Jetzt lässt sich ein Übergang mit vorgegebenem
+    // Ende einplanen. Liegt das Ende zu nah, kommt die Absage mit den fehlenden Beats.
+    let err = state.start_transition(DeckId::B, DeckId::A, &fade, When::EndIn { beats: 8.0 }).unwrap_err();
+    assert!(err.contains("Bis zum gewählten Ende"), "{err}");
+    let before = state.ctl.lock().unwrap().snapshot().clock_beats;
+    let run = state.start_transition(DeckId::B, DeckId::A, &fade, When::EndIn { beats: 30.0 }).unwrap();
+    let end = run.t0_beat + 16.0;
+    assert!((end - before - 30.0).abs() <= 2.0 + 1e-6, "Ende in {} Beats statt rund 30", end - before);
+    wait_for("Ende des dritten Übergangs", || state.ctl.lock().unwrap().snapshot().clock_beats > run.end_beat + 1.0);
+    let s = state.ctl.lock().unwrap().snapshot().clone();
+    assert!(s.decks[0].playing && !s.decks[1].playing, "A läuft weiter, B ist gestoppt");
+    // Fader und Bass von A hat dieser Übergang geöffnet; Mitten und Höhen stehen noch dort, wo der
+    // abgebrochene sie gelassen hat – das Überblenden fasst sie nicht an.
+    assert_eq!((s.decks[0].fader, s.decks[0].eq_db[0]), (1.0, 0.0));
 }

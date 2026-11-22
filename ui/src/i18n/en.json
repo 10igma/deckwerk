@@ -285,8 +285,8 @@
   "trans.bars": "{n} bars",
   "trans.start": "Start transition",
   "trans.startShort": "Transition",
-  "trans.startHint": "begins at the next four-bar boundary; the stopped deck moves to its downbeat, gets beat sync and starts by itself",
-  "trans.needDecks": "One deck must be playing, the other loaded and stopped.",
+  "trans.startHint": "without look-ahead: begins at the next four-bar boundary; a stopped deck enters at its position. With look-ahead: ends at the line in the centre",
+  "trans.needDecks": "One deck must be playing and the other loaded. If both play, the transition goes out from the master.",
   "trans.fromTo": "Transition {from} → {to}",
   "trans.inBeats": "starts in {n} beats",
   "trans.inBeat": "starts in {n} beat",
@@ -296,5 +296,8 @@
   "trans.cancelShort": "Cancel",
   "trans.cancelHint": "the controls stay where they are",
   "trans.cancelled": "Transition cancelled. The controls stay where they were.",
-  "trans.failed": "Transition not possible: {reason}"
+  "trans.failed": "Transition not possible: {reason}",
+  "trans.endHint": "ends at the dashed line; the start is computed backwards. A stopped deck reaches its position exactly at the end and starts earlier accordingly",
+  "trans.tooLate": "The line is too close: for this length the look-ahead must be at least {n} beats.",
+  "trans.fromToEnd": "Transition {from} → {to} ends here"
 }
