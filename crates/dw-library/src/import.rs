@@ -21,6 +21,8 @@ pub struct ImportReport {
     pub duplicates: usize,
     /// Bekannter Inhalt an neuem Ort: Der Pfad wurde aktualisiert, die Analyse bleibt.
     pub relinked: usize,
+    /// Bekannter Ort, neuer Inhalt (Datei ersetzt, z. B. neu kopiert): Die Analyse beginnt von vorn.
+    pub updated: usize,
     /// Dateien, die sich nicht lesen ließen, mit Grund.
     pub failed: Vec<(PathBuf, String)>,
 }
@@ -144,8 +146,33 @@ impl Library {
         let tx = self.conn.transaction()?;
         for file in files {
             let path_str = file.to_string_lossy().to_string();
-            let known: Option<i64> = tx.query_row("SELECT id FROM track WHERE path = ?1", params![path_str], |r| r.get(0)).optional()?;
-            if known.is_some() {
+            let known: Option<(i64, i64, i64, String)> = tx
+                .query_row("SELECT id, size, mtime, hash FROM track WHERE path = ?1", params![path_str], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .optional()?;
+            if let Some((id, size, mtime, old_hash)) = known {
+                // Bekannter Ort. Wurde die Datei ersetzt (andere Größe oder Zeit und anderer Inhalt), ist die
+                // alte Analyse hinfällig: Der Track beginnt von vorn und wird neu analysiert.
+                let now_on_disk = std::fs::metadata(&file).ok().map(|md| {
+                    let t = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64);
+                    (md.len() as i64, t)
+                });
+                if let Some((new_size, new_mtime)) = now_on_disk.filter(|&(s, m)| s != size || m != mtime) {
+                    if let Ok(hash) = fingerprint(&file) {
+                        if hash != old_hash {
+                            tx.execute("DELETE FROM grid_anchor WHERE track_id = ?1", params![id])?;
+                            tx.execute("DELETE FROM analysis WHERE track_id = ?1", params![id])?;
+                            tx.execute(
+                                "UPDATE track SET hash = ?2, size = ?3, mtime = ?4, missing = 0, incomplete = 0 WHERE id = ?1",
+                                params![id, hash, new_size, new_mtime],
+                            )?;
+                            if let Ok(meta) = read_meta(&file) {
+                                tx.execute("UPDATE track SET duration = ?2 WHERE id = ?1", params![id, meta.duration])?;
+                            }
+                            report.updated += 1;
+                            continue;
+                        }
+                    }
+                }
                 report.duplicates += 1;
                 continue;
             }

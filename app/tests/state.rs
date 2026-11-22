@@ -256,3 +256,36 @@ fn music_folders_do_not_nest() {
     assert!(add_folder(&mut folders, p("/musik")));
     assert_eq!(folders, vec![p("/musik").to_path_buf()]);
 }
+
+/// BIB-20: Eine abgebrochene Kopie (hinten fehlt Audio) wird bei der Analyse als unvollständig
+/// markiert, eine vollständige Datei nicht; nach dem Ersetzen verschwindet die Markierung.
+#[test]
+fn incomplete_files_are_marked_in_the_library() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Ganz.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Halb.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let whole = std::fs::read(music.join("Halb.wav")).unwrap();
+    std::fs::write(music.join("Halb.wav"), &whole[..whole.len() * 2 / 5]).unwrap();
+
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    assert_eq!(state.import(&[music.clone()]).unwrap().added, 2);
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    for row in &rows {
+        state.analyze_track(row.id).unwrap();
+    }
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    assert_eq!(rows.iter().map(|r| (r.title.as_str(), r.incomplete)).collect::<Vec<_>>(), vec![("Ganz", false), ("Halb", true)]);
+
+    // Vollständige Datei an denselben Ort: Aktualisieren setzt den Track zurück, die neue Analyse ist sauber.
+    std::fs::write(music.join("Halb.wav"), &whole).unwrap();
+    let r = state.refresh().unwrap();
+    assert_eq!(r.added, 1);
+    let row = state.lib.lock().unwrap().track(rows[1].id).unwrap();
+    assert!(!row.analyzed && !row.incomplete);
+    state.analyze_track(row.id).unwrap();
+    let row = state.lib.lock().unwrap().track(row.id).unwrap();
+    assert!(row.analyzed && !row.incomplete);
+    assert!((row.bpm.unwrap() - 130.0).abs() < 0.05);
+}

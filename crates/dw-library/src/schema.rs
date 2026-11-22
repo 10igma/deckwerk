@@ -69,6 +69,8 @@ const MIGRATIONS: &[&str] = &[
         track_id INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
         PRIMARY KEY (playlist_id, position)
     );",
+    // Unvollständige Dateien: weniger Audio als die Kopfdaten ankündigen (BIB-20).
+    "ALTER TABLE track ADD COLUMN incomplete INTEGER NOT NULL DEFAULT 0;",
 ];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {

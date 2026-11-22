@@ -78,6 +78,7 @@ pub struct TrackInfo {
     duration: f64,
     analyzed: bool,
     missing: bool,
+    incomplete: bool,
 }
 
 #[tauri::command(async)]
@@ -99,6 +100,7 @@ pub fn library_list(state: State<AppState>) -> Result<Vec<TrackInfo>, String> {
             duration: t.duration,
             analyzed: t.analyzed,
             missing: t.missing,
+            incomplete: t.incomplete,
         })
         .collect())
 }

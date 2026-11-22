@@ -171,6 +171,8 @@ export interface TrackInfo {
   analyzed: boolean;
   /** Datei liegt nicht mehr am gespeicherten Ort. */
   missing: boolean;
+  /** Die Datei enthält weniger Audio, als sie ankündigt (abgebrochene Kopie, BIB-20). */
+  incomplete: boolean;
 }
 
 /** Engine-Kennzahlen (`Poll.status`, ENG-09). */

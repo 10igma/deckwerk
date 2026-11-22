@@ -16,7 +16,11 @@ Findet die Anwendung kein Audiogerät, erscheint in der Kopfzeile ein Warnhinwei
 
 Ordner oder einzelne Dateien auf das Fenster ziehen. Ordner werden mit allen Unterordnern durchsucht.
 
-**Neue Dateien im Ordner:** Ordner, die du auf das Fenster ziehst, merkt sich Deckwerk als Musikordner. Die Taste „Aktualisieren" in der Kopfzeile der Bibliothek durchsucht sie erneut: Neue Dateien kommen in die Liste und werden im Hintergrund analysiert, verschobene oder umbenannte Dateien werden am Inhalt wiedererkannt und behalten ihre Analyse, fehlende werden als „Datei fehlt" markiert. Bekannte Tracks bleiben unberührt. Dasselbe geschieht bei jedem Start; abschalten lässt es sich in den Einstellungen unter „Bibliothek". Dort stehen auch die gemerkten Musikordner. Einzeln hereingezogene Dateien machen ihren Ordner nicht zum Musikordner. Eine Überwachung im laufenden Betrieb gibt es nicht; entfernen lässt sich ein Musikordner noch nicht.
+**Neue Dateien im Ordner:** Ordner, die du auf das Fenster ziehst, merkt sich Deckwerk als Musikordner. Die Taste „Aktualisieren" in der Kopfzeile der Bibliothek durchsucht sie erneut: Neue Dateien kommen in die Liste und werden im Hintergrund analysiert, verschobene oder umbenannte Dateien werden am Inhalt wiedererkannt und behalten ihre Analyse, fehlende werden als „Datei fehlt" markiert. Bekannte Tracks bleiben unberührt. Dasselbe geschieht bei jedem Start; abschalten lässt es sich in den Einstellungen unter „Bibliothek". Dort stehen auch die gemerkten Musikordner. Einzeln hereingezogene Dateien machen ihren Ordner nicht zum Musikordner. Ersetzt du eine Datei am selben Ort durch eine andere Fassung, erkennt das Aktualisieren das und analysiert sie neu.
+
+**Unvollständige Dateien:** Enthält eine Datei weniger Audio, als sie ankündigt – typisch für eine abgebrochene Kopie oder einen abgebrochenen Download –, steht in der Liste statt der Tonart „Unvollständig", und beim Laden erscheint ein Hinweis. Der Track bleibt spielbar, endet aber früher, als die Länge in der Liste sagt; Tempo und Tonart stammen dann nur aus dem vorhandenen Teil. Abhilfe: die Datei neu kopieren und „Aktualisieren" drücken. Tracks, die schon vor dieser Prüfung analysiert waren, werden erst beim Laden markiert.
+
+Eine Überwachung im laufenden Betrieb gibt es nicht; entfernen lässt sich ein Musikordner noch nicht.
 
 - **Formate:** MP3, WAV, AIFF, FLAC, AAC/M4A, ALAC, OGG Vorbis, Opus.
 - **Sofort sichtbar:** Die Tracks erscheinen gleich in der Liste, zunächst mit den Angaben aus der Datei.

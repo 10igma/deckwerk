@@ -386,6 +386,8 @@ function loadable(trackId: TrackId): TrackInfo | null {
     showNotice(say('notice.missing', { title: track.title }), 'error');
     return null;
   }
+  // Unvollständige Datei: spielbar, aber kürzer als angegeben – beim Laden darauf hinweisen (BIB-20).
+  if (track.incomplete) showNotice(say('notice.incomplete', { title: track.title }), 'error');
   return track;
 }
 

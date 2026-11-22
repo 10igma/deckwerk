@@ -309,3 +309,36 @@ fn malformed_tag_does_not_block_import() {
     assert_eq!(tracks[0].artist, "Antje Kovac");
     assert!(tracks[0].duration > 0.2 && tracks[0].duration < 0.5, "Länge {}", tracks[0].duration);
 }
+
+/// BIB-20: Wird eine Datei am selben Ort ersetzt (z. B. eine abgebrochene Kopie durch die
+/// vollständige), verwirft der nächste Import die alte Analyse und die Markierung „unvollständig".
+#[test]
+fn replaced_file_starts_over() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = music_dir(tmp.path());
+    let mut lib = Library::open(&tmp.path().join("lib")).unwrap();
+    lib.import_paths(&[music.clone()]).unwrap();
+    let id = lib.tracks(&TrackQuery { text: "nachtzug".into(), ..Default::default() }).unwrap()[0].id;
+    assert!(lib.set_analysis(id, &analysis(134.02, Key::from_camelot(8, 'A').unwrap())).unwrap());
+    lib.set_incomplete(id, true).unwrap();
+    assert!(lib.track(id).unwrap().incomplete);
+    let hash = lib.fingerprint_of(id).unwrap();
+
+    // Unverändert: gilt als vorhanden, nichts geht verloren.
+    let report = lib.import_paths(&[music.clone()]).unwrap();
+    assert_eq!((report.added, report.updated), (0, 0));
+    assert!(lib.track(id).unwrap().analyzed);
+
+    // Inhalt ersetzt: gleiche Kennung und gleicher Ort, aber Analyse und Markierung sind weg.
+    let file = music.join("tagged.mp3");
+    let mut bytes = std::fs::read(&file).unwrap();
+    bytes.extend_from_slice(&[0x55; 4096]);
+    std::fs::write(&file, bytes).unwrap();
+    let report = lib.import_paths(&[music]).unwrap();
+    assert_eq!((report.added, report.updated), (0, 1));
+    let row = lib.track(id).unwrap();
+    assert_eq!(row.path, file);
+    assert!(!row.analyzed && !row.incomplete && !row.missing);
+    assert!(lib.analysis(id).unwrap().is_none());
+    assert_ne!(lib.fingerprint_of(id).unwrap(), hash);
+}

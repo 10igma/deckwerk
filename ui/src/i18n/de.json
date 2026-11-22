@@ -269,5 +269,8 @@
   "notice.refreshFailed": "Aktualisieren gescheitert: {reason}",
   "settings.refreshOnStart": "Bibliothek",
   "settings.refreshNote": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Musikordner: {folders}. Ordner, die du auf das Fenster ziehst, kommen dazu.",
-  "settings.refreshNoteEmpty": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Noch ist keiner bekannt; Ordner, die du auf das Fenster ziehst, werden gemerkt."
+  "settings.refreshNoteEmpty": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Noch ist keiner bekannt; Ordner, die du auf das Fenster ziehst, werden gemerkt.",
+  "lib.incomplete": "Unvollständig",
+  "lib.incompleteHint": "Die Datei enthält weniger Audio, als sie ankündigt – vermutlich eine abgebrochene Kopie. Neu kopieren, dann „Aktualisieren“.",
+  "notice.incomplete": "„{title}“ ist unvollständig: Die Datei endet früher als angegeben. Neu kopieren, dann „Aktualisieren“."
 }

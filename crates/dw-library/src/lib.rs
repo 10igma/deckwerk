@@ -53,6 +53,8 @@ pub struct TrackRow {
     pub rating: u8,
     pub analyzed: bool,
     pub missing: bool,
+    /// Die Datei enthält weniger Audio, als ihre Kopfdaten ankündigen (abgebrochene Kopie, BIB-20).
+    pub incomplete: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -173,7 +175,7 @@ impl Library {
     pub fn tracks(&self, q: &TrackQuery) -> Result<Vec<TrackRow>> {
         let mut sql = String::from(
             "SELECT t.id, t.path, t.title, t.artist, t.album, t.label, t.genre, t.year, t.comment, t.duration, t.format,
-                    COALESCE(a.bpm, t.tag_bpm), a.key, a.lufs, t.rating, a.track_id IS NOT NULL, t.missing
+                    COALESCE(a.bpm, t.tag_bpm), a.key, a.lufs, t.rating, a.track_id IS NOT NULL, t.missing, t.incomplete
              FROM track t LEFT JOIN analysis a ON a.track_id = t.id",
         );
         let mut args: Vec<rusqlite::types::Value> = Vec::new();
@@ -234,6 +236,7 @@ impl Library {
                 rating: r.get::<_, i64>(14)? as u8,
                 analyzed: r.get(15)?,
                 missing: r.get(16)?,
+                incomplete: r.get(17)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -349,6 +352,12 @@ impl Library {
             lra: lra as f32,
             true_peak_db: true_peak as f32,
         }))
+    }
+
+    /// Merkt, ob die Datei beim Dekodieren weniger Audio lieferte als angekündigt (BIB-20).
+    pub fn set_incomplete(&mut self, id: TrackId, incomplete: bool) -> Result<()> {
+        self.conn.execute("UPDATE track SET incomplete = ?2 WHERE id = ?1", params![id, incomplete])?;
+        Ok(())
     }
 
     pub fn set_analysis_locked(&mut self, id: TrackId, locked: bool) -> Result<()> {

@@ -8,7 +8,7 @@ Die Oberfläche spricht den Kern nur über `CoreApi` (`ui/src/core/api.ts`) an. 
 | `core_poll` | – | `Poll` | Schnappschuss, Engine-Kennzahlen, Stand der Bibliothek; je Bild einmal aufrufen |
 | `library_list` | – | `TrackInfo[]` | alle Tracks, nach Titel sortiert |
 | `library_import` | `paths: string[]` | `ImportResult` | Dateien und Ordner importieren (rekursiv) |
-| `library_refresh` | – | `RefreshResult` | Musikordner erneut durchsuchen (BIB-19): neue Dateien aufnehmen, verschobene neu zuordnen, fehlende markieren. Musikordner sind die als Ordner importierten Orte; kennt die Hülle noch keine, übernimmt sie einmalig die Ordner der vorhandenen Tracks |
+| `library_refresh` (zählt eine am selben Ort ersetzte Datei unter `added`; `TrackInfo.incomplete` meldet unvollständige Dateien, BIB-20) | – | `RefreshResult` | Musikordner erneut durchsuchen (BIB-19): neue Dateien aufnehmen, verschobene neu zuordnen, fehlende markieren. Musikordner sind die als Ordner importierten Orte; kennt die Hülle noch keine, übernimmt sie einmalig die Ordner der vorhandenen Tracks |
 | `settings_get` | – | `AppSettings` (`refresh_on_start`, `music_folders`) | Einstellungen der Hülle |
 | `settings_refresh_on_start` | `on: boolean` | – | Beim Start die Musikordner durchsuchen (Vorgabe an) |
 | `deck_load` | `deck: DeckId`, `trackId: string` | – | Track laden; erfüllt, wenn das Deck spielbereit ist |

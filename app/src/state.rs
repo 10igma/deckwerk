@@ -210,7 +210,8 @@ impl AppState {
         Ok(RefreshReport {
             folders: reachable.len(),
             unreachable: gone.len(),
-            added: import.added,
+            // Ersetzte Dateien zählen wie neue: Sie werden neu analysiert.
+            added: import.added + import.updated,
             relinked: import.relinked,
             missing,
             failed: import.failed.into_iter().map(|(p, why)| (p.to_string_lossy().to_string(), why)).collect(),
@@ -240,7 +241,12 @@ impl AppState {
         let analysis = dw_analysis::analyze(&decoded.audio, &dw_analysis::AnalysisConfig::default());
         let wave = dw_analysis::waveform(&decoded.audio);
         std::fs::write(self.waveform_path(id)?, wave.to_bytes()).map_err(|e| e.to_string())?;
-        self.lib.lock().unwrap().set_analysis(id, &analysis).map_err(|e| e.to_string())?;
+        {
+            let mut lib = self.lib.lock().unwrap();
+            lib.set_analysis(id, &analysis).map_err(|e| e.to_string())?;
+            // Weniger Audio als angekündigt: in der Bibliothek kenntlich machen (BIB-20).
+            lib.set_incomplete(id, decoded.is_incomplete()).map_err(|e| e.to_string())?;
+        }
         self.touch_library();
         Ok((decoded.audio, analysis))
     }
@@ -251,7 +257,13 @@ impl AppState {
         let (audio, analysis) = match stored {
             Some(a) => {
                 let path = self.track_path(id)?;
-                (dw_decode::decode_file(&path).map_err(|e| format!("{}: {e}", path.display()))?.audio, a)
+                let decoded = dw_decode::decode_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                // Auch beim Laden prüfen: Tracks, die vor dieser Prüfung analysiert wurden, fallen so auf.
+                if decoded.is_incomplete() {
+                    self.lib.lock().unwrap().set_incomplete(id, true).map_err(|e| e.to_string())?;
+                    self.touch_library();
+                }
+                (decoded.audio, a)
             }
             // Noch nicht analysiert: jetzt nachholen, die dekodierten Daten gleich weiterverwenden.
             None => self.analyze_track(id)?,

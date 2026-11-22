@@ -107,3 +107,32 @@ fn written_wav_reads_back_identically() {
         let _ = std::fs::remove_file(out);
     }
 }
+
+/// Eine abgebrochene Kopie (Kopfdaten nennen die volle Länge, hinten fehlt Audio) wird erkannt;
+/// vollständige Dateien aller Formate gelten nicht als unvollständig.
+#[test]
+fn truncated_files_are_reported_as_incomplete() {
+    for name in ["ref.wav", "ref.flac", "ref.mp3", "ref.ogg", "ref.opus", "ref.aiff", "ref_aac.m4a", "ref_alac.m4a"] {
+        let d = decode_file(&data(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(!d.is_incomplete(), "{name}: {:?} angekündigt, {} dekodiert", d.announced_frames, d.audio.frames());
+    }
+    let dir = std::env::temp_dir().join(format!("dw-decode-incomplete-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // MP3: hintere Hälfte mit Nullen überschrieben (so sieht eine vorbelegte, nicht fertig kopierte Datei aus).
+    let mut mp3 = std::fs::read(data("ref.mp3")).unwrap();
+    let half = mp3.len() / 2;
+    mp3[half..].fill(0);
+    std::fs::write(dir.join("halb.mp3"), &mp3).unwrap();
+    // WAV: hinten abgeschnitten.
+    let wav = std::fs::read(data("ref.wav")).unwrap();
+    std::fs::write(dir.join("halb.wav"), &wav[..wav.len() / 2]).unwrap();
+    for name in ["halb.mp3", "halb.wav"] {
+        let d = decode_file(&dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let announced = d.announced_frames.unwrap_or_else(|| panic!("{name}: keine angekündigte Länge"));
+        let share = d.audio.frames() as f64 / announced as f64;
+        println!("{name}: {} von {announced} Frames ({:.0} %)", d.audio.frames(), share * 100.0);
+        assert!(d.is_incomplete(), "{name}");
+        assert!((0.3..0.7).contains(&share), "{name}: Anteil {share}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

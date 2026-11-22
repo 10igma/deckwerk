@@ -251,6 +251,11 @@ export function LibraryPanel() {
                     <Icon name="warn" size="0.9em" />
                     {t('lib.missing')}
                   </span>
+                ) : tr.incomplete ? (
+                  <span className="lib__state" data-state="incomplete" title={t('lib.incompleteHint')}>
+                    <Icon name="warn" size="0.9em" />
+                    {t('lib.incomplete')}
+                  </span>
                 ) : !tr.analyzed ? (
                   <span className="lib__state" data-state="pending">
                     <span className="lib__spinner" aria-hidden="true" />

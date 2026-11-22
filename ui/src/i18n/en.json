@@ -269,5 +269,8 @@
   "notice.refreshFailed": "Update failed: {reason}",
   "settings.refreshOnStart": "Library",
   "settings.refreshNote": "On: the music folders are scanned for new files at start. Music folders: {folders}. Folders you drag onto the window are added.",
-  "settings.refreshNoteEmpty": "On: the music folders are scanned for new files at start. None is known yet; folders you drag onto the window are remembered."
+  "settings.refreshNoteEmpty": "On: the music folders are scanned for new files at start. None is known yet; folders you drag onto the window are remembered.",
+  "lib.incomplete": "Incomplete",
+  "lib.incompleteHint": "The file holds less audio than it announces – probably an interrupted copy. Copy it again, then press “Update”.",
+  "notice.incomplete": "“{title}” is incomplete: the file ends earlier than stated. Copy it again, then press “Update”."
 }

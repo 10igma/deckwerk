@@ -869,6 +869,7 @@
 .lib__state[data-state='pending'] {
   color: var(--status-warn);
 }
+.lib__state[data-state='incomplete'],
 .lib__state[data-state='missing'] {
   color: var(--status-danger);
 }
