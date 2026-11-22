@@ -63,6 +63,8 @@ pub fn run() {
             commands::transition_templates,
             commands::transition_start,
             commands::transition_cancel,
+            commands::transition_preview,
+            commands::transition_preview_stop,
             commands::transition_saved,
             commands::transition_save,
             commands::transition_delete,

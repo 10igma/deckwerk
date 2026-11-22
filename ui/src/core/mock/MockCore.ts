@@ -311,6 +311,44 @@ export class MockCore implements CoreApi {
     return Promise.resolve({ ...this.run });
   }
 
+  private preview: { run: TransitionRun; start: number; pos: [number, number] } | null = null;
+
+  /** Vorhören, vereinfacht: Das alte Deck startet sofort, das neue an seiner Stelle im Übergang; Regler fährt der Mock nicht. */
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, _when: TransitionWhen, fromBeat: number): Promise<TransitionRun> {
+    void this.stopPreview();
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    for (const [deck, d] of [[from, out], [to, inn]] as const) if (!d.track) return Promise.reject(`Auf Deck ${deck.toUpperCase()} liegt kein Track.`);
+    const l = transition.bars * 4;
+    const start = Math.floor(Math.min(Math.max(0, fromBeat), Math.max(0, l - 4)) / 4) * 4 - 4;
+    const pos: [number, number] = [out.pos, inn.pos];
+    for (const deck of [from, to]) this.apply({ type: 'play', deck, on: false });
+    this.apply({ type: 'play', deck: from, on: true });
+    const run: TransitionRun = { from, to, name: transition.name, bars: transition.bars, t0_beat: this.clockBeats - start, end_beat: this.clockBeats - start + l + 8 };
+    this.preview = { run, start, pos };
+    return Promise.resolve({ ...run });
+  }
+
+  stopPreview(): Promise<void> {
+    const p = this.preview;
+    if (!p) return Promise.resolve();
+    this.preview = null;
+    [p.run.from, p.run.to].forEach((deck, i) => {
+      this.apply({ type: 'play', deck, on: false });
+      this.decks[deckIndex(deck)].pos = p.pos[i];
+    });
+    return Promise.resolve();
+  }
+
+  private advancePreview(): void {
+    const p = this.preview;
+    if (!p) return;
+    const t = this.clockBeats - p.run.t0_beat;
+    const inn = this.decks[deckIndex(p.run.to)];
+    if (!inn.playing && t >= Math.max(0, p.start) && t < p.run.bars * 4) this.apply({ type: 'play', deck: p.run.to, on: true });
+    if (this.clockBeats > p.run.end_beat) void this.stopPreview();
+  }
+
   cancelTransition(): Promise<void> {
     this.run = null;
     return Promise.resolve();
@@ -672,6 +710,7 @@ export class MockCore implements CoreApi {
   /** Simulation um `dt` Sekunden weiterführen und einen Schnappschuss senden. */
   step(dt: number): void {
     this.advanceTransition();
+    this.advancePreview();
     this.time += dt;
     this.frames += Math.round(dt * MOCK_SAMPLE_RATE);
     for (const d of this.decks) if (d.playing) d.playTime += dt;

@@ -662,7 +662,51 @@ export async function openEditor(): Promise<void> {
 }
 
 export function closeEditor(): void {
+  if (getUi().preview) void stopPreview();
   setUi({ editor: null });
+}
+
+/** Rollen fürs Vorhören: wie live; stehen beide Decks, geht der Master, sonst Deck A. */
+export function previewRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>, master: DeckId | null = null): { from: DeckId; to: DeckId } | null {
+  const live = transitionRoles(a, b, master);
+  if (live) return live;
+  if (!a.loaded || !b.loaded) return null;
+  return master === 'b' ? { from: 'b', to: 'a' } : { from: 'a', to: 'b' };
+}
+
+/**
+ * Spielt den Entwurf im Editor zum Vorhören (TRANS-06), ab dem gewählten Takt. Er liegt dort, wo ihn
+ * die Taste in der Bühne jetzt hinlegen würde (Vorausblick wie dort).
+ */
+export async function previewEditor(): Promise<void> {
+  const ui = getUi();
+  if (!core || !ui.editor) return;
+  const snap = latestSnapshot();
+  const roles = previewRoles(snap.decks[0], snap.decks[1], snap.master);
+  if (!roles) {
+    showNotice(say('ed.previewNeedDecks'));
+    return;
+  }
+  const draft = ui.editor.draft;
+  try {
+    const from = Math.min(ui.previewFrom, (draft.bars - 1) * 4);
+    const run = await core.previewTransition(roles.from, roles.to, { ...draft, name: draft.name.trim() || say('ed.newName') }, transitionWhen(ui.peekBeats), from);
+    setUi({ preview: run });
+  } catch (err) {
+    setUi({ preview: null });
+    showNotice(say('ed.previewFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Beendet das Vorhören; Decks und Regler stehen danach wieder wie vorher. */
+export async function stopPreview(): Promise<void> {
+  if (!core) return;
+  setUi({ preview: null });
+  try {
+    await core.stopPreview();
+  } catch (err) {
+    showNotice(errorText(err), 'error');
+  }
 }
 
 /** Speichert den Entwurf und wählt ihn aus. Der Editor bleibt offen. */

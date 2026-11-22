@@ -64,6 +64,10 @@ export interface UiState {
   savedTransitions: Transition[];
   /** Übergang im Editor: der Entwurf und der Name, unter dem er gespeichert ist (null = neu). */
   editor: { draft: Transition; original: string | null } | null;
+  /** Laufendes Vorhören im Editor (TRANS-06). */
+  preview: TransitionRun | null;
+  /** Ab hier wird vorgehört: Beats ab T0, immer ein Taktanfang. */
+  previewFrom: number;
   /** Gewählte Vorlage und Länge für den nächsten Übergang. */
   transitionName: string;
   transitionBars: number;
@@ -127,6 +131,8 @@ let state: UiState = {
   transition: null,
   savedTransitions: [],
   editor: null,
+  preview: null,
+  previewFrom: 0,
   transitionName: 'bass_swap',
   transitionBars: 16,
   pendingAnalysis: 0,

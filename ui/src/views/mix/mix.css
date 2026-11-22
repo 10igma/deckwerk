@@ -1120,6 +1120,33 @@
 .ted__dot[data-side='in'][data-selected='true'] {
   fill: var(--deck-b);
 }
+/* Vorhören: Marken über allen Spuren, deckungsgleich mit der Spalte der Kurven. */
+.ted__body {
+  position: relative;
+}
+.ted__over {
+  position: absolute;
+  top: var(--sp-2);
+  bottom: var(--sp-2);
+  left: calc(0.6rem + 7.5rem + var(--sp-2));
+  right: 0.6rem;
+  pointer-events: none;
+}
+.ted__from,
+.ted__head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.ted__from {
+  border-left: var(--stroke-1) dashed var(--text-2);
+}
+.ted__head {
+  width: var(--stroke-2);
+  margin-left: calc(var(--stroke-2) / -2);
+  background: var(--text-1);
+  visibility: hidden;
+}
 .ted__ruler {
   position: relative;
   font-size: var(--fs-1);

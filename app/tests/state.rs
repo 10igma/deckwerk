@@ -484,3 +484,89 @@ fn own_transitions_are_saved_and_survive_a_restart() {
     std::fs::write(data.join("transitions.json"), b"{ kaputt").unwrap();
     assert!(state.saved_transitions().is_empty());
 }
+
+/// TRANS-06: Vorhören stellt beide Decks kurz vor die gewählte Stelle, spielt den Übergang von
+/// dort im Takt und stellt danach Stellen, Regler, Sync und Master wieder her.
+#[test]
+fn a_transition_can_be_previewed_and_everything_is_put_back() {
+    use dw_automix::{Transition, When, PREVIEW_LEAD, PREVIEW_TAIL};
+    use dw_core::{Band, SyncMode};
+    let next = When::Next { align_bars: 1 };
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    let swap = Transition::bass_swap(4);
+    let snap = || state.ctl.lock().unwrap().snapshot().clone();
+
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    wait_for("Deck A geladen", || snap().decks[0].loaded);
+    assert!(state.preview_transition(DeckId::A, DeckId::B, &swap, next, 0.0).unwrap_err().contains("Auf Deck B liegt kein Track"));
+    state.load_deck(DeckId::B, rows[1].id).unwrap();
+    wait_for("Decks geladen", || snap().decks[0].loaded && snap().decks[1].loaded);
+    // Ausgangslage: beide stehen, B mit eigenen Reglerstellungen, die der Übergang überfährt.
+    for cmd in [
+        Command::Seek { deck: DeckId::A, pos: 8.0 },
+        Command::Seek { deck: DeckId::B, pos: 12.0 },
+        Command::Fader { deck: DeckId::B, value: 0.6 },
+        Command::Eq { deck: DeckId::B, band: Band::Mid, db: -2.0 },
+        Command::Filter { deck: DeckId::A, pos: 0.25 },
+    ] {
+        state.ctl.lock().unwrap().send(cmd);
+    }
+    wait_for("Ausgangslage", || (snap().decks[0].pos - 8.0).abs() < 1e-6 && snap().decks[1].fader == 0.6 && snap().decks[0].filter == 0.25);
+    let before = snap();
+    assert!(before.master_auto);
+
+    // Ab Takt 3 (Beat 8): Beginn bei Beat 4, beide Decks starten zusammen.
+    let run = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 8.0).unwrap();
+    let begin = run.t0_beat + 8.0 - PREVIEW_LEAD;
+    assert!(begin - before.clock_beats >= 1.5 && begin - before.clock_beats <= 2.5, "Beginn in {} Beats", begin - before.clock_beats);
+    assert!((run.end_beat - (run.t0_beat + 16.0 + PREVIEW_TAIL)).abs() < 1e-9);
+    assert_eq!(state.preview_run(), Some(run.clone()));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &swap, next).unwrap_err().contains("Vorhören"));
+    wait_for("beide Decks laufen", || snap().clock_beats > begin + 1.0);
+    let s = snap();
+    assert!(s.decks[0].playing && s.decks[1].playing);
+    assert_eq!((s.master, s.decks[1].sync), (Some(DeckId::A), SyncMode::Beat));
+    assert!(s.decks[1].phase.abs() < 0.01, "Phase von B {}", s.decks[1].phase);
+    // Im Bass-Tausch über 4 Takte steht der Fader von B nach einem Takt schon offen, der Bass ist noch zu.
+    assert_eq!((s.decks[1].fader, s.decks[1].eq_db[0]), (1.0, f32::NEG_INFINITY));
+    // Nach dem Tausch (Beat 8) hat B den Bass und A nicht mehr.
+    wait_for("Bass-Tausch", || snap().clock_beats > run.t0_beat + 9.0);
+    let s = snap();
+    assert_eq!((s.decks[0].eq_db[0], s.decks[1].eq_db[0]), (f32::NEG_INFINITY, 0.0));
+
+    // Zu Ende gespielt: Mit der nächsten Abfrage steht alles wie vorher.
+    assert!(!state.finish_preview_if_over(snap().clock_beats));
+    wait_for("Ende des Vorhörens", || snap().clock_beats > run.end_beat + 0.5);
+    assert!(state.finish_preview_if_over(snap().clock_beats));
+    assert_eq!(state.preview_run(), None);
+    let same = |what: &str| {
+        wait_for(what, || {
+            let s = snap();
+            (0..2).all(|i| {
+                let (now, old) = (&s.decks[i], &before.decks[i]);
+                !now.playing && (now.pos - old.pos).abs() < 1e-6 && now.fader == old.fader && now.eq_db == old.eq_db && now.filter == old.filter && now.sync == old.sync
+            }) && s.master_auto
+        })
+    };
+    same("Stand wie vorher");
+
+    // Mitten im Vorhören noch einmal von vorn (nach einer Änderung im Editor), dann von Hand
+    // beendet: Wiederhergestellt wird der Stand vor dem ersten, nicht der mittendrin.
+    let first = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 8.0).unwrap();
+    wait_for("erstes Vorhören läuft", || snap().clock_beats > first.t0_beat + 6.0 && snap().decks[1].playing);
+    let run = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 0.0).unwrap();
+    assert!(run.t0_beat > first.t0_beat);
+    wait_for("zweites Vorhören", || snap().clock_beats > run.t0_beat + 2.0);
+    assert!(snap().decks[1].playing);
+    state.stop_preview().unwrap();
+    same("Stand wie vorher nach Abbruch");
+    // Ohne laufendes Vorhören ist Beenden kein Fehler.
+    state.stop_preview().unwrap();
+}

@@ -60,6 +60,14 @@ export interface CoreApi {
    * Abgelehnt mit Klartext, wenn die Voraussetzungen fehlen.
    */
   startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun>;
+  /**
+   * Spielt einen Übergang zum Vorhören (TRANS-06): Beide Decks halten an, werden kurz vor die Stelle
+   * gestellt, an der er mit `when` läge, und spielen ihn ab dem Takt von `fromBeat` (Beats ab T0, ein
+   * Takt Vorlauf). Danach – oder mit `stopPreview` – stehen Decks und Regler wieder wie vorher.
+   */
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen, fromBeat: number): Promise<TransitionRun>;
+  /** Beendet das Vorhören und stellt den Stand von vorher wieder her. */
+  stopPreview(): Promise<void>;
   /** Selbst gebaute Übergänge (TRANS-04). */
   listSavedTransitions(): Promise<Transition[]>;
   /** Speichert einen Übergang unter seinem Namen (ersetzt einen gleichnamigen); liefert die neue Liste. */

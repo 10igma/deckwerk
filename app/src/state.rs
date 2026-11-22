@@ -3,8 +3,8 @@
 use crate::audio::{self, AudioHandle, AudioInfo};
 use crate::recorder::{Recorder, RecordingInfo};
 use dw_audio::Controller;
-use dw_automix::{plan_live, LiveDeck, Roles, Transition, When};
-use dw_core::{AudioBuf, Command, DeckId, SyncMode, TrackAnalysis, Waveform, ANALYSIS_VERSION};
+use dw_automix::{plan_live, plan_preview, LiveDeck, Roles, Transition, When};
+use dw_core::{AudioBuf, Band, Command, DeckId, SyncMode, TrackAnalysis, Waveform, ANALYSIS_VERSION};
 use dw_engine::Track;
 use dw_library::{ImportReport, Library, TrackId};
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,31 @@ pub struct TransitionRun {
     /// Beginn T0 und Ende in Clock-Beats.
     pub t0_beat: f64,
     pub end_beat: f64,
+}
+
+/// Stand eines Decks vor dem Vorhören.
+#[derive(Clone, Debug)]
+struct SavedDeck {
+    deck: DeckId,
+    pos: f64,
+    fader: f32,
+    eq_db: [f32; 3],
+    filter: f32,
+    sync: SyncMode,
+}
+
+#[derive(Clone, Debug)]
+struct PreviewSaved {
+    decks: [SavedDeck; 2],
+    master: Option<DeckId>,
+    master_auto: bool,
+}
+
+/// Laufendes Vorhören eines Übergangs (TRANS-06) mit dem Stand, der danach wiederhergestellt wird.
+#[derive(Clone, Debug)]
+pub struct Preview {
+    pub run: TransitionRun,
+    saved: PreviewSaved,
 }
 
 /// Ergebnis von „Bibliothek aktualisieren".
@@ -101,6 +126,8 @@ pub struct Inner {
     pub loaded: Mutex<[Option<TrackId>; 4]>,
     /// Der zuletzt eingeplante Übergang; gilt als laufend, bis die Clock sein Ende erreicht.
     pub transition: Mutex<Option<TransitionRun>>,
+    /// Laufendes Vorhören im Editor.
+    pub preview: Mutex<Option<Preview>>,
     /// Mitschnitt des Master-Signals (REC-01).
     recorder: Recorder,
     recordings_dir: Mutex<PathBuf>,
@@ -148,6 +175,7 @@ impl AppState {
             lib: Mutex::new(lib),
             loaded: Mutex::new([None; 4]),
             transition: Mutex::new(None),
+            preview: Mutex::new(None),
             recorder,
             recordings_dir: Mutex::new(data_dir.join("aufnahmen")),
             cache_dir,
@@ -184,6 +212,9 @@ impl AppState {
     pub fn start_transition(&self, from: DeckId, to: DeckId, transition: &Transition, when: When) -> Result<TransitionRun, String> {
         let name = |d: DeckId| ["A", "B", "C", "D"][d.index()];
         let snap = self.ctl.lock().unwrap().snapshot().clone();
+        if self.preview.lock().unwrap().is_some() {
+            return Err("Es läuft gerade ein Vorhören; erst beenden.".into());
+        }
         if let Some(run) = self.transition.lock().unwrap().as_ref() {
             if snap.clock_beats < run.end_beat {
                 return Err(format!("Es läuft schon ein Übergang von Deck {} nach Deck {}.", name(run.from), name(run.to)));
@@ -241,6 +272,120 @@ impl AppState {
         }
     }
 
+    /// Spielt einen Übergang zum Vorhören (TRANS-06): Beide Decks halten an, werden kurz vor die
+    /// Stelle gestellt, an der der Übergang mit `when` läge, und spielen ihn ab dem Takt von
+    /// `from_beat` (Beats ab T0). Am Ende – oder mit [`AppState::stop_preview`] – stehen Decks und
+    /// Regler wieder so wie vorher; nur gestartet wird nichts wieder.
+    pub fn preview_transition(&self, from: DeckId, to: DeckId, transition: &Transition, when: When, from_beat: f64) -> Result<TransitionRun, String> {
+        let name = |d: DeckId| ["A", "B", "C", "D"][d.index()];
+        // Läuft schon ein Vorhören, gilt dessen gemerkter Stand als „vorher": Die Engine hat das
+        // Zurückstellen noch nicht ausgeführt, wenn hier gleich weiter geplant wird.
+        let previous = self.preview.lock().unwrap().as_ref().map(|p| p.saved.clone());
+        self.stop_preview()?;
+        let snap = self.ctl.lock().unwrap().snapshot().clone();
+        if let Some(run) = self.transition.lock().unwrap().as_ref() {
+            if snap.clock_beats < run.end_beat {
+                return Err(format!("Es läuft schon ein Übergang von Deck {} nach Deck {}.", name(run.from), name(run.to)));
+            }
+        }
+        let (out, inn) = (&snap.decks[from.index()], &snap.decks[to.index()]);
+        let before = |d: DeckId| -> SavedDeck {
+            let s = &snap.decks[d.index()];
+            previous
+                .as_ref()
+                .and_then(|p| p.decks.iter().find(|x| x.deck == d).cloned())
+                .unwrap_or(SavedDeck { deck: d, pos: s.pos, fader: s.fader, eq_db: s.eq_db, filter: s.filter, sync: s.sync })
+        };
+        for deck in [from, to] {
+            if !snap.decks[deck.index()].loaded {
+                return Err(format!("Auf Deck {} liegt kein Track.", name(deck)));
+            }
+        }
+        let grid_of = |deck: DeckId| -> Result<dw_core::BeatGrid, String> {
+            let id = self.loaded.lock().unwrap()[deck.index()].ok_or_else(|| format!("Auf Deck {} liegt kein Track.", name(deck)))?;
+            let analysis = self.lib.lock().unwrap().analysis(id).map_err(|e| e.to_string())?;
+            analysis.map(|a| a.grid).ok_or_else(|| format!("Der Track auf Deck {} ist noch nicht analysiert.", name(deck)))
+        };
+        let (grid_out, grid_in) = (grid_of(from)?, grid_of(to)?);
+        // Das neue Deck gilt nur dann als „läuft schon mit", wenn es das im Takt tut.
+        let in_runs = previous.is_none() && out.playing && inn.playing && (inn.is_master || inn.sync == SyncMode::Beat);
+        let plan = plan_preview(
+            transition,
+            Roles { out: from, inn: to },
+            LiveDeck { grid: &grid_out, playing: true, pos: before(from).pos, duration: out.duration, track_bpm: out.track_bpm },
+            LiveDeck { grid: &grid_in, playing: in_runs, pos: before(to).pos, duration: inn.duration, track_bpm: inn.track_bpm },
+            when,
+            from_beat,
+        )
+        .map_err(|e| e.to_string())?;
+        let saved = PreviewSaved {
+            decks: [from, to].map(before),
+            master: previous.as_ref().map_or(snap.master, |p| p.master),
+            master_auto: previous.as_ref().map_or(snap.master_auto, |p| p.master_auto),
+        };
+        // Die Clock läuft frei, solange kein Deck spielt. Das alte Deck startet an einem ganzen
+        // Clock-Beat kurz voraus; von dort zählen alle Zeiten des Übergangs.
+        let begin = (snap.clock_beats + 1.5).ceil();
+        let t0 = begin - plan.start;
+        let mut ctl = self.ctl.lock().unwrap();
+        let prepare = [
+            Command::CancelScheduled,
+            Command::Play { deck: from, on: false },
+            Command::Play { deck: to, on: false },
+            Command::SetMaster { deck: Some(from) },
+            Command::Seek { deck: from, pos: plan.out_pos },
+            Command::Seek { deck: to, pos: plan.in_pos },
+            Command::Sync { deck: to, mode: SyncMode::Beat },
+        ];
+        let sent = prepare.iter().chain(plan.now.iter()).all(|cmd| ctl.send(*cmd)) && plan.scheduled.iter().all(|(beat, cmd)| ctl.send_at(t0 + *beat, *cmd));
+        drop(ctl);
+        let run = TransitionRun { from, to, name: transition.name.clone(), bars: transition.bars, t0_beat: t0, end_beat: t0 + plan.stop };
+        // Auch wenn nicht alles ankam: gemerkt wird, damit das Zurückstellen aufräumt.
+        *self.preview.lock().unwrap() = Some(Preview { run: run.clone(), saved });
+        if !sent {
+            let _ = self.stop_preview();
+            return Err("Die Audio-Engine nimmt keine Befehle an.".into());
+        }
+        Ok(run)
+    }
+
+    /// Das laufende Vorhören, falls eines läuft.
+    pub fn preview_run(&self) -> Option<TransitionRun> {
+        self.preview.lock().unwrap().as_ref().map(|p| p.run.clone())
+    }
+
+    /// Beendet das Vorhören: Decks anhalten, Regler, Stellen, Sync und Master wie vorher. Ohne
+    /// laufendes Vorhören geschieht nichts.
+    pub fn stop_preview(&self) -> Result<(), String> {
+        let Some(preview) = self.preview.lock().unwrap().take() else { return Ok(()) };
+        let mut cmds = vec![Command::CancelScheduled];
+        for d in &preview.saved.decks {
+            cmds.push(Command::Play { deck: d.deck, on: false });
+        }
+        for d in &preview.saved.decks {
+            cmds.push(Command::Fader { deck: d.deck, value: d.fader });
+            for (band, db) in [Band::Low, Band::Mid, Band::High].into_iter().zip(d.eq_db) {
+                cmds.push(Command::Eq { deck: d.deck, band, db });
+            }
+            cmds.push(Command::Filter { deck: d.deck, pos: d.filter });
+            cmds.push(Command::Sync { deck: d.deck, mode: d.sync });
+            cmds.push(Command::Seek { deck: d.deck, pos: d.pos });
+        }
+        cmds.push(if preview.saved.master_auto { Command::MasterAuto } else { Command::SetMaster { deck: preview.saved.master } });
+        let mut ctl = self.ctl.lock().unwrap();
+        if cmds.iter().all(|cmd| ctl.send(*cmd)) {
+            Ok(())
+        } else {
+            Err("Die Audio-Engine nimmt keine Befehle an.".into())
+        }
+    }
+
+    /// Räumt auf, sobald das Vorhören zu Ende gespielt ist; wird mit jeder Abfrage des Zustands
+    /// aufgerufen. Liefert, ob aufgeräumt wurde.
+    pub fn finish_preview_if_over(&self, clock_beats: f64) -> bool {
+        let over = self.preview.lock().unwrap().as_ref().is_some_and(|p| clock_beats > p.run.end_beat + 0.25);
+        over && self.stop_preview().is_ok()
+    }
     /// Ordner, in dem Mitschnitte landen.
     pub fn set_recordings_dir(&self, dir: PathBuf) {
         *self.recordings_dir.lock().unwrap() = dir;

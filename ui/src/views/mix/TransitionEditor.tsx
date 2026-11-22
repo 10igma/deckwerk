@@ -1,7 +1,8 @@
 // Editor für Übergänge (TRANS-04): je Regler eine Spur mit den Kurven des gehenden und des kommenden
 // Decks. Punkte setzen (Klick), ziehen, löschen (Doppelklick); waagerecht rasten sie auf Beats.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { closeEditor, deleteSavedTransition, saveEditor } from '../../app/actions';
+import { closeEditor, deleteSavedTransition, previewEditor, saveEditor, stopPreview } from '../../app/actions';
+import { useFrame, useSnap } from '../../app/frame';
 import { setUi, useUi } from '../../app/store';
 import type { Transition, TransitionPoint } from '../../core/types';
 import { KeyBtn } from '../../design/components';
@@ -161,6 +162,29 @@ function LaneRow({ draft, param, active, selected, onChange, onSelect, onActive 
   );
 }
 
+/**
+ * Marke „ab hier wird vorgehört" und Abspielmarke über allen Spuren. Die Abspielmarke läuft in der
+ * Bildschleife mit der Clock, nicht über React.
+ */
+function PreviewMarks({ lo, hi, from }: { lo: number; hi: number; from: number }) {
+  const run = useUi((s) => s.preview);
+  const head = useRef<HTMLDivElement | null>(null);
+  useFrame((s) => {
+    const el = head.current;
+    if (!el) return;
+    const beat = run ? s.clock_beats - run.t0_beat : NaN;
+    const show = beat >= lo && beat <= hi && (s.decks[0].playing || s.decks[1].playing);
+    el.style.visibility = show ? 'visible' : 'hidden';
+    if (show) el.style.left = `${((beat - lo) / (hi - lo)) * 100}%`;
+  });
+  return (
+    <div className="ted__over" aria-hidden="true">
+      <div className="ted__from" style={{ left: `${((from - lo) / (hi - lo)) * 100}%` }} />
+      <div className="ted__head" ref={head} />
+    </div>
+  );
+}
+
 /** Editor für den Übergang im Entwurf (`ui.editor`). */
 export function TransitionEditor() {
   const t = useT();
@@ -168,6 +192,13 @@ export function TransitionEditor() {
   const [selected, setSelected] = useState<Sel | null>(null);
   const [active, setActive] = useState<Record<Param, Side>>({ fader: 'in', eq_low: 'in', eq_mid: 'in', eq_high: 'in', filter: 'out' });
   const draft = editor?.draft ?? null;
+  const preview = useUi((s) => s.preview);
+  const previewFrom = useUi((s) => s.previewFrom);
+  // Zu Ende gespielt: Die Hülle hat aufgeräumt, die Taste springt zurück.
+  const over = useSnap((s) => preview !== null && s.clock_beats > preview.end_beat);
+  useEffect(() => {
+    if (over) setUi({ preview: null });
+  }, [over]);
   const change = (next: Transition) => setUi({ editor: editor ? { ...editor, draft: next } : null });
 
   // Entf löscht den gewählten Punkt, Esc hebt die Auswahl auf.
@@ -189,6 +220,7 @@ export function TransitionEditor() {
   const point = selected ? findLane(draft, selected.side, selected.param)?.points[selected.index] : undefined;
   const [lo, hi] = timeRange(draft);
   const clashes = bassClashes(draft);
+  const from = Math.min(previewFrom, (draft.bars - 1) * 4);
   const ticks = [];
   for (let b = 0; b <= hi; b += 16) ticks.push(b);
 
@@ -221,6 +253,16 @@ export function TransitionEditor() {
           </span>
         )}
         <span className="ted__spacer" />
+        <select className="stage__select" value={from} aria-label={t('ed.previewFrom')} onChange={(e) => setUi({ previewFrom: Number(e.target.value) })}>
+          {Array.from({ length: draft.bars }, (_, i) => (
+            <option key={i} value={i * 4}>
+              {t('ed.fromBar', { n: i + 1 })}
+            </option>
+          ))}
+        </select>
+        <KeyBtn size="sm" mode="toggle" active={preview !== null} onPress={() => void (preview ? stopPreview() : previewEditor())} tip={{ name: t('ed.preview'), value: t('ed.previewHint') }}>
+          {t(preview ? 'ed.previewStop' : 'ed.preview')}
+        </KeyBtn>
         {editor.original !== null && (
           <KeyBtn size="sm" onPress={() => void deleteSavedTransition(editor.original!)}>
             {t('ed.delete')}
@@ -244,6 +286,7 @@ export function TransitionEditor() {
             ))}
           </div>
         </div>
+        <PreviewMarks lo={lo} hi={hi} from={from} />
         {PARAMS.map((param) => (
           <LaneRow key={param} draft={draft} param={param} active={active[param]} selected={selected} onChange={change} onSelect={setSelected} onActive={(side) => setActive((a) => ({ ...a, [param]: side }))} />
         ))}

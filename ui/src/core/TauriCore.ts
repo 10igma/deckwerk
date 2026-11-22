@@ -179,6 +179,14 @@ export class TauriCore implements CoreApi {
     return this.invoke<TransitionRun>('transition_start', { from, to, transition, when });
   }
 
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen, fromBeat: number): Promise<TransitionRun> {
+    return this.invoke<TransitionRun>('transition_preview', { from, to, transition, when, fromBeat });
+  }
+
+  stopPreview(): Promise<void> {
+    return this.invoke<void>('transition_preview_stop');
+  }
+
   cancelTransition(): Promise<void> {
     return this.invoke<void>('transition_cancel');
   }

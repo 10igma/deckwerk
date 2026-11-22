@@ -338,5 +338,12 @@
   "ed.delete": "Delete",
   "ed.close": "Close",
   "ed.saved": "“{name}” saved and selected.",
-  "ed.failed": "Could not save: {reason}"
+  "ed.failed": "Could not save: {reason}",
+  "ed.preview": "Preview",
+  "ed.previewStop": "Stop",
+  "ed.previewHint": "plays the draft on the loaded decks, from the chosen bar with one bar of lead-in. Running decks stop for this; afterwards decks and controls are back where they were",
+  "ed.previewFrom": "Preview from bar",
+  "ed.fromBar": "from bar {n}",
+  "ed.previewNeedDecks": "Preview needs a track on both decks.",
+  "ed.previewFailed": "Preview not possible: {reason}"
 }

@@ -10,5 +10,5 @@ mod live;
 mod transition;
 
 pub use blend::{plan_blend, render_blend, BlendPlan, BlendReport, PlanError};
-pub use live::{plan_live, LiveDeck, LiveError, LivePlan, When, LEAD_BEATS, MAX_TEMPO_GAP};
+pub use live::{plan_live, plan_preview, LiveDeck, LiveError, LivePlan, PreviewPlan, When, LEAD_BEATS, MAX_TEMPO_GAP, PREVIEW_LEAD, PREVIEW_TAIL};
 pub use transition::{Curve, Lane, Param, Point, Roles, Side, Transition, STEPS_PER_BEAT};

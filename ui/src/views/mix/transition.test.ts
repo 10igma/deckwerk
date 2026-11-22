@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { transitionRoles, transitionWhen } from '../../app/actions';
+import { previewRoles, transitionRoles, transitionWhen } from '../../app/actions';
 import { MockCore } from '../../core/mock/MockCore';
 import { MOCK_TRACKS } from '../../core/mock/tracks';
 import { stageTarget, transitionProgress, transitionZone } from './WaveStage';
@@ -120,5 +120,43 @@ describe('Übergang auf Knopfdruck (TRANS-05)', () => {
     expect(stageTarget({ ...base, x: 1000, peekBeats: 0, deck: 'b', state: fast, anyPlaying: true })).toEqual({ kind: 'deck', deck: 'b', pos: 62.25 });
     // Nie vor den Anfang oder hinter das Ende.
     expect(stageTarget({ ...base, x: 0, peekBeats: 0, deck: 'b', state: { ...stopped, pos: 0.5 }, anyPlaying: true })).toEqual({ kind: 'deck', deck: 'b', pos: 0 });
+  });
+});
+
+describe('Vorhören im Editor (TRANS-06)', () => {
+  it('Rollen wie live; stehen beide Decks, geht der Master, sonst Deck A', () => {
+    const d = (loaded: boolean, playing: boolean) => ({ loaded, playing });
+    expect(previewRoles(d(true, false), d(true, true))).toEqual({ from: 'b', to: 'a' });
+    expect(previewRoles(d(true, false), d(true, false))).toEqual({ from: 'a', to: 'b' });
+    expect(previewRoles(d(true, false), d(true, false), 'b')).toEqual({ from: 'b', to: 'a' });
+    expect(previewRoles(d(true, false), d(false, false))).toBe(null);
+  });
+
+  it('simulierter Kern: spielt ab dem gewählten Takt und stellt die Decks danach zurück', async () => {
+    const core = new MockCore({ scene: 'loaded', manualClock: true });
+    const step = (seconds: number) => {
+      for (let s = 0; s < seconds; s += 1 / 60) core.step(1 / 60);
+    };
+    for (const deck of ['a', 'b'] as const) core.send({ type: 'play', deck, on: false });
+    core.send({ type: 'seek', deck: 'a', pos: 30 });
+    core.send({ type: 'seek', deck: 'b', pos: 45 });
+    step(0.1);
+    const before = core.snapshot();
+    expect(before.decks[0].loaded && before.decks[1].loaded).toBe(true);
+    const [swap] = await core.listTransitions(4);
+    // Ab Takt 3: Beginn ein Takt davor (Beat 4), das neue Deck läuft dort schon mit.
+    const run = await core.previewTransition('a', 'b', swap, { type: 'next', align_bars: 4 }, 8);
+    expect(run.t0_beat).toBeCloseTo(core.snapshot().clock_beats - 4, 6);
+    expect(run.end_beat - run.t0_beat).toBe(16 + 8);
+    step(0.5);
+    expect(core.snapshot().decks.slice(0, 2).map((d) => d.playing)).toEqual([true, true]);
+    // Bis über das Ende: beide stehen wieder an ihrer Stelle.
+    step(((run.end_beat - core.snapshot().clock_beats + 1) * 60) / core.snapshot().clock_bpm);
+    const after = core.snapshot();
+    expect(after.decks.slice(0, 2).map((d) => d.playing)).toEqual([false, false]);
+    expect(after.decks[0].pos).toBeCloseTo(30, 6);
+    expect(after.decks[1].pos).toBeCloseTo(45, 6);
+    // Ohne Track auf einem Deck: Absage im Klartext.
+    await expect(new MockCore({ scene: 'empty', manualClock: true }).previewTransition('a', 'b', swap, { type: 'next', align_bars: 4 }, 0)).rejects.toMatch(/liegt kein Track/);
   });
 });

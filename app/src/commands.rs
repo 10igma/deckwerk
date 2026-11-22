@@ -49,6 +49,8 @@ pub fn core_poll(state: State<AppState>) -> Poll {
         let mut ctl = state.ctl.lock().unwrap();
         (ctl.snapshot().clone(), ctl.take_dsp_load_peak(), ctl.xruns())
     };
+    // Zu Ende gespieltes Vorhören aufräumen (TRANS-06).
+    state.finish_preview_if_over(snapshot.clock_beats);
     let pending_analysis = state.lib.lock().unwrap().pending_analysis(ANALYSIS_VERSION).map_or(0, |p| p.len());
     let audio = state.audio.lock().unwrap().clone();
     Poll {
@@ -126,6 +128,25 @@ pub fn transition_save(state: State<AppState>, transition: dw_automix::Transitio
 #[tauri::command]
 pub fn transition_delete(state: State<AppState>, name: String) -> Result<Vec<dw_automix::Transition>, String> {
     state.delete_transition(&name)
+}
+
+/// Übergang zum Vorhören spielen (TRANS-06); `from_beat` in Beats ab T0.
+#[tauri::command]
+pub fn transition_preview(
+    state: State<AppState>,
+    from: DeckId,
+    to: DeckId,
+    transition: dw_automix::Transition,
+    when: dw_automix::When,
+    from_beat: f64,
+) -> Result<crate::state::TransitionRun, String> {
+    state.preview_transition(from, to, &transition, when, from_beat)
+}
+
+/// Vorhören beenden und den Stand von vorher wiederherstellen.
+#[tauri::command]
+pub fn transition_preview_stop(state: State<AppState>) -> Result<(), String> {
+    state.stop_preview()
 }
 
 /// Vorbereiteten Übergang einplanen (TRANS-05).

@@ -3,7 +3,7 @@
 //! in vorgemerkte Befehle für die Engine übersetzt.
 
 use crate::transition::{Roles, Transition};
-use dw_core::{BeatGrid, Command, SyncMode};
+use dw_core::{BeatGrid, Command, DeckId, SyncMode};
 use serde::{Deserialize, Serialize};
 
 /// Größter Tempo-Abstand zwischen den Tracks, bis zu dem ein Übergang im Takt eingeplant wird.
@@ -171,6 +171,82 @@ pub fn plan_live(transition: &Transition, roles: Roles, clock_beats: f64, out: L
     })
 }
 
+/// Vorlauf beim Vorhören in Beats: So viel Musik läuft, bevor die gewählte Stelle erreicht ist.
+pub const PREVIEW_LEAD: f64 = 4.0;
+/// Nachlauf beim Vorhören in Beats: So lange spielt das neue Deck nach dem Ende allein weiter.
+pub const PREVIEW_TAIL: f64 = 8.0;
+
+/// Ein Übergang zum Vorhören (TRANS-06): Beide Decks werden kurz vor die gewählte Stelle gestellt
+/// und spielen den Übergang von dort. Alle Zeiten sind Beats relativ zu T0.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreviewPlan {
+    /// Beginn des Vorhörens (negativ = vor T0).
+    pub start: f64,
+    /// Hier halten beide Decks an.
+    pub stop: f64,
+    /// Stellen, an die die Decks vor dem Start gestellt werden, in Sekunden.
+    pub out_pos: f64,
+    pub in_pos: f64,
+    /// Reglerstellungen zu Beginn: was der Übergang bis `start` schon eingestellt hätte.
+    pub now: Vec<Command>,
+    /// Vorzumerken: (Beats relativ zu T0, Befehl), aufsteigend. Enthält Start und Stopp beider Decks.
+    pub scheduled: Vec<(f64, Command)>,
+}
+
+/// Regler, den ein Befehl stellt – zum Zusammenfassen der Stellungen vor dem Beginn.
+fn control_slot(cmd: &Command) -> Option<(u8, DeckId, u8)> {
+    match *cmd {
+        Command::Fader { deck, .. } => Some((0, deck, 0)),
+        Command::Eq { deck, band, .. } => Some((1, deck, band as u8)),
+        Command::Filter { deck, .. } => Some((2, deck, 0)),
+        _ => None,
+    }
+}
+
+/// Plant das Vorhören von `transition`: Er liegt in den Tracks genau dort, wo [`plan_live`] ihn mit
+/// `when` hinlegen würde; gespielt wird ab dem Takt, in dem `from_beat` (relativ zu T0) liegt, mit
+/// [`PREVIEW_LEAD`] Beats Vorlauf. `out.pos` und `inn.pos` sind die Stellen, an denen die Decks jetzt
+/// stehen oder laufen; `inn.playing` hat dieselbe Bedeutung wie dort (das neue Deck läuft durch).
+pub fn plan_preview(transition: &Transition, roles: Roles, out: LiveDeck, inn: LiveDeck, when: When, from_beat: f64) -> Result<PreviewPlan, LiveError> {
+    if !from_beat.is_finite() {
+        return Err(LiveError::Invalid("Beginn des Vorhörens ist keine Zahl".into()));
+    }
+    // Mit Clock 0 ist `t0` der Abstand von der jetzigen Stelle bis T0 in Beats.
+    let plan = plan_live(transition, roles, 0.0, out, inn, when)?;
+    let l = transition.beats();
+    let out_t0 = out.grid.beat_at(out.pos) + plan.t0;
+    let in_t0 = inn.grid.beat_at(plan.in_pos);
+    let bar = (from_beat.clamp(0.0, (l - 4.0).max(0.0)) / 4.0).floor() * 4.0;
+    let start = bar - PREVIEW_LEAD;
+    let stop = l + PREVIEW_TAIL;
+
+    let mut now: Vec<Command> = Vec::new();
+    let mut scheduled: Vec<(f64, Command)> = vec![(start, Command::Play { deck: roles.out, on: true })];
+    // Läuft das neue Deck durch oder wäre es an dieser Stelle schon gestartet, beginnt es mit.
+    let mut in_started = inn.playing;
+    let mut rest: Vec<(f64, Command)> = Vec::new();
+    for (beat, cmd) in plan.scheduled {
+        let rel = beat - plan.t0;
+        if rel >= start {
+            rest.push((rel, cmd));
+        } else if let Some(slot) = control_slot(&cmd) {
+            // Vor dem Beginn zählt je Regler nur die letzte Stellung.
+            now.retain(|c| control_slot(c) != Some(slot));
+            now.push(cmd);
+        } else if cmd == (Command::Play { deck: roles.inn, on: true }) {
+            in_started = true;
+        }
+    }
+    if in_started {
+        scheduled.push((start, Command::Play { deck: roles.inn, on: true }));
+    }
+    scheduled.extend(rest);
+    scheduled.push((stop, Command::Play { deck: roles.out, on: false }));
+    scheduled.push((stop, Command::Play { deck: roles.inn, on: false }));
+    scheduled.sort_by(|a, b| a.0.total_cmp(&b.0));
+    Ok(PreviewPlan { start, stop, out_pos: out.grid.sec_at(out_t0 + start), in_pos: inn.grid.sec_at(in_t0 + start), now, scheduled })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,6 +350,59 @@ mod tests {
             // Seine Stelle bei T0 ergibt sich aus dem Gleichschritt mit der Clock.
             assert!((gb.beat_at(plan.in_pos) - (50.25 + plan.t0 - 10.0)).abs() < 1e-9);
         }
+    }
+
+    /// TRANS-06: Vorhören legt den Übergang dorthin, wo er live läge, beginnt einen Takt vor der
+    /// gewählten Stelle und bringt die Regler in die Stellung, die sie dort schon hätten.
+    #[test]
+    fn preview_starts_before_the_chosen_bar_with_the_controls_in_place() {
+        let ga = BeatGrid::constant(120.0, 0.25, 1);
+        let gb = BeatGrid::constant(126.0, 0.1, 2);
+        let t = Transition::bass_swap(16);
+        let a = deck(&ga, ga.sec_at(37.5), 120.0);
+        let b = deck(&gb, gb.sec_at(66.4), 126.0);
+        let when = When::Next { align_bars: 4 };
+        let live = plan_live(&t, ROLES, 0.0, a, b, when).unwrap();
+        // Von Anfang an: ein Takt Vorlauf vor T0, B noch nicht gestartet, noch kein Regler gestellt.
+        let p = plan_preview(&t, ROLES, a, b, when, 0.0).unwrap();
+        assert_eq!((p.start, p.stop), (-4.0, 64.0 + PREVIEW_TAIL));
+        assert!((ga.beat_at(p.out_pos) - (37.5 + live.t0 - 4.0)).abs() < 1e-9);
+        assert!((gb.beat_at(p.in_pos) - (66.0 - 4.0)).abs() < 1e-9);
+        assert!(p.now.is_empty());
+        assert_eq!(p.scheduled[0], (-4.0, Command::Play { deck: A, on: true }));
+        assert!(p.scheduled.contains(&(0.0, Command::Play { deck: B, on: true })));
+        assert!(p.scheduled.windows(2).all(|w| w[0].0 <= w[1].0));
+        let tail: Vec<_> = p.scheduled.iter().rev().take(2).collect();
+        assert!(tail.iter().all(|(beat, c)| *beat == p.stop && matches!(c, Command::Play { on: false, .. })));
+        // Dieselben Reglerbefehle wie live, nur relativ zu T0.
+        let controls = |v: &[(f64, Command)], t0: f64| v.iter().filter(|(_, c)| control_slot(c).is_some()).map(|(b, c)| (b - t0, *c)).collect::<Vec<_>>();
+        assert_eq!(controls(&p.scheduled, 0.0), controls(&live.scheduled, live.t0));
+
+        // Ab Takt 9 (Beat 34 liegt darin): Beginn bei Beat 28, beide Decks starten zusammen. Der Fader
+        // von B ist schon offen, sein Bass noch zu, Mitten und Höhen stehen auf dem Weg.
+        let p = plan_preview(&t, ROLES, a, b, when, 34.0).unwrap();
+        assert_eq!(p.start, 28.0);
+        assert!((ga.beat_at(p.out_pos) - (37.5 + live.t0 + 28.0)).abs() < 1e-9);
+        assert!((gb.beat_at(p.in_pos) - (66.0 + 28.0)).abs() < 1e-9);
+        assert_eq!(&p.scheduled[..2], &[(28.0, Command::Play { deck: A, on: true }), (28.0, Command::Play { deck: B, on: true })]);
+        assert_eq!(p.scheduled.iter().filter(|(_, c)| matches!(c, Command::Play { deck: B, on: true })).count(), 1);
+        assert_eq!(p.now.len(), 4, "{:?}", p.now);
+        assert!(p.now.contains(&Command::Fader { deck: B, value: 1.0 }));
+        assert!(p.now.contains(&Command::Eq { deck: B, band: dw_core::Band::Low, db: f32::NEG_INFINITY }));
+        let lane = t.lane(crate::transition::Side::In, crate::transition::Param::EqMid).unwrap();
+        let mid = p.now.iter().find_map(|c| match c {
+            Command::Eq { deck: B, band: dw_core::Band::Mid, db } => Some(*db),
+            _ => None,
+        });
+        assert!((mid.unwrap() - lane.value_at(27.75).unwrap()).abs() < 1e-6);
+        // Hinter dem Ende gewählt: Es bleibt beim letzten Takt.
+        assert_eq!(plan_preview(&t, ROLES, a, b, when, 999.0).unwrap().start, 56.0);
+
+        // Läuft B schon mit, spielt es beim Vorhören von Beginn an.
+        let running = LiveDeck { grid: &gb, playing: true, pos: gb.sec_at(50.0), duration: 600.0, track_bpm: 126.0 };
+        let p = plan_preview(&t, ROLES, a, running, when, 0.0).unwrap();
+        assert_eq!(&p.scheduled[..2], &[(-4.0, Command::Play { deck: A, on: true }), (-4.0, Command::Play { deck: B, on: true })]);
+        assert!((gb.beat_at(p.in_pos) - (50.0 + live.t0 - 4.0)).abs() < 1e-9);
     }
 
     #[test]

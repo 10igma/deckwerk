@@ -259,6 +259,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | TRANS-03 | Bass-Regel: Es spielen nie zwei ungedämpfte Bässe länger als 1 Takt gleichzeitig | M | 5 | Messung je Takt: Der Pegel im Band < 120 Hz liegt im Übergang nie mehr als 3 dB über dem lautesten Takt, den A oder B allein in diesem Mix erreichen |
 | TRANS-04 | Eigene Vorlagen anlegen, ändern, speichern | S | 5 | Vorlage ist im Auto-Mix wählbar |
 | TRANS-05 | Übergänge sind im Live-Modus einzeln auslösbar („nächsten Übergang jetzt spielen") | S | 5 | Auslösen startet quantisiert an der nächsten Phrasengrenze |
+| TRANS-06 | Ein Übergang lässt sich im Editor vorhören: Er spielt auf den geladenen Decks ab einem gewählten Takt, ohne gespeichert zu sein; danach stehen Decks und Regler wie vorher | S | 5 | Beide Decks laufen im Takt (Phase < 0,01 Beat), die Regler stehen zu Beginn so, wie der Übergang sie bis dorthin gestellt hätte; nach dem Ende und nach einem Abbruch stimmen Stelle, Fader, EQ, Filter, Sync und Master-Wahl mit dem Stand davor überein |
 
 ### 4.9 Auto-Mix (AUTO)
 
