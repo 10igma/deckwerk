@@ -559,8 +559,11 @@ export function transitionWhen(peekBeats: number): TransitionWhen {
   return peekBeats > 0 ? { type: 'end_in', beats: peekBeats } : { type: 'next', align_bars: TRANSITION_ALIGN };
 }
 
-/** Plant den gewählten Übergang ein (TRANS-05). */
-export async function startTransition(): Promise<void> {
+/**
+ * Plant den gewählten Übergang ein (TRANS-05). Ohne `when` entscheidet der Vorausblick: verschoben =
+ * Ende an der Linie in der Bildmitte, sonst Beginn an der nächsten Vier-Takt-Grenze.
+ */
+export async function startTransition(when?: TransitionWhen): Promise<void> {
   if (!core) return;
   const snap = latestSnapshot();
   const roles = transitionRoles(snap.decks[0], snap.decks[1], snap.master);
@@ -573,7 +576,7 @@ export async function startTransition(): Promise<void> {
     const templates = await core.listTransitions(ui.transitionBars);
     const transition = templates.find((t) => t.name === ui.transitionName) ?? templates[0];
     if (!transition) return;
-    const run = await core.startTransition(roles.from, roles.to, transition, transitionWhen(ui.peekBeats));
+    const run = await core.startTransition(roles.from, roles.to, transition, when ?? transitionWhen(ui.peekBeats));
     // Der Vorausblick hat seinen Dienst getan: zurück zur Abspielstelle, die Zone bleibt eingezeichnet.
     setUi({ transition: run, peekBeats: 0 });
   } catch (err) {

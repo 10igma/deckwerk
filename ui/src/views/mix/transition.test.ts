@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { transitionRoles, transitionWhen } from '../../app/actions';
 import { MockCore } from '../../core/mock/MockCore';
 import { MOCK_TRACKS } from '../../core/mock/tracks';
-import { transitionProgress, transitionZone } from './WaveStage';
+import { stageTarget, transitionProgress, transitionZone } from './WaveStage';
 
 describe('Übergang auf Knopfdruck (TRANS-05)', () => {
   it('Rollen: das laufende Deck geht, das stehende kommt; sonst keine', () => {
@@ -99,5 +99,26 @@ describe('Übergang auf Knopfdruck (TRANS-05)', () => {
     await core.cancelTransition();
     step((second.t0_beat - core.snapshot().clock_beats + 4) * secPerBeat);
     expect(core.snapshot().decks[0].playing).toBe(false);
+  });
+
+  it('Klick in die Wellenform: laufendes Deck = Stelle auf der Zeitachse, stehendes Deck = Stelle im Track', () => {
+    const grid = { anchors: [{ pos: 0.25, bpm: 120 }], anchor_beats: [0], bar_offset: 0 };
+    const base = { width: 1000, zoomBeats: 8, clockBpm: 120, grid };
+    const playing = { playing: true, pos: 50, tempo_offset: 0, duration: 400 };
+    // 8 Beats füllen 1000 px: Die Mitte ist „jetzt" plus Vorausblick, 125 px sind ein Beat.
+    expect(stageTarget({ ...base, x: 500, peekBeats: 0, deck: 'a', state: playing, anyPlaying: true })).toEqual({ kind: 'time', beats: 0 });
+    expect(stageTarget({ ...base, x: 750, peekBeats: 0, deck: 'a', state: playing, anyPlaying: true })).toEqual({ kind: 'time', beats: 2 });
+    expect(stageTarget({ ...base, x: 250, peekBeats: 128, deck: 'a', state: playing, anyPlaying: true })).toEqual({ kind: 'time', beats: 126 });
+    // Stehendes Deck bei 60,3 s, ein anderes läuft: Der Vorausblick verschiebt es nicht. 250 px rechts
+    // der Mitte sind 2 Beats = 1 s weiter; gerückt wird auf den nächsten Beat des Rasters (61,25 s).
+    const stopped = { playing: false, pos: 60.3, tempo_offset: 0, duration: 400 };
+    expect(stageTarget({ ...base, x: 750, peekBeats: 128, deck: 'b', state: stopped, anyPlaying: true })).toEqual({ kind: 'deck', deck: 'b', pos: 61.25 });
+    // Läuft keines, verschiebt der Vorausblick auch das stehende Deck: 128 Beats = 64 s weiter.
+    expect(stageTarget({ ...base, x: 500, peekBeats: 128, deck: 'b', state: stopped, anyPlaying: false })).toEqual({ kind: 'deck', deck: 'b', pos: 124.25 });
+    // Tempo-Regler +10 %: In derselben Echtzeit legt das Deck mehr Strecke zurück.
+    const fast = { playing: false, pos: 60.25, tempo_offset: 0.1, duration: 400 };
+    expect(stageTarget({ ...base, x: 1000, peekBeats: 0, deck: 'b', state: fast, anyPlaying: true })).toEqual({ kind: 'deck', deck: 'b', pos: 62.25 });
+    // Nie vor den Anfang oder hinter das Ende.
+    expect(stageTarget({ ...base, x: 0, peekBeats: 0, deck: 'b', state: { ...stopped, pos: 0.5 }, anyPlaying: true })).toEqual({ kind: 'deck', deck: 'b', pos: 0 });
   });
 });

@@ -299,5 +299,15 @@
   "trans.failed": "Transition not possible: {reason}",
   "trans.endHint": "ends at the dashed line; the start is computed backwards. A stopped deck reaches its position exactly at the end and starts earlier accordingly",
   "trans.tooLate": "The line is too close: for this length the look-ahead must be at least {n} beats.",
-  "trans.fromToEnd": "Transition {from} → {to} ends here"
+  "trans.fromToEnd": "Transition {from} → {to} ends here",
+  "menu.at": "in {n} beats ({time})",
+  "menu.endHere": "Transition ends here",
+  "menu.endHereDir": "Transition {from} → {to} ends here",
+  "menu.startHere": "Transition starts here",
+  "menu.startHereDir": "Transition {from} → {to} starts here",
+  "menu.startHint": "starts at the downbeat next to this point; a stopped deck enters at its position",
+  "menu.startTooLate": "This point is too close: the start needs at least {n} beats of lead.",
+  "menu.viewHere": "Move view here",
+  "menu.deckHere": "Move deck {deck} here",
+  "menu.close": "Close"
 }

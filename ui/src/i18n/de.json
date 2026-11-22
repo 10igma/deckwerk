@@ -199,7 +199,7 @@
   "settings.guard": "Live-Schutz",
   "settings.guardNote": "An: Stoppen, Cue, Sprung und Neuladen eines hörbaren Decks brauchen Halten (0,4 s) oder einen zweiten Druck.",
   "stage.tip": "Wellenform Deck {deck}",
-  "stage.tipValue": "ziehen: laufend anschieben/abbremsen, stehend verschieben · Mausrad: Zoom · Shift + Mausrad: Vorausblick",
+  "stage.tipValue": "klicken: Menü für diese Stelle · ziehen: laufend anschieben/abbremsen, stehend verschieben · Shift + ziehen oder ziehen im Vorausblick: nur die Ansicht · Mausrad: Zoom · Shift + Mausrad: Vorausblick",
   "deck.loading": "Lädt:",
   "deck.loadingLong": "wird geladen …",
   "deck.phaseLong": "Phase zur Master-Clock (Versatz in Beats, ±0,5)",
@@ -299,5 +299,15 @@
   "trans.failed": "Übergang nicht möglich: {reason}",
   "trans.endHint": "endet an der gestrichelten Linie; der Beginn wird zurückgerechnet. Ein stehendes Deck erreicht seine Stelle genau am Ende und startet entsprechend früher",
   "trans.tooLate": "Die Linie liegt zu nah: Für diese Länge muss der Vorausblick mindestens {n} Beats betragen.",
-  "trans.fromToEnd": "Übergang {from} → {to} endet hier"
+  "trans.fromToEnd": "Übergang {from} → {to} endet hier",
+  "menu.at": "in {n} Beats ({time})",
+  "menu.endHere": "Übergang endet hier",
+  "menu.endHereDir": "Übergang {from} → {to} endet hier",
+  "menu.startHere": "Übergang beginnt hier",
+  "menu.startHereDir": "Übergang {from} → {to} beginnt hier",
+  "menu.startHint": "beginnt am Taktanfang neben dieser Stelle; ein stehendes Deck steigt an seiner Stelle ein",
+  "menu.startTooLate": "Die Stelle liegt zu nah: Der Beginn braucht mindestens {n} Beats Abstand.",
+  "menu.viewHere": "Ansicht hierher",
+  "menu.deckHere": "Deck {deck} hierher stellen",
+  "menu.close": "Schließen"
 }

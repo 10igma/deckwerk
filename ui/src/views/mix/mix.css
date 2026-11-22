@@ -107,6 +107,30 @@
   gap: var(--sp-1);
   cursor: default;
 }
+/* Menü nach einem Klick in die Wellenform */
+.stage__menu {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+  min-width: 15rem;
+  padding: var(--sp-2);
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line-2), 0 0.5rem 1.5rem rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+.stage__menu > .dw-key {
+  justify-content: flex-start;
+  height: max(28px, var(--ctl-h-sm));
+}
+.stage__menuhead {
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+  font-size: var(--fs-1);
+  color: var(--text-2);
+  white-space: nowrap;
+}
 /* Unten rechts: Übergang auf Knopfdruck und Vorausblick nebeneinander. */
 .stage__bottom {
   position: absolute;
