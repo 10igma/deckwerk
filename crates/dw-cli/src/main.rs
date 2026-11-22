@@ -26,6 +26,12 @@ const HELP: &str = "Deckwerk – Kommandozeile
       --lead  Takte von A vor dem Übergang (Standard 16)
       --tail  Takte von B nach dem Übergang (Standard 16)
 
+  deckwerk transition <A> <B> -o <Ausgabe.wav> --a-pos <s> --end-in <Beats> --b-mark <s>
+                      [--template bass_swap|fade] [--bars 32] [--lead 16] [--tail 16]
+      Übergang rendern, wie die Anwendung ihn live fährt: A läuft und steht bei --a-pos; der
+      Übergang endet --end-in Beats später (auf den nächsten Taktanfang gerückt), und B hat
+      dann die Stelle --b-mark erreicht. --lead/--tail: Takte von A davor und von B danach.
+
   deckwerk check <Referenz.csv> <Musikordner> [--tol 0.05]
       Analyse gegen Referenzwerte prüfen (ANA-02, ANA-06): analysiert jede Datei der Referenz
       neu und meldet die Trefferquote bei Tempo und Tonart.
@@ -100,6 +106,7 @@ fn run() -> Result<()> {
         "analyze" => cmd_analyze(args),
         "mix" => cmd_mix(args),
         "check" => cmd_check(args),
+        "transition" => cmd_transition(args),
         "testtrack" => cmd_testtrack(args),
         other => bail!("unbekannter Befehl „{other}“ (Hilfe: deckwerk --help)"),
     }
@@ -407,6 +414,114 @@ fn cmd_check(mut args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Rendert einen Übergang so, wie die Anwendung ihn live fahren würde: A läuft, das Ende wird
+/// vorgegeben, B erreicht dort seine Marke. Derselbe Weg wie in der Anwendung (`plan_live`).
+fn cmd_transition(mut args: Vec<String>) -> Result<()> {
+    use dw_automix::{plan_live, LiveDeck, Roles, Transition, When};
+    use dw_core::{Command, DeckId};
+    use dw_engine::Engine;
+
+    let out_file = option(&mut args, "-o")?.ok_or_else(|| anyhow!("Ausgabedatei fehlt (-o <Datei.wav>)"))?;
+    let bars: u32 = number(option(&mut args, "--bars")?, 32, "--bars")?;
+    let lead: u32 = number(option(&mut args, "--lead")?, 16, "--lead")?;
+    let tail: u32 = number(option(&mut args, "--tail")?, 16, "--tail")?;
+    let template = option(&mut args, "--template")?.unwrap_or_else(|| "bass_swap".into());
+    let need = |args: &mut Vec<String>, name: &str| -> Result<f64> {
+        let value = option(args, name)?.ok_or_else(|| anyhow!("{name} fehlt"))?;
+        value.replace(',', ".").parse().map_err(|_| anyhow!("{name}: „{value}“ ist keine Zahl"))
+    };
+    let a_pos = need(&mut args, "--a-pos")?;
+    let end_in = need(&mut args, "--end-in")?;
+    let b_mark = need(&mut args, "--b-mark")?;
+    let [a_path, b_path] = args.as_slice() else { bail!("transition braucht genau zwei Dateien") };
+
+    let (a_audio, a) = load(Path::new(a_path))?;
+    let (b_audio, b) = load(Path::new(b_path))?;
+    println!("A: {:.2} BPM, {} · B: {:.2} BPM, {}", a.bpm, key_text(&a), b.bpm, key_text(&b));
+    let transition = Transition::templates(bars).into_iter().find(|t| t.name == template).ok_or_else(|| anyhow!("unbekannte Vorlage „{template}“ (bass_swap, fade)"))?;
+    let track = |audio, an: &TrackAnalysis| Arc::new(Track { audio, grid: an.grid.clone(), gain_db: an.auto_gain_db(REFERENCE_LUFS) });
+
+    let mut e = Engine::new(ENGINE_RATE);
+    e.load(DeckId::A, track(a_audio, &a));
+    e.load(DeckId::B, track(b_audio, &b));
+    // A läuft so weit vor der genannten Stelle an, dass der Vorlauf zu hören ist.
+    let start = (a_pos - lead as f64 * 4.0 * 60.0 / a.bpm).max(0.0);
+    e.apply(Command::Seek { deck: DeckId::A, pos: start });
+    e.apply(Command::Seek { deck: DeckId::B, pos: b_mark });
+    e.apply(Command::Play { deck: DeckId::A, on: true });
+
+    let mut out: Vec<f32> = Vec::new();
+    let mut cue = vec![0.0f32; 256 * 2];
+    let mut block = |e: &mut Engine, out: &mut Vec<f32>| {
+        let at = out.len();
+        out.resize(at + 256 * 2, 0.0);
+        e.process(&mut out[at..], &mut cue);
+    };
+    while e.snapshot().decks[0].pos < a_pos {
+        block(&mut e, &mut out);
+    }
+
+    // „Jetzt": A steht an der genannten Stelle. Von hier aus wird geplant wie in der Anwendung.
+    let s = e.snapshot();
+    let plan = plan_live(
+        &transition,
+        Roles { out: DeckId::A, inn: DeckId::B },
+        s.clock_beats,
+        LiveDeck { grid: &a.grid, playing: true, pos: s.decks[0].pos, duration: s.decks[0].duration, track_bpm: s.decks[0].track_bpm },
+        LiveDeck { grid: &b.grid, playing: false, pos: b_mark, duration: s.decks[1].duration, track_bpm: s.decks[1].track_bpm },
+        When::EndIn { beats: end_in },
+    )?;
+    let l = transition.beats();
+    let (t0, end) = (plan.t0, plan.t0 + l);
+    let a_end = a.grid.sec_at(a.grid.beat_at(s.decks[0].pos) + (end - s.clock_beats));
+    let b_end = b.grid.sec_at(b.grid.beat_at(plan.in_pos) + l);
+    println!(
+        "Übergang „{}“ über {} Takte: Ende bei {:.2} s in A und {:.2} s in B; B startet bei {:.2} s",
+        transition.name, transition.bars, a_end, b_end, plan.in_pos
+    );
+    for cmd in &plan.now {
+        e.apply(*cmd);
+    }
+    for (beat, cmd) in &plan.scheduled {
+        if !e.schedule(*beat, *cmd) {
+            bail!("Vormerk-Speicher der Engine voll");
+        }
+    }
+
+    let stop = end + tail as f64 * 4.0;
+    let mut marks = [(t0, 0usize), (t0 + l / 2.0, 0usize), (end, 0usize)];
+    let mut worst = 0.0f64;
+    while e.clock_beats() < stop {
+        let before = e.clock_beats();
+        let frame = out.len() / 2;
+        block(&mut e, &mut out);
+        for (beat, at) in marks.iter_mut() {
+            if before < *beat && e.clock_beats() >= *beat {
+                *at = frame;
+            }
+        }
+        let s = e.snapshot();
+        if s.decks[0].playing && s.decks[1].playing {
+            worst = worst.max(s.decks[1].phase.abs());
+        }
+        if !s.decks[0].playing && !s.decks[1].playing {
+            break;
+        }
+    }
+    let mix = AudioBuf::new(ENGINE_RATE, out);
+    let secs = |frame: usize| frame as f64 / ENGINE_RATE as f64;
+    println!(
+        "Gerendert: {:.1} s · Übergang von {:.1} s bis {:.1} s, Mitte bei {:.1} s · größter Beat-Versatz {:.4} Beats",
+        mix.duration(),
+        secs(marks[0].1),
+        secs(marks[2].1),
+        secs(marks[1].1),
+        worst
+    );
+    write_wav(&PathBuf::from(&out_file), &mix, 24).with_context(|| out_file.clone())?;
+    println!("Geschrieben: {out_file}");
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
