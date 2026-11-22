@@ -372,6 +372,15 @@ export class MockCore implements CoreApi {
           this.pickMaster();
         }
         break;
+      case 'play_in':
+        if (!d || !d.track || d.playing || !Number.isFinite(cmd.beats)) break;
+        // Wie im Kern: um den Vorlauf zurück (auch vor den Anfang des Tracks), dann starten.
+        d.pos -= ((cmd.beats * 60) / Math.max(1, this.clockBpm)) * (1 + this.effectiveOffset(d, cmd.deck));
+        d.playing = true;
+        d.playTime = 0;
+        this.pickMaster();
+        if (d.sync === 'beat' && this.master !== cmd.deck) d.pos = secAt(d.track.grid, this.beatOf(d) - this.phaseOf(d));
+        break;
       case 'seek':
         if (d && d.track) d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
         break;
@@ -550,7 +559,8 @@ export class MockCore implements CoreApi {
     if (d.pos >= d.track.duration) {
       d.pos = d.track.duration;
       d.playing = false;
-    } else if (d.pos < 0) {
+    } else if (d.pos < 0 && d.rate < 0) {
+      // Rückwärts über den Anfang hinaus geht es nicht; vorwärts im Vorlauf (VIS-13) bleibt die Stelle negativ.
       d.pos = 0;
     }
   }

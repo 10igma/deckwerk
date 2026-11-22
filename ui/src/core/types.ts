@@ -18,6 +18,8 @@ export type Db = number | null;
 /** Bedienbefehl (Rust: `Command`, `#[serde(tag = "type", rename_all = "snake_case")]`). */
 export type Command =
   | { type: 'play'; deck: DeckId; on: boolean }
+  /** Start mit Vorlauf (VIS-13): Das Deck erreicht seine jetzige Stelle in `beats` Beats der Clock. */
+  | { type: 'play_in'; deck: DeckId; beats: number }
   /** Position in Sekunden. */
   | { type: 'seek'; deck: DeckId; pos: number }
   /** Tempo-Regler als Faktor, 0.02 = +2 %. */

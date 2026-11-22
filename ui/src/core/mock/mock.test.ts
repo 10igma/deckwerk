@@ -91,6 +91,22 @@ describe('MockCore', () => {
     expect(s.clock_bpm).toBeCloseTo(134 * 1.02, 6);
     expect(s.decks[0].phase).toBeCloseTo(0, 6);
   });
+  it('Start mit Vorlauf: Das Deck erreicht seine Stelle nach den genannten Beats, auch von vor dem Anfang (VIS-13)', () => {
+    const core = new MockCore({ manualClock: true });
+    core.loadNow('a', MOCK_TRACKS[0].id);
+    core.loadNow('b', MOCK_TRACKS[0].id);
+    core.apply({ type: 'play', deck: 'a', on: true });
+    core.apply({ type: 'seek', deck: 'b', pos: 2 });
+    run(core, 1);
+    // 16 Beats bei 134 BPM sind gut 7 s: Der Start liegt vor dem Anfang des Tracks.
+    const lead = (16 * 60) / 134;
+    core.apply({ type: 'play_in', deck: 'b', beats: 16 });
+    expect(last(core).decks[1].playing).toBe(true);
+    expect(last(core).decks[1].pos).toBeCloseTo(2 - lead, 6);
+    run(core, lead);
+    expect(Math.abs(last(core).decks[1].pos - 2)).toBeLessThan(0.02);
+    expect(last(core).master).toBe('a');
+  });
   it('Beat-Sync gleicht Tempo und Phase an und hält sie (DECK-08)', () => {
     const core = new MockCore({ manualClock: true });
     core.loadNow('a', MOCK_TRACKS[0].id);

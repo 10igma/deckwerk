@@ -354,3 +354,74 @@ fn auto_master_follows_the_audible_deck() {
     run(&mut e, 1.0, &mut [&mut fr]);
     assert_eq!(e.snapshot().master, Some(A));
 }
+
+/// VIS-13: Start mit Vorlauf. Das stehende Deck springt so weit zurück, dass es seine jetzige
+/// Stelle nach der genannten Zahl Clock-Beats erreicht – auf 1 ms genau.
+#[test]
+fn play_in_reaches_the_cued_position_after_the_lead() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.0, 400, 1));
+    // B läuft mit eigenem Tempo (+2 %), ohne Sync.
+    e.apply(Command::Tempo { deck: B, offset: 0.02 });
+    e.apply(Command::Seek { deck: B, pos: 30.0 });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 2.0, &mut []);
+    assert!((e.snapshot().decks[1].pos - 30.0).abs() < 1e-9);
+
+    // 16 Beats bei 120 BPM = 8 s Echtzeit; B legt darin 8 s · 1,02 zurück.
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    let s = e.snapshot();
+    assert!(s.decks[1].playing);
+    assert!((s.decks[1].pos - (30.0 - 8.0 * 1.02)).abs() < 1e-9, "Start bei {}", s.decks[1].pos);
+    assert_eq!(s.master, Some(A), "das laufende Deck bleibt Master");
+    run(&mut e, 8.0, &mut []);
+    let pos = e.snapshot().decks[1].pos;
+    assert!((pos - 30.0).abs() <= 0.001, "nach dem Vorlauf bei {pos} s statt 30 s");
+}
+
+/// VIS-13: Liegt der Start vor dem Anfang des Tracks, läuft das Deck bis dorthin stumm.
+#[test]
+fn play_in_before_the_track_start_plays_silence_first() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(120.0, 0.0, 400, 1));
+    e.apply(Command::Seek { deck: B, pos: 2.0 });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 1.0, &mut []);
+
+    // 8 s Vorlauf ab Sekunde 2: Der Track beginnt erst nach 6 s.
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    let s = e.snapshot();
+    assert!(s.decks[1].playing);
+    assert!((s.decks[1].pos + 6.0).abs() < 1e-9, "Start bei {}", s.decks[1].pos);
+    let mut fr = ClickFinder::new(1, 0.2);
+    run(&mut e, 8.0, &mut [&mut fr]);
+    // Erster Klick von B (Beat 0 bei Sekunde 0) nach 6 s plus Laufzeit der Engine, auf 1 ms genau.
+    let expected = 6.0 * SR as f64 + e.latency() as f64;
+    let first = *fr.clicks.first().expect("B bleibt stumm") as f64;
+    assert!((first - expected).abs() <= 0.001 * SR as f64, "erster Klick bei Frame {first}, erwartet {expected}");
+    assert!((e.snapshot().decks[1].pos - 2.0).abs() <= 0.001);
+}
+
+/// VIS-13 mit DECK-08: Ein Deck im Beat-Sync rechnet den Vorlauf im Tempo der Clock und rastet
+/// beim Start ein – es erreicht seine Stelle auf höchstens einen halben Beat genau und im Takt.
+#[test]
+fn play_in_with_beat_sync_stays_in_phase() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.0, 400, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    let cued = 64.0 * 60.0 / 126.0; // Beat 64 von B
+    e.apply(Command::Seek { deck: B, pos: cued });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 2.1, &mut []);
+
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    run(&mut e, 8.0, &mut []);
+    let s = e.snapshot();
+    let half_beat = 0.5 * 60.0 / 126.0;
+    assert!((s.decks[1].pos - cued).abs() <= half_beat + 0.001, "B bei {} s statt {cued} s", s.decks[1].pos);
+    assert!(s.decks[1].phase.abs() < 1e-3, "Phase {}", s.decks[1].phase);
+    assert!((s.decks[1].bpm - 120.0).abs() < 1e-3);
+}

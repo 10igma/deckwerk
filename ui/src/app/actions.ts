@@ -105,6 +105,11 @@ function guardedUp(id: string): void {
 
 // --- Transport ---------------------------------------------------------------
 
+/** Läuft ein anderes geladenes Deck? Dann bleibt ein stehendes Deck im Vorausblick an seiner Stelle. */
+function otherDeckPlaying(deck: DeckId): boolean {
+  return DECK_IDS.some((id) => id !== deck && deckState(id).loaded && deckState(id).playing);
+}
+
 /** Play-Taste gedrückt. Ein hörbar laufendes Deck stoppt nur geschützt. */
 export function playDown(deck: DeckId): void {
   const d = deckState(deck);
@@ -116,7 +121,11 @@ export function playDown(deck: DeckId): void {
     return;
   }
   if (!d.playing) {
-    send({ type: 'play', deck, on: true });
+    // Vorausblick (VIS-13): Läuft ein anderes Deck, steht dieses im Bild an der Stelle, die es dann
+    // spielen soll. Der Start rechnet den Vorlauf zurück, damit das Bild so eintrifft.
+    const peek = getUi().peekBeats;
+    if (peek !== 0 && otherDeckPlaying(deck)) send({ type: 'play_in', deck, beats: peek });
+    else send({ type: 'play', deck, on: true });
     return;
   }
   const stop = () => send({ type: 'play', deck, on: false });

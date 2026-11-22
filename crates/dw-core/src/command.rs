@@ -75,6 +75,10 @@ pub enum XfCurve {
 pub enum Command {
     /// Wiedergabe starten oder anhalten.
     Play { deck: DeckId, on: bool },
+    /// Starten mit Vorlauf (VIS-13): Das Deck springt so weit zurück, dass es seine jetzige Stelle
+    /// in `beats` Beats der Clock erreicht, und läuft los. Liegt der Start vor dem Anfang des
+    /// Tracks, läuft es bis dorthin stumm. Negative Werte starten entsprechend weiter hinten.
+    PlayIn { deck: DeckId, beats: f64 },
     /// Auf eine Position springen (Sekunden im Track).
     Seek { deck: DeckId, pos: f64 },
     /// Tempo-Regler: Abweichung als Faktor, z. B. 0.02 = +2 %.

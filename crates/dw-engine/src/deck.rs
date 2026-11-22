@@ -130,6 +130,16 @@ impl Deck {
         }
     }
 
+    /// Beendet ein laufendes Ausblenden vom letzten Stopp: Das stehende Deck steht danach an seiner Stelle.
+    pub fn settle(&mut self) {
+        if !self.playing {
+            if let Some(p) = self.stop_pos.take() {
+                self.pos = p;
+            }
+            self.fade = 0.0;
+        }
+    }
+
     pub fn stop(&mut self) {
         if self.playing {
             self.playing = false;

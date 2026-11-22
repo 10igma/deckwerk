@@ -195,29 +195,30 @@ impl Engine {
                     return;
                 }
                 if on {
-                    if self.decks[i].playing {
-                        return;
-                    }
-                    let becomes_master = self.master_auto && !self.any_playing_except(i);
-                    self.decks[i].start(self.frames);
-                    if becomes_master {
-                        self.master = None;
-                        self.set_master(Some(i), false);
-                    } else if self.master != Some(i) && self.decks[i].sync == SyncMode::Beat {
-                        // Auf die Phase der Clock einrasten (Sprung um höchstens einen halben Beat).
-                        // Das Deck war stumm, der Sprung geschieht deshalb sofort.
-                        let clock = self.clock_beats;
-                        let sr = self.sr;
-                        let d = &mut self.decks[i];
-                        d.sync_offset = (clock - d.beat()).round();
-                        let p = d.track.as_ref().unwrap().grid.sec_at(clock - d.sync_offset) * sr;
-                        d.pos = p;
-                    } else if self.master == Some(i) {
-                        self.master_offset = (self.clock_beats - self.decks[i].beat()).round();
-                    }
+                    self.start_deck(i);
                 } else {
                     self.decks[i].stop();
                 }
+            }
+            Command::PlayIn { deck, beats } => {
+                let i = deck.index();
+                if !self.decks[i].loaded() || self.decks[i].playing || !beats.is_finite() {
+                    return;
+                }
+                // Folgt das Deck nach dem Start der Clock, läuft es mit deren Tempo, sonst mit dem eigenen.
+                let own_tempo = (self.master_auto && !self.any_playing_except(i)) || self.master == Some(i);
+                let clock_bpm = self.clock_bpm.max(1.0);
+                let sr = self.sr;
+                let d = &mut self.decks[i];
+                // Ein vorgemerkter Sprung und ein laufendes Ausblenden gelten zuerst: Gezählt wird ab der Stelle, an der das Deck steht.
+                d.settle();
+                if let Some(Jump::To(p)) = d.jump.take() {
+                    d.set_position(p);
+                }
+                let track_bpm = d.track_bpm();
+                let rate = if own_tempo || d.sync == SyncMode::Off || track_bpm <= 0.0 { 1.0 + d.tempo_offset } else { clock_bpm / track_bpm };
+                d.pos -= beats * 60.0 / clock_bpm * rate.max(0.01) * sr;
+                self.start_deck(i);
             }
             Command::Seek { deck, pos } => {
                 self.decks[deck.index()].request_jump(Jump::To(pos * self.sr));
@@ -328,6 +329,30 @@ impl Engine {
             }
             self.block(n, &mut master_out[done * 2..(done + n) * 2], &mut cue_out[done * 2..(done + n) * 2]);
             done += n;
+        }
+    }
+
+    /// Startet ein geladenes, stehendes Deck an seiner jetzigen Stelle.
+    fn start_deck(&mut self, i: usize) {
+        if self.decks[i].playing {
+            return;
+        }
+        let becomes_master = self.master_auto && !self.any_playing_except(i);
+        self.decks[i].start(self.frames);
+        if becomes_master {
+            self.master = None;
+            self.set_master(Some(i), false);
+        } else if self.master != Some(i) && self.decks[i].sync == SyncMode::Beat {
+            // Auf die Phase der Clock einrasten (Sprung um höchstens einen halben Beat).
+            // Das Deck war stumm, der Sprung geschieht deshalb sofort.
+            let clock = self.clock_beats;
+            let sr = self.sr;
+            let d = &mut self.decks[i];
+            d.sync_offset = (clock - d.beat()).round();
+            let p = d.track.as_ref().unwrap().grid.sec_at(clock - d.sync_offset) * sr;
+            d.pos = p;
+        } else if self.master == Some(i) {
+            self.master_offset = (self.clock_beats - self.decks[i].beat()).round();
         }
     }
 
