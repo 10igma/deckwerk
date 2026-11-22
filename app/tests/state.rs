@@ -1,7 +1,7 @@
 //! Der Weg durch die Anwendung ohne Fenster: Import → Hintergrund-Analyse → Laden → Abspielen.
 //! In dieser Umgebung gibt es kein Audiogerät; die Engine läuft dann stumm im Zeittakt.
 
-use deckwerk_app::state::{AppState, Settings};
+use deckwerk_app::state::{add_folder, AppState, Settings};
 use deckwerk_app::worker;
 use dw_core::{Command, DeckId, Key, Waveform, XfAssign, ANALYSIS_VERSION};
 use dw_library::{SortColumn, TrackQuery};
@@ -149,13 +149,13 @@ fn switching_the_output_device_keeps_the_engine_running() {
     assert!(error.contains("Gerät, das es nicht gibt"), "{error}");
     let after = state.audio.lock().unwrap().clone();
     assert_eq!((after.has_device, after.device.clone(), after.sample_rate), (before.has_device, None, before.sample_rate));
-    assert!(!settings_file.exists());
+    assert_eq!(Settings::load(&settings_file).audio_device, None);
 
     // Wechsel auf das Standardgerät: Gelingt er (es gibt ein Gerät), wird die Wahl gespeichert.
     let chosen = state.select_device(None);
     if before.has_device {
         assert_eq!(chosen.unwrap().device, None);
-        assert_eq!(Settings::load(&settings_file), Settings { audio_device: None });
+        assert_eq!(Settings::load(&settings_file).audio_device, None);
         assert!(settings_file.exists());
     }
 
@@ -176,9 +176,83 @@ fn settings_roundtrip_and_fallback() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("settings.json");
     assert_eq!(Settings::load(&file), Settings::default());
-    let chosen = Settings { audio_device: Some("Kopfhörer (Beispiel)".into()) };
+    let chosen = Settings { audio_device: Some("Kopfhörer (Beispiel)".into()), music_folders: vec![tmp.path().join("musik")], refresh_on_start: false };
     chosen.save(&file).unwrap();
     assert_eq!(Settings::load(&file), chosen);
+    // Eine Datei aus der Zeit vor den neuen Feldern: Die fehlenden bekommen ihre Vorgaben.
+    std::fs::write(&file, br#"{ "audio_device": "Alt" }"#).unwrap();
+    assert_eq!(Settings::load(&file), Settings { audio_device: Some("Alt".into()), ..Settings::default() });
+    assert!(Settings::default().refresh_on_start);
     std::fs::write(&file, b"{ kaputt").unwrap();
     assert_eq!(Settings::load(&file), Settings::default());
+}
+/// BIB-19: „Bibliothek aktualisieren" findet neue Dateien in den gemerkten Ordnern, lässt bekannte
+/// Tracks unberührt, ordnet verschobene neu zu und markiert fehlende.
+#[test]
+fn refresh_finds_new_files_in_the_remembered_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(music.join("neu")).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let data = tmp.path().join("daten");
+
+    let state = AppState::start(&data).unwrap();
+    assert_eq!(state.import(&[music.clone()]).unwrap().added, 2);
+    // Der Ordner ist gemerkt und steht in der Datei.
+    assert_eq!(Settings::load(&data.join("settings.json")).music_folders, vec![music.clone()]);
+
+    // Nichts Neues: nichts kommt dazu.
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.added, r.relinked, r.missing), (1, 0, 0, 0));
+
+    // Eine neue Datei im Unterordner, eine verschoben, eine gelöscht.
+    write_track(&music.join("neu"), "Dritter.wav", 132.0, Key::from_camelot(10, 'A').unwrap(), 3);
+    std::fs::rename(music.join("Erster.wav"), music.join("neu").join("Erster.wav")).unwrap();
+    std::fs::remove_file(music.join("Zweiter.wav")).unwrap();
+    let rev = state.library_rev.load(std::sync::atomic::Ordering::Relaxed);
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.unreachable, r.added, r.relinked, r.missing), (1, 0, 1, 1, 1));
+    assert!(r.failed.is_empty());
+    assert!(state.library_rev.load(std::sync::atomic::Ordering::Relaxed) > rev);
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.iter().filter(|t| t.missing).count(), 1);
+
+    // Ein nicht erreichbarer Musikordner wird gemeldet, statt den Lauf scheitern zu lassen.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    std::fs::rename(&music, tmp.path().join("weg")).unwrap();
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.unreachable, r.added, r.missing), (0, 1, 0, 3));
+}
+
+/// Eine Bibliothek ohne gemerkte Ordner (vor dieser Funktion angelegt) übernimmt beim ersten
+/// Aktualisieren die Ordner ihrer Tracks.
+#[test]
+fn refresh_adopts_the_folders_of_an_older_library() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    // Einzelne Datei importiert: kein Ordner gemerkt.
+    assert_eq!(state.import(&[music.join("Erster.wav")]).unwrap().added, 1);
+    assert!(state.settings.lock().unwrap().music_folders.is_empty());
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.added), (1, 1));
+    assert_eq!(state.settings.lock().unwrap().music_folders, vec![music]);
+}
+
+/// Die Liste der Musikordner bleibt frei von Verschachtelung.
+#[test]
+fn music_folders_do_not_nest() {
+    let mut folders = Vec::new();
+    let p = std::path::Path::new;
+    assert!(add_folder(&mut folders, p("/musik/techno")));
+    assert!(!add_folder(&mut folders, p("/musik/techno/2026")));
+    assert!(!add_folder(&mut folders, p("/musik/techno")));
+    assert!(add_folder(&mut folders, p("/musik")));
+    assert_eq!(folders, vec![p("/musik").to_path_buf()]);
 }

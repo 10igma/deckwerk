@@ -223,6 +223,25 @@ export interface ImportResult {
   failed: [path: string, reason: string][];
 }
 
+/** Ergebnis von `library_refresh`. */
+export interface RefreshResult {
+  /** Durchsuchte Musikordner. */
+  folders: number;
+  /** Musikordner, die gerade nicht erreichbar sind. */
+  unreachable: number;
+  added: number;
+  relinked: number;
+  /** Tracks der Bibliothek, deren Datei fehlt. */
+  missing: number;
+  failed: [path: string, reason: string][];
+}
+
+/** Einstellungen der Hülle (`settings_get`). */
+export interface AppSettings {
+  refresh_on_start: boolean;
+  music_folders: string[];
+}
+
 export type LoadedTracks = Record<DeckId, TrackId | null>;
 
 export const emptyEngineStatus = (): EngineStatus => ({

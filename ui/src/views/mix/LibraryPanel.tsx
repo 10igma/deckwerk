@@ -1,7 +1,7 @@
 // Bibliothek in der Ansicht „Mixen": Suche, sortierbare Spalten, Laden auf Deck A/B
 // per Lade-Taste, Shift + Pfeil oder Drag-and-drop; Doppelklick lädt nur in ein leeres Deck (9.3).
-import { useEffect, useMemo, useRef } from 'react';
-import { loadDown, loadToFreeDeck, loadUp, setVisibleTrackIds, toggleLibraryBig } from '../../app/actions';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { loadDown, loadToFreeDeck, loadUp, refreshLibrary, setVisibleTrackIds, toggleLibraryBig } from '../../app/actions';
 import { beginTrackDrag, useDraggedTrack } from '../../app/dnd';
 import { shortcutKeys } from '../../app/keymap';
 import { setUi, useUi, type SortKey } from '../../app/store';
@@ -84,6 +84,23 @@ function LoadBtn({ deck, track, loaded }: { deck: DeckId; track: TrackInfo; load
     >
       <span>{name}</span>
     </button>
+  );
+}
+
+/** Musikordner nach neuen Dateien durchsuchen; während des Laufs gesperrt. */
+function RefreshButton() {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const run = () => {
+    if (busy) return;
+    setBusy(true);
+    void refreshLibrary().finally(() => setBusy(false));
+  };
+  return (
+    <KeyBtn size="sm" disabled={busy} onPress={run} tip={{ name: t('lib.refresh'), value: t('lib.refreshHint') }} ariaLabel={t('lib.refresh')}>
+      {busy ? <span className="lib__spinner" aria-hidden="true" /> : null}
+      {t('lib.refreshShort')}
+    </KeyBtn>
   );
 }
 
@@ -173,6 +190,7 @@ export function LibraryPanel() {
           </span>
         )}
         <span className="lib__hint">{t('lib.hint')}</span>
+        <RefreshButton />
         <KeyBtn
           mode="toggle"
           size="sm"

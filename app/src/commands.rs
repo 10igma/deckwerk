@@ -103,6 +103,29 @@ pub fn library_list(state: State<AppState>) -> Result<Vec<TrackInfo>, String> {
         .collect())
 }
 
+/// Musikordner neu durchsuchen (BIB-19).
+#[tauri::command(async)]
+pub fn library_refresh(state: State<AppState>) -> Result<crate::state::RefreshReport, String> {
+    state.refresh()
+}
+
+#[derive(Serialize)]
+pub struct AppSettings {
+    refresh_on_start: bool,
+    music_folders: Vec<String>,
+}
+
+#[tauri::command]
+pub fn settings_get(state: State<AppState>) -> AppSettings {
+    let s = state.settings.lock().unwrap();
+    AppSettings { refresh_on_start: s.refresh_on_start, music_folders: s.music_folders.iter().map(|p| p.to_string_lossy().to_string()).collect() }
+}
+
+#[tauri::command]
+pub fn settings_refresh_on_start(state: State<AppState>, on: bool) -> Result<(), String> {
+    state.set_refresh_on_start(on)
+}
+
 #[derive(Serialize)]
 pub struct ImportResult {
     added: usize,

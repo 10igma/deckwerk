@@ -20,6 +20,13 @@ pub fn run() {
             if let Some(dir) = std::env::var_os("DECKWERK_MUSIC") {
                 let _ = state.import(&[std::path::PathBuf::from(dir)]);
             }
+            // Musikordner nach neuen Dateien durchsuchen, ohne den Start aufzuhalten (abschaltbar).
+            if state.settings.lock().unwrap().refresh_on_start {
+                let state = state.clone();
+                std::thread::spawn(move || {
+                    let _ = state.refresh();
+                });
+            }
             worker::spawn(state.clone());
             app.manage(state);
             Ok(())
@@ -39,6 +46,9 @@ pub fn run() {
             commands::core_poll,
             commands::library_list,
             commands::library_import,
+            commands::library_refresh,
+            commands::settings_get,
+            commands::settings_refresh_on_start,
             commands::deck_load,
             commands::deck_loaded,
             commands::track_waveform,

@@ -1,3 +1,4 @@
+| BIB-19 | Musikordner: Als Ordner importierte Orte werden gemerkt. „Bibliothek aktualisieren" durchsucht sie erneut, nimmt neue Dateien auf, ordnet verschobene neu zu und markiert fehlende; auf Wunsch geschieht das bei jedem Start (Einstellung, Vorgabe an) | M | 1 | Eine neue Datei in einem Musikordner oder Unterordner steht nach dem Aktualisieren in der Liste und wird analysiert; bekannte Tracks behalten ihre Analyse; ein nicht erreichbarer Ordner wird gemeldet und bricht den Lauf nicht ab |
 # Deckwerk – Spezifikation
 
 Version 0.1 · Stand 18.11.2026 · Arbeitstitel „Deckwerk" (Annahme, frei änderbar)

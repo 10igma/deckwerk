@@ -258,5 +258,16 @@
   "ds.valueEditing": "editing",
   "ds.rowNoKey": "no key",
   "settings.renderer": "Waveform",
-  "hdr.bufferDefault": "device default buffer"
+  "hdr.bufferDefault": "device default buffer",
+  "lib.refresh": "Update library",
+  "lib.refreshShort": "Update",
+  "lib.refreshHint": "scans the music folders for new files and analyses them",
+  "notice.refreshed": "Library updated: {added} new, {relinked} found again, {missing} missing. Analysis is running.",
+  "notice.refreshNothing": "No new files in the music folders. {missing} tracks missing.",
+  "notice.refreshNoFolder": "No music folder known yet. Drag a folder onto the window.",
+  "notice.refreshUnreachable": "{n} music folders unreachable. {added} tracks new.",
+  "notice.refreshFailed": "Update failed: {reason}",
+  "settings.refreshOnStart": "Update library on start",
+  "settings.refreshNote": "Music folders: {folders}. Folders you drag onto the window are added.",
+  "settings.refreshNoteEmpty": "No music folder known yet. Folders you drag onto the window are remembered."
 }

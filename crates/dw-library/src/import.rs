@@ -198,6 +198,19 @@ impl Library {
         Ok(report)
     }
 
+    /// Ordner, in denen Tracks der Bibliothek liegen (jeder einmal, sortiert).
+    pub fn track_folders(&self) -> Result<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM track")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut folders = std::collections::BTreeSet::new();
+        for path in rows {
+            if let Some(parent) = Path::new(&path?).parent() {
+                folders.insert(parent.to_path_buf());
+            }
+        }
+        Ok(folders.into_iter().collect())
+    }
+
     /// Markiert Tracks, deren Datei nicht mehr am gespeicherten Ort liegt. Gibt deren Anzahl zurück.
     pub fn mark_missing(&mut self) -> Result<usize> {
         let paths: Vec<(i64, String)> = {

@@ -258,5 +258,16 @@
   "ds.valueEditing": "Eingabe offen",
   "ds.rowNoKey": "ohne Tonart",
   "settings.renderer": "Wellenform",
-  "hdr.bufferDefault": "Puffer nach Vorgabe des Geräts"
+  "hdr.bufferDefault": "Puffer nach Vorgabe des Geräts",
+  "lib.refresh": "Bibliothek aktualisieren",
+  "lib.refreshShort": "Aktualisieren",
+  "lib.refreshHint": "durchsucht die Musikordner nach neuen Dateien und analysiert sie",
+  "notice.refreshed": "Bibliothek aktualisiert: {added} neu, {relinked} wiedergefunden, {missing} fehlen. Die Analyse läuft.",
+  "notice.refreshNothing": "Keine neuen Dateien in den Musikordnern. {missing} Tracks fehlen.",
+  "notice.refreshNoFolder": "Noch kein Musikordner bekannt. Zieh einen Ordner auf das Fenster.",
+  "notice.refreshUnreachable": "{n} Musikordner nicht erreichbar. {added} Tracks neu.",
+  "notice.refreshFailed": "Aktualisieren gescheitert: {reason}",
+  "settings.refreshOnStart": "Bibliothek beim Start aktualisieren",
+  "settings.refreshNote": "Musikordner: {folders}. Ordner, die du auf das Fenster ziehst, kommen dazu.",
+  "settings.refreshNoteEmpty": "Noch kein Musikordner bekannt. Ordner, die du auf das Fenster ziehst, werden gemerkt."
 }

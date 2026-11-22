@@ -246,6 +246,16 @@ describe('MockCore', () => {
     expect(st.has_device).toBe(false);
     expect(st.device_error).toMatch(/Ausgabegerät/);
   });
+  it('Bibliothek aktualisieren bringt neue Tracks ohne Analyse; die Start-Einstellung bleibt gemerkt (BIB-19)', async () => {
+    const core = new MockCore({ manualClock: true, library: 'empty' });
+    const before = (await core.listTracks()).length;
+    const r = await core.refreshLibrary();
+    expect(r.added).toBe(3);
+    expect((await core.listTracks()).length).toBe(before + 3);
+    expect((await core.getSettings()).refresh_on_start).toBe(true);
+    await core.setRefreshOnStart(false);
+    expect((await core.getSettings()).refresh_on_start).toBe(false);
+  });
   it('Ausgabegerät: Wechsel meldet den Status, Ablehnung lässt die Wahl stehen (ENG-01)', async () => {
     const core = new MockCore({ manualClock: true });
     const chosen: (string | null)[] = [];

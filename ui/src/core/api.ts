@@ -3,7 +3,9 @@ import type {
   Command,
   DeckId,
   EngineStatus,
+  AppSettings,
   ImportResult,
+  RefreshResult,
   LibraryStatus,
   LoadedTracks,
   Snapshot,
@@ -31,6 +33,11 @@ export interface CoreApi {
   listTracks(): Promise<TrackInfo[]>;
   /** Dateien und Ordner importieren (Ordner rekursiv). */
   importPaths(paths: string[]): Promise<ImportResult>;
+  /** Musikordner nach neuen Dateien durchsuchen; bekannte Tracks bleiben unberührt (BIB-19). */
+  refreshLibrary(): Promise<RefreshResult>;
+  getSettings(): Promise<AppSettings>;
+  /** Beim Start die Musikordner durchsuchen. */
+  setRefreshOnStart(on: boolean): Promise<void>;
   /**
    * Lädt einen Track auf ein Deck; erfüllt, sobald das Deck spielbereit ist (kann Sekunden dauern).
    * Abgelehnt mit einem Klartext (string oder Error), wenn das Laden scheitert.

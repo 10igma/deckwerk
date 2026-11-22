@@ -14,11 +14,52 @@ use std::sync::{Arc, Condvar, Mutex};
 const REFERENCE_LUFS: f32 = -14.0;
 
 /// Einstellungen, die einen Neustart überdauern (`settings.json` im Datenordner).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     /// Gewähltes Ausgabegerät; `None` = Standardgerät des Systems.
     #[serde(default)]
     pub audio_device: Option<String>,
+    /// Musikordner: Was als Ordner importiert wurde, durchsucht „Bibliothek aktualisieren" erneut (BIB-19).
+    #[serde(default)]
+    pub music_folders: Vec<PathBuf>,
+    /// Beim Start die Musikordner nach neuen Dateien durchsuchen.
+    #[serde(default = "yes")]
+    pub refresh_on_start: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { audio_device: None, music_folders: Vec::new(), refresh_on_start: true }
+    }
+}
+
+/// Ergebnis von „Bibliothek aktualisieren".
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct RefreshReport {
+    /// Durchsuchte Ordner.
+    pub folders: usize,
+    /// Musikordner, die gerade nicht erreichbar sind (z. B. Laufwerk nicht angeschlossen).
+    pub unreachable: usize,
+    pub added: usize,
+    pub relinked: usize,
+    /// Tracks der Bibliothek, deren Datei fehlt.
+    pub missing: usize,
+    pub failed: Vec<(String, String)>,
+}
+
+/// Nimmt `folder` in die Liste auf. Liegt er in einem schon bekannten Ordner, ändert sich nichts;
+/// bekannte Ordner, die in ihm liegen, gehen in ihm auf. Gibt zurück, ob sich die Liste geändert hat.
+pub fn add_folder(folders: &mut Vec<PathBuf>, folder: &Path) -> bool {
+    if folders.iter().any(|known| folder.starts_with(known)) {
+        return false;
+    }
+    folders.retain(|known| !known.starts_with(folder));
+    folders.push(folder.to_path_buf());
+    true
 }
 
 impl Settings {
@@ -41,6 +82,7 @@ pub struct Inner {
     /// Abtastrate der Engine; bleibt über einen Gerätewechsel hinweg gleich.
     pub engine_rate: u32,
     settings_file: PathBuf,
+    pub settings: Mutex<Settings>,
     pub lib: Mutex<Library>,
     pub loaded: Mutex<[Option<TrackId>; 4]>,
     cache_dir: PathBuf,
@@ -74,13 +116,15 @@ impl AppState {
             Err(e) => return Err(e.to_string()),
         };
         let settings_file = data_dir.join("settings.json");
-        let (ctl, audio, audio_handle) = audio::start(Settings::load(&settings_file).audio_device);
+        let settings = Settings::load(&settings_file);
+        let (ctl, audio, audio_handle) = audio::start(settings.audio_device.clone());
         Ok(AppState(Arc::new(Inner {
             ctl: Mutex::new(ctl),
             engine_rate: audio.sample_rate,
             audio: Mutex::new(audio),
             audio_handle,
             settings_file,
+            settings: Mutex::new(settings),
             lib: Mutex::new(lib),
             loaded: Mutex::new([None; 4]),
             cache_dir,
@@ -102,7 +146,9 @@ impl AppState {
         match failure {
             Some(error) => Err(error),
             None => {
-                Settings { audio_device: info.device.clone() }.save(&self.settings_file)?;
+                let mut settings = self.settings.lock().unwrap();
+                settings.audio_device = info.device.clone();
+                settings.save(&self.settings_file)?;
                 Ok(info)
             }
         }
@@ -119,9 +165,62 @@ impl AppState {
 
     pub fn import(&self, paths: &[PathBuf]) -> Result<ImportReport, String> {
         let report = self.lib.lock().unwrap().import_paths(paths).map_err(|e| e.to_string())?;
+        // Importierte Ordner merken: „Bibliothek aktualisieren" durchsucht sie später erneut (BIB-19).
+        {
+            let mut settings = self.settings.lock().unwrap();
+            let mut changed = false;
+            for dir in paths.iter().filter(|p| p.is_dir()) {
+                changed |= add_folder(&mut settings.music_folders, dir);
+            }
+            if changed {
+                settings.save(&self.settings_file)?;
+            }
+        }
         self.touch_library();
         self.wake_worker();
         Ok(report)
+    }
+
+    /// Bibliothek aktualisieren (BIB-19): durchsucht die Musikordner nach neuen Dateien, nimmt sie
+    /// auf, ordnet verschobene Dateien neu zu und markiert fehlende. Bekannte Tracks bleiben unberührt.
+    pub fn refresh(&self) -> Result<RefreshReport, String> {
+        let folders = {
+            let mut settings = self.settings.lock().unwrap();
+            if settings.music_folders.is_empty() {
+                // Bibliothek aus der Zeit, bevor Ordner gemerkt wurden: einmalig die Ordner übernehmen,
+                // in denen ihre Tracks liegen.
+                let known = self.lib.lock().unwrap().track_folders().map_err(|e| e.to_string())?;
+                for dir in &known {
+                    add_folder(&mut settings.music_folders, dir);
+                }
+                if !settings.music_folders.is_empty() {
+                    settings.save(&self.settings_file)?;
+                }
+            }
+            settings.music_folders.clone()
+        };
+        let (reachable, gone): (Vec<PathBuf>, Vec<PathBuf>) = folders.into_iter().partition(|dir| dir.is_dir());
+        let (import, missing) = {
+            let mut lib = self.lib.lock().unwrap();
+            let import = lib.import_paths(&reachable).map_err(|e| e.to_string())?;
+            (import, lib.mark_missing().map_err(|e| e.to_string())?)
+        };
+        self.touch_library();
+        self.wake_worker();
+        Ok(RefreshReport {
+            folders: reachable.len(),
+            unreachable: gone.len(),
+            added: import.added,
+            relinked: import.relinked,
+            missing,
+            failed: import.failed.into_iter().map(|(p, why)| (p.to_string_lossy().to_string(), why)).collect(),
+        })
+    }
+
+    pub fn set_refresh_on_start(&self, on: bool) -> Result<(), String> {
+        let mut settings = self.settings.lock().unwrap();
+        settings.refresh_on_start = on;
+        settings.save(&self.settings_file)
     }
 
     fn waveform_path(&self, id: TrackId) -> Result<PathBuf, String> {

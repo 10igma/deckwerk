@@ -11,7 +11,9 @@ import {
   type DeckId,
   type DeckState,
   type EngineStatus,
+  type AppSettings,
   type ImportResult,
+  type RefreshResult,
   type LibraryStatus,
   type LoadedTracks,
   type Snapshot,
@@ -232,6 +234,30 @@ export class MockCore implements CoreApi {
     }
     if (added > 0) this.libraryChanged();
     return Promise.resolve({ added, duplicates: 0, relinked: 0, failed: [] });
+  }
+
+  private refreshOnStart = true;
+
+  /** Simuliertes Aktualisieren: Der Musikordner bringt bis zu drei noch nicht vorhandene Tracks. */
+  refreshLibrary(): Promise<RefreshResult> {
+    let added = 0;
+    for (const track of MOCK_TRACKS) {
+      if (added >= 3) break;
+      if (this.library.some((e) => e.track.id === track.id)) continue;
+      this.library.push({ track, analyzed: false, missing: false });
+      added += 1;
+    }
+    if (added > 0) this.libraryChanged();
+    return Promise.resolve({ folders: 1, unreachable: 0, added, relinked: 0, missing: this.library.filter((e) => e.missing).length, failed: [] });
+  }
+
+  getSettings(): Promise<AppSettings> {
+    return Promise.resolve({ refresh_on_start: this.refreshOnStart, music_folders: ['/musik'] });
+  }
+
+  setRefreshOnStart(on: boolean): Promise<void> {
+    this.refreshOnStart = on;
+    return Promise.resolve();
   }
 
   loadTrack(deck: DeckId, trackId: TrackId): Promise<void> {

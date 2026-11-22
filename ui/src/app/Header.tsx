@@ -1,13 +1,13 @@
 // Kopfzeile (8.2): Ansichten · Master-Clock · Q/S · Aufnahme · Last · Uhr · Einstellungen.
 import { useEffect, useRef, useState } from 'react';
-import { listAudioDevices, selectAudioDevice, toggleSnap } from './actions';
+import { getAppSettings, listAudioDevices, selectAudioDevice, setRefreshOnStart, toggleSnap } from './actions';
 import { getDeckAssets } from './assets';
 import { nowDate } from './env';
 import { useEngineStatus, useFrame, useSnap } from './frame';
 import { bindingKeys, findBinding, shortcutKeys } from './keymap';
 import { navigate, VIEWS, type RouteId, type ViewId } from './router';
 import { setLang, setLiveGuard, setUi, useUi } from './store';
-import type { AudioDevice } from '../core/types';
+import type { AppSettings, AudioDevice } from '../core/types';
 import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../design/components';
 import { useLang, useT, type MsgKey } from '../i18n';
 import { formatBpm } from '../lib/format';
@@ -191,6 +191,54 @@ function AudioOutput() {
   );
 }
 
+/** Bibliothek: Musikordner beim Start nach neuen Dateien durchsuchen. */
+function LibrarySettings() {
+  const t = useT();
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void getAppSettings().then((s) => {
+      if (alive) setSettings(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (settings === null) return null;
+  const choose = (on: boolean) => {
+    if (on === settings.refresh_on_start) return;
+    setSettings({ ...settings, refresh_on_start: on });
+    void setRefreshOnStart(on).then((failure) => {
+      setError(failure);
+      if (failure !== null) setSettings({ ...settings, refresh_on_start: !on });
+    });
+  };
+  return (
+    <>
+      <div className="settings__row">
+        <span className="dw-label">{t('settings.refreshOnStart')}</span>
+        <div className="settings__opts">
+          <KeyBtn mode="toggle" size="sm" active={settings.refresh_on_start} onPress={() => choose(true)}>
+            {t('state.on')}
+          </KeyBtn>
+          <KeyBtn mode="toggle" size="sm" active={!settings.refresh_on_start} onPress={() => choose(false)}>
+            {t('state.off')}
+          </KeyBtn>
+        </div>
+      </div>
+      {error !== null && (
+        <p className="settings__note" data-tone="error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="settings__note">
+        {settings.music_folders.length > 0 ? t('settings.refreshNote', { folders: settings.music_folders.join(' · ') }) : t('settings.refreshNoteEmpty')}
+      </p>
+    </>
+  );
+}
+
 function SettingsPanel() {
   const t = useT();
   const lang = useLang();
@@ -212,6 +260,7 @@ function SettingsPanel() {
         </div>
       </div>
       <p className="settings__note">{t('settings.guardNote')}</p>
+      <LibrarySettings />
       <div className="settings__row">
         <span className="dw-label">{t('settings.language')}</span>
         <div className="settings__opts">

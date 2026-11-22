@@ -2,7 +2,7 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
@@ -488,6 +488,41 @@ export async function importPaths(paths: string[]): Promise<void> {
     showNotice(say('notice.imported', { added: r.added, failed: r.failed.length }));
   } catch (err) {
     showNotice(say('notice.importFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Bibliothek aktualisieren: Musikordner nach neuen Dateien durchsuchen (BIB-19). */
+export async function refreshLibrary(): Promise<void> {
+  if (!core) return;
+  try {
+    const r = await core.refreshLibrary();
+    if (r.folders === 0 && r.unreachable === 0) showNotice(say('notice.refreshNoFolder'));
+    else if (r.unreachable > 0) showNotice(say('notice.refreshUnreachable', { added: r.added, n: r.unreachable }), 'error');
+    else if (r.added === 0 && r.relinked === 0) showNotice(say('notice.refreshNothing', { missing: r.missing }));
+    else showNotice(say('notice.refreshed', { added: r.added, relinked: r.relinked, missing: r.missing }));
+  } catch (err) {
+    showNotice(say('notice.refreshFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Einstellungen der Hülle; ohne Kern oder bei einem Fehler null. */
+export async function getAppSettings(): Promise<AppSettings | null> {
+  if (!core) return null;
+  try {
+    return await core.getSettings();
+  } catch {
+    return null;
+  }
+}
+
+/** Ergebnis: Fehlertext oder null. */
+export async function setRefreshOnStart(on: boolean): Promise<string | null> {
+  if (!core) return null;
+  try {
+    await core.setRefreshOnStart(on);
+    return null;
+  } catch (err) {
+    return errorText(err);
   }
 }
 

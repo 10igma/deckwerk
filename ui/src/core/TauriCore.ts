@@ -9,7 +9,9 @@ import {
   type Command,
   type DeckId,
   type EngineStatus,
+  type AppSettings,
   type ImportResult,
+  type RefreshResult,
   type LibraryStatus,
   type LoadedTracks,
   type Poll,
@@ -151,6 +153,18 @@ export class TauriCore implements CoreApi {
 
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis> {
     return this.invoke<TrackAnalysis>('track_analysis', { trackId });
+  }
+
+  refreshLibrary(): Promise<RefreshResult> {
+    return this.invoke<RefreshResult>('library_refresh');
+  }
+
+  getSettings(): Promise<AppSettings> {
+    return this.invoke<AppSettings>('settings_get');
+  }
+
+  setRefreshOnStart(on: boolean): Promise<void> {
+    return this.invoke<void>('settings_refresh_on_start', { on });
   }
 
   listAudioDevices(): Promise<AudioDevice[]> {
