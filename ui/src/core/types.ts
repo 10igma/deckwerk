@@ -260,7 +260,7 @@ export interface Transition {
  * Wann der Übergang liegt: Beginn an der nächsten Taktgrenze im Raster, oder Ende in so vielen Clock-Beats
  * (auf den nächsten Taktanfang gerückt), wobei der Kern den Beginn zurückrechnet.
  */
-export type TransitionWhen = { type: 'next'; align_bars: number } | { type: 'end_in'; beats: number };
+export type TransitionWhen = { type: 'next'; align_bars: number } | { type: 'end_in'; beats: number } | { type: 'start_here' } | { type: 'end_here' };
 
 /** Ein eingeplanter oder laufender Übergang (`transition_start`). */
 export interface TransitionRun {

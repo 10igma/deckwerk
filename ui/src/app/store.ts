@@ -68,6 +68,8 @@ export interface UiState {
   preview: TransitionRun | null;
   /** Ab hier wird vorgehört: Beats ab T0, immer ein Taktanfang. */
   previewFrom: number;
+  /** Stehen beide Decks: Ihre Stellen sind Beginn oder Ende des Übergangs. */
+  previewAnchor: 'start' | 'end';
   /** Gewählte Vorlage und Länge für den nächsten Übergang. */
   transitionName: string;
   transitionBars: number;
@@ -133,6 +135,7 @@ let state: UiState = {
   editor: null,
   preview: null,
   previewFrom: 0,
+  previewAnchor: 'start',
   transitionName: 'bass_swap',
   transitionBars: 16,
   pendingAnalysis: 0,

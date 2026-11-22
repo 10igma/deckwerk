@@ -24,6 +24,18 @@ pub enum When {
     /// jetzige Stelle genau am Ende – es startet entsprechend früher, notfalls vor seinem Anfang
     /// und bis dorthin stumm.
     EndIn { beats: f64 },
+    /// Nur zum Vorhören mit stehenden Decks: Der Übergang beginnt genau dort, wo beide Decks stehen
+    /// (jeweils auf den nächstgelegenen Taktanfang gerückt). Ohne Vorlauf, deshalb nicht live.
+    StartHere,
+    /// Nur zum Vorhören mit stehenden Decks: Der Übergang endet dort, wo beide Decks stehen.
+    EndHere,
+}
+
+impl When {
+    /// Lässt sich so ein Übergang im laufenden Betrieb einplanen?
+    pub fn is_live(self) -> bool {
+        matches!(self, When::Next { .. } | When::EndIn { .. })
+    }
 }
 
 /// Stand eines Decks, wie die Planung ihn braucht.
@@ -126,6 +138,8 @@ pub fn plan_live(transition: &Transition, roles: Roles, clock_beats: f64, out: L
             }
             start
         }
+        When::StartHere => nearest_downbeat(out.grid, out_beat),
+        When::EndHere => nearest_downbeat(out.grid, out_beat) - l as i64,
     };
     let left_bars = (out.grid.beat_at(out.duration) - boundary as f64) / 4.0;
     if left_bars < transition.bars as f64 {
@@ -149,14 +163,14 @@ pub fn plan_live(transition: &Transition, roles: Roles, clock_beats: f64, out: L
     // das der Einstieg bei T0 oder die Stelle, die es am Ende erreicht haben soll.
     let mut mark = nearest_downbeat(inn.grid, in_beat);
     let entry = match when {
-        When::Next { .. } => {
+        When::Next { .. } | When::StartHere => {
             if inn.grid.sec_at(mark as f64) < 0.0 {
                 mark += 4;
             }
             mark as f64
         }
         // Im Beat-Sync legt das Deck je Clock-Beat einen eigenen Beat zurück.
-        When::EndIn { .. } => mark as f64 - l,
+        When::EndIn { .. } | When::EndHere => mark as f64 - l,
     };
     if in_end - entry < l + 4.0 {
         return Err(LiveError::InTooShort(transition.bars));
@@ -395,6 +409,17 @@ mod tests {
             _ => None,
         });
         assert!((mid.unwrap() - lane.value_at(27.75).unwrap()).abs() < 1e-6);
+        // Stehen beide Decks, gelten ihre Stellen selbst: als Beginn …
+        let p = plan_preview(&t, ROLES, a, b, When::StartHere, 0.0).unwrap();
+        assert!((ga.beat_at(p.out_pos) - (37.0 - 4.0)).abs() < 1e-9, "A bei Beat {}", ga.beat_at(p.out_pos));
+        assert!((gb.beat_at(p.in_pos) - (66.0 - 4.0)).abs() < 1e-9);
+        // … oder als Ende: Beide erreichen ihre Stelle, wenn der Übergang abgeschlossen ist.
+        let p = plan_preview(&t, ROLES, a, b, When::EndHere, 56.0).unwrap();
+        assert_eq!(p.start, 52.0);
+        assert!((ga.beat_at(p.out_pos) - (37.0 - 64.0 + 52.0)).abs() < 1e-9);
+        assert!((gb.beat_at(p.in_pos) - (66.0 - 64.0 + 52.0)).abs() < 1e-9);
+        assert!(When::Next { align_bars: 1 }.is_live() && !When::StartHere.is_live() && !When::EndHere.is_live());
+        assert_eq!(serde_json::to_string(&When::StartHere).unwrap(), r#"{"type":"start_here"}"#);
         // Hinter dem Ende gewählt: Es bleibt beim letzten Takt.
         assert_eq!(plan_preview(&t, ROLES, a, b, when, 999.0).unwrap().start, 56.0);
 

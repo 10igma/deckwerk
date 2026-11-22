@@ -341,9 +341,13 @@
   "ed.failed": "Speichern nicht möglich: {reason}",
   "ed.preview": "Vorhören",
   "ed.previewStop": "Stopp",
-  "ed.previewHint": "spielt den Entwurf auf den geladenen Decks, ab dem gewählten Takt mit einem Takt Vorlauf. Laufende Decks halten dafür an; danach stehen Decks und Regler wieder wie vorher",
+  "ed.previewHint": "spielt den Entwurf auf den geladenen Decks, ab dem gewählten Takt mit einem Takt Vorlauf; die Decks springen dafür an die passende Stelle. Laufende Decks halten an; danach stehen Decks und Regler wieder wie vorher",
   "ed.previewFrom": "Vorhören ab Takt",
   "ed.fromBar": "ab Takt {n}",
   "ed.previewNeedDecks": "Zum Vorhören müssen auf beiden Decks Tracks liegen.",
-  "ed.previewFailed": "Vorhören nicht möglich: {reason}"
+  "ed.previewFailed": "Vorhören nicht möglich: {reason}",
+  "ed.anchor": "Lage des Übergangs beim Vorhören",
+  "ed.anchorStart": "Beginn hier",
+  "ed.anchorEnd": "Ende hier",
+  "ed.anchorHint": "Stehen beide Decks, sind ihre Stellen der Beginn oder das Ende des Übergangs (jeweils der nächste Taktanfang)"
 }

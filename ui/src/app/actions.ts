@@ -675,8 +675,9 @@ export function previewRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<D
 }
 
 /**
- * Spielt den Entwurf im Editor zum Vorhören (TRANS-06), ab dem gewählten Takt. Er liegt dort, wo ihn
- * die Taste in der Bühne jetzt hinlegen würde (Vorausblick wie dort).
+ * Spielt den Entwurf im Editor zum Vorhören (TRANS-06), ab dem gewählten Takt. Stehen beide Decks,
+ * sind ihre Stellen Beginn oder Ende des Übergangs (`previewAnchor`). Läuft eines, liegt er dort, wo
+ * ihn die Taste in der Bühne jetzt hinlegen würde (Vorausblick wie dort).
  */
 export async function previewEditor(): Promise<void> {
   const ui = getUi();
@@ -690,7 +691,9 @@ export async function previewEditor(): Promise<void> {
   const draft = ui.editor.draft;
   try {
     const from = Math.min(ui.previewFrom, (draft.bars - 1) * 4);
-    const run = await core.previewTransition(roles.from, roles.to, { ...draft, name: draft.name.trim() || say('ed.newName') }, transitionWhen(ui.peekBeats), from);
+    const standing = !snap.decks[0].playing && !snap.decks[1].playing;
+    const when: TransitionWhen = standing ? { type: ui.previewAnchor === 'end' ? 'end_here' : 'start_here' } : transitionWhen(ui.peekBeats);
+    const run = await core.previewTransition(roles.from, roles.to, { ...draft, name: draft.name.trim() || say('ed.newName') }, when, from);
     setUi({ preview: run });
   } catch (err) {
     setUi({ preview: null });

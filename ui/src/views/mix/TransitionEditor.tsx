@@ -194,6 +194,7 @@ export function TransitionEditor() {
   const draft = editor?.draft ?? null;
   const preview = useUi((s) => s.preview);
   const previewFrom = useUi((s) => s.previewFrom);
+  const anchor = useUi((s) => s.previewAnchor);
   // Zu Ende gespielt: Die Hülle hat aufgeräumt, die Taste springt zurück.
   const over = useSnap((s) => preview !== null && s.clock_beats > preview.end_beat);
   useEffect(() => {
@@ -253,6 +254,10 @@ export function TransitionEditor() {
           </span>
         )}
         <span className="ted__spacer" />
+        <select className="stage__select" value={anchor} aria-label={t('ed.anchor')} title={t('ed.anchorHint')} onChange={(e) => setUi({ previewAnchor: e.target.value === 'end' ? 'end' : 'start' })}>
+          <option value="start">{t('ed.anchorStart')}</option>
+          <option value="end">{t('ed.anchorEnd')}</option>
+        </select>
         <select className="stage__select" value={from} aria-label={t('ed.previewFrom')} onChange={(e) => setUi({ previewFrom: Number(e.target.value) })}>
           {Array.from({ length: draft.bars }, (_, i) => (
             <option key={i} value={i * 4}>

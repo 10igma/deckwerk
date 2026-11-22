@@ -290,6 +290,7 @@ export class MockCore implements CoreApi {
     const l = transition.bars * 4;
     const outBeat = this.beatOf(out);
     let boundary: number;
+    if (when.type === 'start_here' || when.type === 'end_here') return Promise.reject('Diese Lage gibt es nur beim Vorhören mit stehenden Decks.');
     if (when.type === 'next') {
       // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
       const span = 4 * Math.max(1, when.align_bars);

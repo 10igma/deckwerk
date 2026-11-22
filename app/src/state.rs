@@ -215,6 +215,9 @@ impl AppState {
         if self.preview.lock().unwrap().is_some() {
             return Err("Es läuft gerade ein Vorhören; erst beenden.".into());
         }
+        if !when.is_live() {
+            return Err("Diese Lage gibt es nur beim Vorhören mit stehenden Decks.".into());
+        }
         if let Some(run) = self.transition.lock().unwrap().as_ref() {
             if snap.clock_beats < run.end_beat {
                 return Err(format!("Es läuft schon ein Übergang von Deck {} nach Deck {}.", name(run.from), name(run.to)));

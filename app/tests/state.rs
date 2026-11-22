@@ -529,6 +529,7 @@ fn a_transition_can_be_previewed_and_everything_is_put_back() {
     assert!((run.end_beat - (run.t0_beat + 16.0 + PREVIEW_TAIL)).abs() < 1e-9);
     assert_eq!(state.preview_run(), Some(run.clone()));
     assert!(state.start_transition(DeckId::A, DeckId::B, &swap, next).unwrap_err().contains("Vorhören"));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &swap, When::StartHere).is_err());
     wait_for("beide Decks laufen", || snap().clock_beats > begin + 1.0);
     let s = snap();
     assert!(s.decks[0].playing && s.decks[1].playing);

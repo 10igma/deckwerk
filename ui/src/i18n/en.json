@@ -341,9 +341,13 @@
   "ed.failed": "Could not save: {reason}",
   "ed.preview": "Preview",
   "ed.previewStop": "Stop",
-  "ed.previewHint": "plays the draft on the loaded decks, from the chosen bar with one bar of lead-in. Running decks stop for this; afterwards decks and controls are back where they were",
+  "ed.previewHint": "plays the draft on the loaded decks, from the chosen bar with one bar of lead-in; the decks jump to the matching spot. Running decks stop; afterwards decks and controls are back where they were",
   "ed.previewFrom": "Preview from bar",
   "ed.fromBar": "from bar {n}",
   "ed.previewNeedDecks": "Preview needs a track on both decks.",
-  "ed.previewFailed": "Preview not possible: {reason}"
+  "ed.previewFailed": "Preview not possible: {reason}",
+  "ed.anchor": "Where the transition lies for the preview",
+  "ed.anchorStart": "Starts here",
+  "ed.anchorEnd": "Ends here",
+  "ed.anchorHint": "With both decks stopped, their positions are the start or the end of the transition (the nearest downbeat each)"
 }
