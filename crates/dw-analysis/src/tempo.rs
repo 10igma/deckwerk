@@ -19,6 +19,12 @@ const SPECTRAL_VETO_SHARE: f64 = 0.1;
 const MIN_SCORE: f64 = 0.02;
 /// Unter dieser Zahl verwertbarer Kick-Anschläge entfällt die Verfeinerung im Zeitbereich.
 const MIN_ONSETS: usize = 8;
+/// Rückblick bei der Suche nach dem Anschlag eines Kicks mit spätem Körper: höchstens so weit vor
+/// das Raster – knapp ein Sechzehntel, damit der Ton davor nicht als Anschlag gilt.
+const ATTACK_LOOKBACK_SEC: f64 = 0.085;
+/// Erst ab diesem Abstand wird das Raster auf den Anschlag vorgezogen; darunter bleibt die
+/// genauere Messung je Anschlag gültig.
+const ATTACK_MIN_SHIFT_SEC: f64 = 0.008;
 /// Typischer Vorlauf der Anschlagskurve vor dem Anschlag (Fensterlänge), nur für den Rückfall.
 const FLUX_LEAD_SEC: f64 = 0.012;
 
@@ -238,6 +244,15 @@ pub fn estimate(signal: &[f32], feat: &BandFeatures, config: &AnalysisConfig) ->
         return None;
     }
 
+    // Schritt 4b: Kick mit spätem Körper. Die Kick-Kurve misst, wann die Energie im Tief-Band
+    // ankommt. Fällt der Ton des Kicks erst von oben herab (üblich in Psytrance), ist das bis zu
+    // einem Zweiunddreißigstel nach dem Anschlag – das Raster säße mitten im Kick, und zwei Tracks
+    // lägen im Sync hörbar gegeneinander versetzt. Dann gehört das Raster auf den Anschlag.
+    if let Some(shift) = attack_shift(signal, origin, period) {
+        origin += shift;
+        first_kick = first_kick.map(|t| t + shift);
+    }
+
     // Schritt 7: Sicherheitswert aus Kandidaten-Verhältnis und Rasterabweichung.
     let c_ratio = ((1.0 - ratio) / 0.2).clamp(0.0, 1.0);
     let c_dev = if deviation_ms.is_finite() { (1.0 - (deviation_ms - 2.0) / 18.0).clamp(0.0, 1.0) } else { 0.3 };
@@ -404,6 +419,86 @@ fn refine_onset(signal: &[f32], coarse: f64) -> Option<f64> {
         prev = cur;
     }
     None
+}
+
+/// Liegt der Anschlag des Kicks deutlich vor dem Raster? Rückgabe: Verschiebung in Sekunden
+/// (negativ), sonst `None`.
+///
+/// Über alle Raster-Beats wird der Pegel im Zeitraum davor gemittelt, je Millisekunde – einmal mit
+/// angehobenen Höhen (erste Differenz; dort steht der Anschlag heraus) und einmal unverändert.
+/// Gesucht wird der steilste Anstieg der hellen Kurve und darin die Stelle, an der 30 % des Anstiegs
+/// erreicht sind (wie bei der Messung je Anschlag). Gewertet wird er nur, wenn der Pegel von dort bis
+/// zum Raster oben bleibt: Dann ist es der Anfang desselben Kicks und nicht etwa eine Hi-Hat davor.
+fn attack_shift(signal: &[f32], origin: f64, period: f64) -> Option<f64> {
+    let sr = ANALYSIS_RATE as f64;
+    let bin = (0.001 * sr) as usize; // 1 ms
+    let back_ms = (ATTACK_LOOKBACK_SEC.min(0.22 * period) * 1000.0).round() as usize;
+    let bins = back_ms + 12;
+    let mut bright = vec![0.0f64; bins];
+    let mut plain = vec![0.0f64; bins];
+    let mut beats = 0usize;
+    let mut k = ((back_ms as f64 / 1000.0 - origin) / period).ceil() as i64;
+    loop {
+        let start = ((origin + k as f64 * period) * sr).round() as i64 - (back_ms * bin) as i64;
+        k += 1;
+        if start < 1 {
+            continue;
+        }
+        let start = start as usize;
+        if start + bins * bin >= signal.len() {
+            break;
+        }
+        for b in 0..bins {
+            let chunk = &signal[start + b * bin - 1..start + (b + 1) * bin];
+            for pair in chunk.windows(2) {
+                let d = (pair[1] - pair[0]) as f64;
+                bright[b] += d * d;
+                plain[b] += (pair[1] as f64) * (pair[1] as f64);
+            }
+        }
+        beats += 1;
+    }
+    if beats < MIN_ONSETS {
+        return None;
+    }
+    // Pegel statt Leistung, über drei Millisekunden geglättet.
+    let level = |power: &[f64]| -> Vec<f64> {
+        let amp: Vec<f64> = power.iter().map(|p| p.sqrt()).collect();
+        (0..bins).map(|i| amp[i.saturating_sub(1)..(i + 2).min(bins)].iter().sum::<f64>() / ((i + 2).min(bins) - i.saturating_sub(1)) as f64).collect()
+    };
+    let (bright, plain) = (level(&bright), level(&plain));
+
+    // Steilster Anstieg der hellen Kurve über 4 ms.
+    let span = 4;
+    let rise_at = (0..bins - span).max_by(|&a, &b| (bright[a + span] - bright[a]).total_cmp(&(bright[b + span] - bright[b])))?;
+    let peak_at = (rise_at..(rise_at + span + 8).min(bins)).max_by(|&a, &b| bright[a].total_cmp(&bright[b]))?;
+    let base = bright[rise_at.saturating_sub(12)..=rise_at].iter().cloned().fold(f64::MAX, f64::min);
+    let peak = bright[peak_at];
+    if peak < 2.0 * base + 1e-9 {
+        return None;
+    }
+    let threshold = base + 0.3 * (peak - base);
+    let mut below = peak_at;
+    while below > 0 && bright[below] >= threshold {
+        below -= 1;
+    }
+    if bright[below] >= threshold {
+        return None;
+    }
+    let frac = (threshold - bright[below]) / (bright[below + 1] - bright[below]);
+    // Mitte des Millisekunden-Fachs, relativ zum Raster.
+    let shift = (below as f64 + frac + 0.5 - back_ms as f64) / 1000.0;
+    if shift > -ATTACK_MIN_SHIFT_SEC {
+        return None;
+    }
+    // Derselbe Kick: Zwischen Anschlag und Raster fällt der Pegel nicht wieder ab.
+    let from = (below + 3).min(back_ms);
+    let between = &plain[from..=back_ms];
+    let (lo, hi) = between.iter().fold((f64::MAX, 0.0f64), |m, &v| (m.0.min(v), m.1.max(v)));
+    if lo < 0.5 * hi {
+        return None;
+    }
+    Some(shift)
 }
 
 struct LineFit {

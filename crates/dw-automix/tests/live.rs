@@ -243,3 +243,83 @@ fn an_end_anchored_transition_lands_on_the_mark() {
         assert!(worst < 1e-3 && s.decks[1].phase.abs() < 1e-3, "{label}: Versatz {worst}");
     }
 }
+
+/// Klick-Spur: ein kurzer Impuls auf jedem Beat, nur auf einem Kanal (0 = links, 1 = rechts).
+fn click_track(bpm: f64, first_beat: f64, beats: usize, channel: usize) -> (Arc<Track>, dw_core::BeatGrid) {
+    let frames = ((first_beat + (beats as f64 + 2.0) * 60.0 / bpm) * SR as f64) as usize;
+    let mut data = vec![0.0f32; frames * 2];
+    for b in 0..beats {
+        let centre = ((first_beat + b as f64 * 60.0 / bpm) * SR as f64).round() as usize;
+        for k in 0..9usize {
+            let i = centre + k;
+            if i >= 4 && i - 4 < frames {
+                data[(i - 4) * 2 + channel] = 0.8 * (0.5 + 0.5 * (std::f32::consts::PI * (k as f32 - 4.0) / 5.0).cos());
+            }
+        }
+    }
+    let grid = dw_core::BeatGrid::constant(bpm, first_beat, 0);
+    (Arc::new(Track { audio: AudioBuf::new(SR, data), grid: grid.clone(), gain_db: 0.0 }), grid)
+}
+
+/// Stellen der Klicks (Maximum je Anschlag) auf einem Kanal.
+fn clicks(out: &[f32], channel: usize, from: usize, to: usize) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut i = from;
+    while i < to {
+        if out[i * 2 + channel].abs() > 0.05 {
+            let end = (i + 400).min(to);
+            let peak = (i..end).max_by(|&a, &b| out[a * 2 + channel].abs().total_cmp(&out[b * 2 + channel].abs())).unwrap();
+            found.push(peak);
+            i = peak + 2000;
+        } else {
+            i += 1;
+        }
+    }
+    found
+}
+
+/// DECK-08 am Ton, nicht nur an den Rastern: Im eingeplanten Übergang liegen die Anschläge beider
+/// Decks übereinander (≤ 1 ms) – vor dem Bass-Tausch, danach und für beide Arten, ihn zu legen.
+#[test]
+fn clicks_of_both_decks_coincide_during_a_live_transition() {
+    for when in [When::Next { align_bars: 4 }, When::EndIn { beats: 120.0 }] {
+        let (a, grid_a) = click_track(132.0, 0.21, 700, 0);
+        let (b, grid_b) = click_track(134.5, 0.05, 700, 1);
+        let mut e = Engine::new(SR);
+        e.load(A, a);
+        e.load(B, b);
+        e.apply(Command::Seek { deck: B, pos: grid_b.sec_at(131.3) });
+        e.apply(Command::Play { deck: A, on: true });
+        let mut out = Vec::new();
+        let pressed = e.clock_beats() + 37.3;
+        run_until(&mut e, pressed, &mut out, &mut []);
+        let s = e.snapshot();
+        let transition = Transition::bass_swap(16);
+        let plan = plan_live(
+            &transition,
+            ROLES,
+            s.clock_beats,
+            LiveDeck { grid: &grid_a, playing: true, pos: s.decks[0].pos, duration: s.decks[0].duration, track_bpm: s.decks[0].track_bpm },
+            LiveDeck { grid: &grid_b, playing: false, pos: s.decks[1].pos, duration: s.decks[1].duration, track_bpm: s.decks[1].track_bpm },
+            when,
+        )
+        .unwrap();
+        for cmd in &plan.now {
+            e.apply(*cmd);
+        }
+        for (beat, cmd) in &plan.scheduled {
+            assert!(e.schedule(*beat, *cmd));
+        }
+        let mut marks = [(plan.t0, 0usize), (plan.t0 + transition.beats(), 0usize)];
+        run_until(&mut e, plan.t0 + transition.beats() + 4.0, &mut out, &mut marks);
+        // Im Übergang, sobald B offen ist und solange A noch offen ist: jeder Klick von B auf einem von A.
+        let beat = (60.0 / 132.0 * SR as f64) as usize;
+        let (from, to) = (marks[0].1 + 10 * beat, marks[1].1 - 18 * beat);
+        let (left, right) = (clicks(&out, 0, from, to), clicks(&out, 1, from, to));
+        assert!(left.len() >= 30 && right.len() >= 30, "{when:?}: {} / {} Klicks", left.len(), right.len());
+        let worst = right.iter().map(|&r| left.iter().map(|&l| (l as i64 - r as i64).abs()).min().unwrap()).max().unwrap();
+        let worst_ms = worst as f64 / SR as f64 * 1000.0;
+        println!("{when:?}: größter Abstand zwischen den Klicks {worst_ms:.3} ms");
+        assert!(worst_ms <= 1.0, "{when:?}: Klicks von B liegen {worst_ms:.1} ms neben denen von A");
+    }
+}

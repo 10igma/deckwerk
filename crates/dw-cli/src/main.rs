@@ -35,6 +35,11 @@ const HELP: &str = "Deckwerk – Kommandozeile
       --b-grid-shift-ms verschiebt das Beat-Raster von B (negativ = früher), um ein falsch
       sitzendes Raster zum Probehören auszugleichen.
 
+  deckwerk raster [--profil <s>] <Datei>...
+      Beat-Raster gegen den Ton messen (ANA-03): je Minute, wo der Pegel um die Raster-Beats
+      ansteigt – gesamt, im Tief- und im Hochband. --profil zeigt für die Minute um diese
+      Stelle den gemittelten Pegelverlauf von −90 bis +40 ms.
+
   deckwerk check <Referenz.csv> <Musikordner> [--tol 0.05]
       Analyse gegen Referenzwerte prüfen (ANA-02, ANA-06): analysiert jede Datei der Referenz
       neu und meldet die Trefferquote bei Tempo und Tonart.
@@ -109,6 +114,7 @@ fn run() -> Result<()> {
         "analyze" => cmd_analyze(args),
         "mix" => cmd_mix(args),
         "check" => cmd_check(args),
+        "raster" => cmd_raster(args),
         "transition" => cmd_transition(args),
         "testtrack" => cmd_testtrack(args),
         other => bail!("unbekannter Befehl „{other}“ (Hilfe: deckwerk --help)"),
@@ -456,10 +462,12 @@ fn cmd_transition(mut args: Vec<String>) -> Result<()> {
     let start = (a_pos - lead as f64 * 4.0 * 60.0 / a.bpm).max(0.0);
     e.apply(Command::Seek { deck: DeckId::A, pos: start });
     e.apply(Command::Seek { deck: DeckId::B, pos: b_mark });
+    // Die Sprünge führt die Engine im nächsten Block aus; erst danach starten.
+    let mut cue = vec![0.0f32; 256 * 2];
+    e.process(&mut [0.0f32; 512], &mut cue);
     e.apply(Command::Play { deck: DeckId::A, on: true });
 
     let mut out: Vec<f32> = Vec::new();
-    let mut cue = vec![0.0f32; 256 * 2];
     let mut block = |e: &mut Engine, out: &mut Vec<f32>| {
         let at = out.len();
         out.resize(at + 256 * 2, 0.0);
@@ -510,7 +518,8 @@ fn cmd_transition(mut args: Vec<String>) -> Result<()> {
         }
         let s = e.snapshot();
         if s.decks[0].playing && s.decks[1].playing {
-            worst = worst.max(s.decks[1].phase.abs());
+            // Beide Decks gegen die Clock: Ein Master neben seiner Clock fiele sonst nicht auf.
+            worst = worst.max(s.decks[1].phase.abs()).max(s.decks[0].phase.abs());
         }
         if !s.decks[0].playing && !s.decks[1].playing {
             break;
@@ -528,6 +537,97 @@ fn cmd_transition(mut args: Vec<String>) -> Result<()> {
     );
     write_wav(&PathBuf::from(&out_file), &mix, 24).with_context(|| out_file.clone())?;
     println!("Geschrieben: {out_file}");
+    Ok(())
+}
+/// Mittlerer Pegelverlauf um die Raster-Beats eines Abschnitts, je 2 ms von −90 bis +40 ms:
+/// (gesamt, tief unter ~100 Hz, hoch über ~2 kHz).
+fn beat_profile(audio: &AudioBuf, grid: &dw_core::BeatGrid, from_sec: f64, to_sec: f64) -> Option<Vec<[f64; 3]>> {
+    const BIN_MS: f64 = 2.0;
+    const BACK_MS: f64 = 90.0;
+    const BINS: usize = 65;
+    let sr = audio.sample_rate as f64;
+    let frames = audio.frames();
+    let (a_lo, a_hi) = ((-std::f64::consts::TAU * 100.0 / sr).exp(), (-std::f64::consts::TAU * 2000.0 / sr).exp());
+    let mut acc = vec![[0.0f64; 3]; BINS];
+    let mut beats = 0usize;
+    let mut k = grid.beat_at(from_sec).ceil();
+    while grid.sec_at(k) < to_sec {
+        let start = ((grid.sec_at(k) - BACK_MS / 1000.0) * sr).round() as i64;
+        k += 1.0;
+        // 50 ms Einschwingzeit für die Filter.
+        let warm = (0.05 * sr) as i64;
+        if start - warm < 0 || start as usize + (BINS as f64 * BIN_MS / 1000.0 * sr) as usize >= frames {
+            continue;
+        }
+        let (mut l1, mut l2, mut h1) = (0.0f64, 0.0f64, 0.0f64);
+        for i in (start - warm)..(start + (BINS as f64 * BIN_MS / 1000.0 * sr) as i64) {
+            let j = i as usize * 2;
+            let v = 0.5 * (audio.data[j] + audio.data[j + 1]) as f64;
+            l1 = a_lo * l1 + (1.0 - a_lo) * v;
+            l2 = a_lo * l2 + (1.0 - a_lo) * l1;
+            h1 = a_hi * h1 + (1.0 - a_hi) * v;
+            if i >= start {
+                let b = (((i - start) as f64 / sr * 1000.0) / BIN_MS) as usize;
+                if b < BINS {
+                    acc[b][0] += v * v;
+                    acc[b][1] += l2 * l2;
+                    acc[b][2] += (v - h1) * (v - h1);
+                }
+            }
+        }
+        beats += 1;
+    }
+    if beats < 8 {
+        return None;
+    }
+    Some(acc.iter().map(|p| [p[0].sqrt(), p[1].sqrt(), p[2].sqrt()]).collect())
+}
+
+/// Stelle in ms relativ zum Raster, an der die Kurve 30 % ihres steilsten Anstiegs erreicht.
+fn rise_ms(curve: &[f64]) -> Option<f64> {
+    let n = curve.len();
+    let span = 3; // 6 ms
+    let at = (0..n - span).max_by(|&a, &b| (curve[a + span] - curve[a]).total_cmp(&(curve[b + span] - curve[b])))?;
+    let peak_at = (at..(at + span + 5).min(n)).max_by(|&a, &b| curve[a].total_cmp(&curve[b]))?;
+    let base = curve[at.saturating_sub(6)..=at].iter().cloned().fold(f64::MAX, f64::min);
+    let threshold = base + 0.3 * (curve[peak_at] - base);
+    let mut below = peak_at;
+    while below > 0 && curve[below] >= threshold {
+        below -= 1;
+    }
+    let frac = ((threshold - curve[below]) / (curve[below + 1] - curve[below]).max(1e-12)).clamp(0.0, 1.0);
+    Some((below as f64 + frac + 0.5) * 2.0 - 90.0)
+}
+
+/// Messwerkzeug für ANA-03 an echter Musik: Wo liegen die Anschläge gegenüber dem Raster?
+fn cmd_raster(mut args: Vec<String>) -> Result<()> {
+    let profile_at = option(&mut args, "--profil")?.map(|v| v.parse::<f64>()).transpose().map_err(|_| anyhow!("--profil braucht eine Zeit in Sekunden"))?;
+    if args.is_empty() {
+        bail!("keine Datei angegeben");
+    }
+    for file in &args {
+        let (audio, a) = load(Path::new(file))?;
+        println!("{file}\n  {:.2} BPM, Raster-Beat 0 bei {:.1} ms", a.bpm, a.grid.sec_at(0.0) * 1000.0);
+        println!("  Abschnitt      Anstieg gesamt   tief    hoch   (ms relativ zum Raster; negativ = vor dem Raster)");
+        let mut t = 0.0;
+        while t < a.duration {
+            let to = (t + 60.0).min(a.duration);
+            if let Some(p) = beat_profile(&audio, &a.grid, t, to) {
+                let col = |c: usize| rise_ms(&p.iter().map(|v| v[c]).collect::<Vec<_>>()).map_or("    –".into(), |v| format!("{v:+6.1}"));
+                println!("  {:4.0}–{:4.0} s   {}          {}  {}", t, to, col(0), col(1), col(2));
+                if profile_at.is_some_and(|at| at >= t && at < to) {
+                    let max: [f64; 3] = std::array::from_fn(|c| p.iter().map(|v| v[c]).fold(1e-12, f64::max));
+                    for (i, v) in p.iter().enumerate() {
+                        let bar = |c: usize| "#".repeat((v[c] / max[c] * 24.0).round() as usize);
+                        println!("    {:+4} ms  {:<24} | {:<24} | {}", i as i64 * 2 - 90, bar(0), bar(1), bar(2));
+                    }
+                }
+            } else {
+                println!("  {:4.0}–{:4.0} s   (zu wenige Beats)", t, to);
+            }
+            t = to;
+        }
+    }
     Ok(())
 }
 #[cfg(test)]

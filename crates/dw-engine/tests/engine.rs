@@ -444,16 +444,27 @@ fn snapped_seek_keeps_the_phase_whatever_the_delay() {
     let stale = e.snapshot().decks[0].pos;
     run(&mut e, 0.020, &mut []);
 
-    // Zum Vergleich der einfache Sprung: Der Verzug bleibt als Versatz des Masters zu seiner Clock stehen.
+    // Der einfache Sprung hält die Phase nicht – der Master landet irgendwo zwischen den Beats.
+    // Trotzdem bleibt die Clock auf seinem Raster, und ein Deck im Beat-Sync folgt ihm dorthin:
+    // Der Master gibt den Takt vor. (Früher blieb der Bruchteil als Versatz zwischen Master und
+    // Clock stehen, und das zweite Deck lief hörbar daneben.)
     let mut plain = Engine::new(SR);
     plain.load(A, click_track(120.0, 0.0, 600, 0));
+    plain.load(B, click_track(126.0, 0.0, 600, 1));
+    plain.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
     plain.apply(Command::Play { deck: A, on: true });
+    plain.apply(Command::Play { deck: B, on: true });
     run(&mut plain, 4.02, &mut []);
-    plain.apply(Command::Seek { deck: A, pos: stale + 32.0 * 0.5 });
+    plain.apply(Command::Seek { deck: A, pos: stale + 32.0 * 0.5 + 0.137 });
     run(&mut plain, 1.0, &mut []);
-    let off = plain.snapshot().decks[0].phase;
-    println!("einfacher Sprung mit 20 ms Verzug: Phase des Masters {off:.4} Beats");
-    assert!(off.abs() > 0.03, "Vergleichsfall zeigt den Fehler nicht: {off}");
+    let s = plain.snapshot();
+    println!("einfacher Sprung am Master: Phase Master {:.5}, Phase B {:.5} Beats", s.decks[0].phase, s.decks[1].phase);
+    assert!(s.decks[0].phase.abs() < 1e-3, "Master neben seiner Clock: {}", s.decks[0].phase);
+    assert!(s.decks[1].phase.abs() < 1e-3, "B neben der Clock: {}", s.decks[1].phase);
+    let (mut pl, mut pr) = (ClickFinder::new(0, 0.2), ClickFinder::new(1, 0.2));
+    run(&mut plain, 10.0, &mut [&mut pl, &mut pr]);
+    let apart = pr.clicks.iter().map(|&r| pl.clicks.iter().map(|&l| (l as i64 - r as i64).abs()).min().unwrap()).max().unwrap();
+    assert!(apart as f64 / SR as f64 * 1000.0 <= 1.0, "nach einfachem Sprung liegen die Klicks {} Samples auseinander", apart);
 
     // Sprung im Takt am Master (A).
     e.apply(Command::SeekSnap { deck: A, pos: stale + 32.0 * 0.5 });

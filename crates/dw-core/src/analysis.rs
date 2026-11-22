@@ -5,7 +5,7 @@ use crate::{db_json, BeatGrid, Key};
 use serde::{Deserialize, Serialize};
 
 /// Wird erhöht, wenn sich ein Analyse-Verfahren so ändert, dass alte Ergebnisse veralten (ANA-17).
-pub const ANALYSIS_VERSION: u32 = 1;
+pub const ANALYSIS_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TrackAnalysis {

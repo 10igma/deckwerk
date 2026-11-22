@@ -391,7 +391,11 @@ impl Engine {
                 Jump::To(p) => {
                     d.set_position(p);
                     if is_master {
-                        self.master_offset = clock - d.beat();
+                        // Der Master gibt den Takt vor: Die Clock bleibt auf seinem Raster. Sie läuft über
+                        // den Sprung hinweg weiter (ganze Beats), ein Bruchteil geht an die Clock, nicht
+                        // an den Master – sonst richteten sich Decks im Beat-Sync an einer Clock aus, die
+                        // neben dem Raster des Masters liegt, und liefen hörbar versetzt.
+                        self.master_offset = (clock - d.beat()).round();
                     } else if d.sync == SyncMode::Beat {
                         d.sync_offset = clock - d.beat();
                     }
