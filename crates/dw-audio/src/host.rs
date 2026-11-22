@@ -3,13 +3,15 @@
 use dw_core::{Command, DeckId, Snapshot};
 use dw_engine::{Engine, Track};
 use rtrb::{Consumer, Producer, RingBuffer};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 const MESSAGE_CAPACITY: usize = 4096;
 const GARBAGE_CAPACITY: usize = 64;
 const SNAPSHOT_CAPACITY: usize = 8;
+/// Puffer des Mitschnitt-Abgriffs in Sekunden: so lange darf der schreibende Thread hängen (REC-01).
+const TAP_SECONDS: usize = 4;
 /// Größter Geräte-Puffer in Frames, für den Arbeitsspeicher bereitsteht (ENG-03: bis 2 048).
 const MAX_FRAMES: usize = 8192;
 
@@ -47,6 +49,10 @@ struct Shared {
     overruns: AtomicU32,
     /// Vom Gerät gemeldete Aussetzer und Fehler.
     device_errors: AtomicU32,
+    /// Mitschnitt: Der Audio-Thread legt das Master-Signal in den Abgriff.
+    tap_on: AtomicBool,
+    /// Frames, die verloren gingen, weil der Abgriff voll war.
+    tap_dropped: AtomicU32,
 }
 
 /// Seite des Steuerungs-Threads.
@@ -57,6 +63,49 @@ pub struct Controller {
     last: Snapshot,
     shared: Arc<Shared>,
     sample_rate: u32,
+    /// Lese-Seite des Mitschnitt-Abgriffs, bis jemand sie abholt.
+    tap: Option<Consumer<f32>>,
+}
+
+/// Lese-Seite des Mitschnitt-Abgriffs (REC-01): liefert das Master-Signal nach dem Limiter,
+/// verschachtelt stereo, so wie es an das Gerät geht. Gehört dem Thread, der die Datei schreibt.
+pub struct MasterTap {
+    rx: Consumer<f32>,
+    shared: Arc<Shared>,
+    sample_rate: u32,
+}
+
+impl MasterTap {
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Schaltet den Abgriff. Beim Einschalten wird verworfen, was noch von früher im Puffer liegt.
+    pub fn set_active(&mut self, on: bool) {
+        if on {
+            while self.rx.pop().is_ok() {}
+            self.shared.tap_dropped.store(0, Ordering::Relaxed);
+        }
+        self.shared.tap_on.store(on, Ordering::Release);
+    }
+
+    /// Hängt alles Angekommene an `out` an (verschachtelt stereo). Gibt die Zahl der Werte zurück.
+    pub fn read(&mut self, out: &mut Vec<f32>) -> usize {
+        // Nur ganze Frames, damit links und rechts nie auseinanderlaufen.
+        let n = self.rx.slots() / 2 * 2;
+        if let Ok(chunk) = self.rx.read_chunk(n) {
+            let (a, b) = chunk.as_slices();
+            out.extend_from_slice(a);
+            out.extend_from_slice(b);
+            chunk.commit_all();
+        }
+        n
+    }
+
+    /// Frames, die seit dem Einschalten verloren gingen, weil niemand schnell genug gelesen hat.
+    pub fn dropped_frames(&self) -> u32 {
+        self.shared.tap_dropped.load(Ordering::Relaxed)
+    }
 }
 
 /// Seite des Audio-Threads. `process` fordert keinen Speicher an und sperrt nichts.
@@ -73,6 +122,8 @@ pub struct Processor {
     master: Vec<f32>,
     cue: Vec<f32>,
     shared: Arc<Shared>,
+    /// Schreib-Seite des Mitschnitt-Abgriffs.
+    tap: Producer<f32>,
 }
 
 /// Erzeugt das Paar aus Steuerung und Audio-Seite für eine Abtastrate.
@@ -80,6 +131,7 @@ pub fn create(sample_rate: u32) -> (Controller, Processor) {
     let (tx, rx) = RingBuffer::new(MESSAGE_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_CAPACITY);
     let (snap_tx, snap_rx) = RingBuffer::new(SNAPSHOT_CAPACITY);
+    let (tap_tx, tap_rx) = RingBuffer::new(sample_rate as usize * 2 * TAP_SECONDS);
     let shared = Arc::new(Shared::default());
     let controller = Controller {
         tx,
@@ -88,6 +140,7 @@ pub fn create(sample_rate: u32) -> (Controller, Processor) {
         last: Snapshot::default(),
         shared: shared.clone(),
         sample_rate,
+        tap: Some(tap_rx),
     };
     let processor = Processor {
         engine: Engine::new(sample_rate),
@@ -101,6 +154,7 @@ pub fn create(sample_rate: u32) -> (Controller, Processor) {
         master: vec![0.0; MAX_FRAMES * 2],
         cue: vec![0.0; MAX_FRAMES * 2],
         shared,
+        tap: tap_tx,
     };
     (controller, processor)
 }
@@ -108,6 +162,12 @@ pub fn create(sample_rate: u32) -> (Controller, Processor) {
 impl Controller {
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    /// Gibt die Lese-Seite des Mitschnitt-Abgriffs heraus (einmal; danach `None`).
+    pub fn take_master_tap(&mut self) -> Option<MasterTap> {
+        let rx = self.tap.take()?;
+        Some(MasterTap { rx, shared: self.shared.clone(), sample_rate: self.sample_rate })
     }
 
     /// Sendet einen Befehl. `false`, wenn der Puffer voll ist (Audio-Thread steht).
@@ -248,6 +308,21 @@ impl Processor {
         while done < total {
             let n = (total - done).min(MAX_FRAMES);
             self.engine.process(&mut self.master[..n * 2], &mut self.cue[..n * 2]);
+            // Mitschnitt: Master nach dem Limiter in den Abgriff. Ist er voll, gehen ganze Frames verloren
+            // und werden gezählt – gewartet wird im Audio-Thread nie.
+            if self.shared.tap_on.load(Ordering::Acquire) {
+                let fit = (self.tap.slots() / 2).min(n);
+                if let Ok(mut chunk) = self.tap.write_chunk(fit * 2) {
+                    let (a, b) = chunk.as_mut_slices();
+                    let split = a.len();
+                    a.copy_from_slice(&self.master[..split]);
+                    b.copy_from_slice(&self.master[split..fit * 2]);
+                    chunk.commit_all();
+                }
+                if fit < n {
+                    self.shared.tap_dropped.fetch_add((n - fit) as u32, Ordering::Relaxed);
+                }
+            }
             let r = self.routing;
             for i in 0..n {
                 let frame = &mut out[(done + i) * channels..(done + i + 1) * channels];

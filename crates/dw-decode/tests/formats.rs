@@ -136,3 +136,48 @@ fn truncated_files_are_reported_as_incomplete() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// REC-01: Eine laufend geschriebene WAV-Datei ist nach jedem Abgleich vollständig lesbar – auch
+/// ohne ordentlichen Abschluss (Absturz) – und enthält bitgenau, was hineingeschrieben wurde.
+#[test]
+fn streamed_wav_is_readable_after_every_sync() {
+    use dw_decode::WavWriter;
+    let dir = std::env::temp_dir().join(format!("dw-decode-stream-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for bits in [16u16, 24] {
+        let path = dir.join(format!("mitschnitt-{bits}.wav"));
+        let scale = (1i64 << (bits - 1)) as f32;
+        // Werte auf dem Raster der Bittiefe, damit der Vergleich bitgenau sein kann.
+        let sample = |i: usize| (((i * 7919) % 20001) as f32 - 10000.0) / 10000.0 * 0.9;
+        let quantised = |v: f32| (v * scale).round() / scale;
+        let all: Vec<f32> = (0..48_000 * 2 * 3).map(|i| quantised(sample(i))).collect();
+        let mut w = WavWriter::create(&path, 48_000, bits).unwrap();
+        // Direkt nach dem Anlegen: gültige, leere Datei (kein Ton dekodierbar, aber kein kaputter Kopf).
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 44);
+        let mut written = 0;
+        for piece in all.chunks(48_000 * 2 / 3 + 10) {
+            w.write(piece).unwrap();
+            written += piece.len();
+            w.sync().unwrap();
+            assert_eq!(w.frames() as usize, written / 2);
+            // „Absturz": Die Datei wird gelesen, während der Schreiber noch offen ist.
+            let d = decode_file(&path).unwrap_or_else(|e| panic!("{bits} bit nach {written} Werten: {e}"));
+            assert_eq!(d.audio.sample_rate, 48_000);
+            assert_eq!(d.audio.data.len(), written, "{bits} bit");
+            assert!(d.audio.data == all[..written], "{bits} bit: Inhalt weicht ab");
+            assert!(!d.is_incomplete());
+        }
+        // Was nach dem letzten Abgleich geschrieben wurde, steht erst nach dem Abschluss in der Länge.
+        w.write(&all[..960]).unwrap();
+        w.finish().unwrap();
+        assert_eq!(decode_file(&path).unwrap().audio.data.len(), all.len() + 960);
+        // Begrenzung statt Überlauf.
+        let mut w = WavWriter::create(&path, 44_100, bits).unwrap();
+        w.write(&[2.0, -2.0, 1.0, -1.0]).unwrap();
+        w.finish().unwrap();
+        let d = decode_file(&path).unwrap();
+        assert_eq!(d.audio.sample_rate, 44_100);
+        assert!(d.audio.data[0] > 0.999 && d.audio.data[1] == -1.0 && d.audio.data[3] == -1.0);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

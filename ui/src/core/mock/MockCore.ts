@@ -13,6 +13,7 @@ import {
   type EngineStatus,
   type AppSettings,
   type ImportResult,
+  type RecordingInfo,
   type RefreshResult,
   type Transition,
   type TransitionRun,
@@ -240,6 +241,26 @@ export class MockCore implements CoreApi {
   }
 
   private refreshOnStart = true;
+  /** Simulierter Mitschnitt: Es wird nichts geschrieben, nur die Zeit gezählt. */
+  private recording: { path: string; from: number } | null = null;
+
+  startRecording(stamp: string): Promise<RecordingInfo> {
+    if (this.recording) return Promise.reject('Es läuft schon eine Aufnahme.');
+    this.recording = { path: `/musik/Deckwerk/Deckwerk ${stamp}.wav`, from: this.time };
+    return Promise.resolve({ path: this.recording.path, active: true, seconds: 0, dropped_frames: 0, error: null });
+  }
+
+  stopRecording(): Promise<RecordingInfo> {
+    if (!this.recording) return Promise.reject('Es läuft keine Aufnahme.');
+    const done = { path: this.recording.path, active: false, seconds: this.time - this.recording.from, dropped_frames: 0, error: null };
+    this.recording = null;
+    return Promise.resolve(done);
+  }
+
+  recordingStatus(): Promise<RecordingInfo | null> {
+    const r = this.recording;
+    return Promise.resolve(r ? { path: r.path, active: true, seconds: this.time - r.from, dropped_frames: 0, error: null } : null);
+  }
   /** Simulierter Übergang: Start und Stopp der Decks und die Fader; EQ-Verläufe fährt nur der echte Kern. */
   private run: TransitionRun | null = null;
 

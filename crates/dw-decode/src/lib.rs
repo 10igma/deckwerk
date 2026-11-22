@@ -4,7 +4,7 @@
 mod mp4;
 mod wav;
 
-pub use wav::write_wav;
+pub use wav::{write_wav, WavWriter};
 
 use dw_core::AudioBuf;
 use std::fs::File;

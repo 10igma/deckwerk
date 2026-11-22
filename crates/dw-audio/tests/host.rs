@@ -147,3 +147,69 @@ fn audio_side_does_not_allocate() {
     assert_eq!(count, 0, "{count} Speicheranforderungen oder -freigaben im Audio-Thread");
     assert_eq!(ctl.collect_garbage(), 1);
 }
+
+/// REC-01: Der Mitschnitt-Abgriff liefert genau das Master-Signal, das an das Gerät geht – lückenlos
+/// über viele Puffer, nur solange er eingeschaltet ist, und ohne Speicher im Audio-Pfad. Liest
+/// niemand, gehen Frames verloren und werden gezählt, statt den Audio-Thread aufzuhalten.
+#[test]
+fn master_tap_delivers_exactly_what_goes_to_the_device() {
+    let (mut ctl, mut proc) = create(SR);
+    let mut tap = ctl.take_master_tap().expect("Abgriff");
+    assert!(ctl.take_master_tap().is_none(), "den Abgriff gibt es nur einmal");
+    assert_eq!(tap.sample_rate(), SR);
+    // Rampe statt Gleichsignal, damit Lücken und Vertauschungen auffallen.
+    let frames = SR as usize * 20;
+    let data: Vec<f32> = (0..frames).flat_map(|i| [0.3 * ((i % 4801) as f32 / 4801.0), -0.2 * ((i % 3001) as f32 / 3001.0)]).collect();
+    ctl.load(DeckId::A, Arc::new(Track { audio: AudioBuf::new(SR, data), grid: BeatGrid::constant(120.0, 0.0, 0), gain_db: 0.0 }));
+    ctl.send(Command::Play { deck: DeckId::A, on: true });
+    let mut out = vec![0.0f32; 512 * 2];
+    proc.process(&mut out, 2, SR as f64);
+
+    // Ausgeschaltet kommt nichts an.
+    let mut got = Vec::new();
+    assert_eq!(tap.read(&mut got), 0);
+
+    // Eingeschaltet: 200 Puffer verschiedener Größe, zwischendurch gelesen; kein Speicher im Audio-Pfad.
+    tap.set_active(true);
+    let mut sent = Vec::new();
+    TRACKING.with(|t| t.set(true));
+    COUNT.with(|c| c.set(0));
+    for i in 0..200 {
+        let n = [64, 256, 480, 512, 37][i % 5];
+        proc.process(&mut out[..n * 2], 2, SR as f64);
+        TRACKING.with(|t| t.set(false));
+        sent.extend_from_slice(&out[..n * 2]);
+        if i % 7 == 0 {
+            tap.read(&mut got);
+        }
+        TRACKING.with(|t| t.set(true));
+    }
+    TRACKING.with(|t| t.set(false));
+    assert_eq!(COUNT.with(|c| c.get()), 0, "Speicher im Audio-Pfad angefordert oder freigegeben");
+    tap.read(&mut got);
+    assert_eq!(got.len(), sent.len());
+    assert!(got == sent, "Abgriff weicht vom Ausgang ab");
+    assert!(sent.iter().any(|v| v.abs() > 0.05), "es lief kein Ton");
+    assert_eq!(tap.dropped_frames(), 0);
+
+    // Liest niemand, läuft der Abgriff voll (4 s): Der Rest wird gezählt, der Ausgang läuft weiter.
+    for _ in 0..(SR as usize * 5 / 512) {
+        proc.process(&mut out, 2, SR as f64);
+    }
+    assert!(out.iter().any(|v| v.abs() > 0.05), "Ausgang steht");
+    let dropped = tap.dropped_frames() as usize;
+    got.clear();
+    tap.read(&mut got);
+    assert_eq!(got.len(), SR as usize * 2 * 4, "Abgriff fasst 4 s");
+    assert!(dropped > SR as usize / 2 && dropped < SR as usize * 2, "verloren: {dropped} Frames");
+
+    // Wieder einschalten verwirft Altes und beginnt bei null.
+    tap.set_active(false);
+    proc.process(&mut out, 2, SR as f64);
+    tap.set_active(true);
+    assert_eq!(tap.dropped_frames(), 0);
+    proc.process(&mut out, 2, SR as f64);
+    got.clear();
+    tap.read(&mut got);
+    assert!(got == out, "nach dem Wiedereinschalten kommt genau der neue Puffer");
+}

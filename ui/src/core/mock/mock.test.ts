@@ -307,3 +307,27 @@ describe('Sprung im Takt (DECK-20)', () => {
     expect(last(core).decks[0].pos).toBeCloseTo(50.123, 9);
   });
 });
+
+describe('Mitschnitt (REC-01)', () => {
+  it('Zeitstempel für den Dateinamen in Ortszeit, zweistellig', async () => {
+    const { recordingStamp } = await import('../../app/actions');
+    expect(recordingStamp(new Date(2026, 10, 22, 13, 5, 9))).toBe('2026-11-22 13-05-09');
+    expect(recordingStamp(new Date(2027, 0, 3, 0, 0, 0))).toBe('2027-01-03 00-00-00');
+  });
+
+  it('simulierter Kern: starten, Stand, beenden; nie zwei zugleich', async () => {
+    const core = new MockCore({ manualClock: true });
+    expect(await core.recordingStatus()).toBe(null);
+    await expect(core.stopRecording()).rejects.toContain('keine Aufnahme');
+    const started = await core.startRecording('2026-11-22 13-05-09');
+    expect(started.active).toBe(true);
+    expect(started.path.endsWith('Deckwerk 2026-11-22 13-05-09.wav')).toBe(true);
+    await expect(core.startRecording('x')).rejects.toContain('läuft schon');
+    run(core, 3);
+    expect((await core.recordingStatus())?.seconds).toBeCloseTo(3, 1);
+    const done = await core.stopRecording();
+    expect(done.active).toBe(false);
+    expect(done.seconds).toBeCloseTo(3, 1);
+    expect(await core.recordingStatus()).toBe(null);
+  });
+});

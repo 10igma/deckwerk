@@ -58,6 +58,7 @@ const onDown: Partial<Record<ActionId, Handler>> = {
   'view.vorbereiten': () => navigate('vorbereiten'),
   'view.automix': () => navigate('automix'),
   'global.snap': () => act.toggleSnap(),
+  'global.record': () => void act.toggleRecording(),
   'stage.peek_fwd': (_d, fine) => act.peekStep(1, fine),
   'stage.peek_back': (_d, fine) => act.peekStep(-1, fine),
   'stage.peek_reset': () => act.peekReset(),

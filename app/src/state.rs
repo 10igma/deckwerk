@@ -1,6 +1,7 @@
 //! Gemeinsamer Zustand der Anwendung: Audio-Steuerung, Bibliothek, Cache.
 
 use crate::audio::{self, AudioHandle, AudioInfo};
+use crate::recorder::{Recorder, RecordingInfo};
 use dw_audio::Controller;
 use dw_automix::{plan_live, LiveDeck, Roles, Transition, When};
 use dw_core::{AudioBuf, Command, DeckId, SyncMode, TrackAnalysis, Waveform, ANALYSIS_VERSION};
@@ -100,6 +101,9 @@ pub struct Inner {
     pub loaded: Mutex<[Option<TrackId>; 4]>,
     /// Der zuletzt eingeplante Übergang; gilt als laufend, bis die Clock sein Ende erreicht.
     pub transition: Mutex<Option<TransitionRun>>,
+    /// Mitschnitt des Master-Signals (REC-01).
+    recorder: Recorder,
+    recordings_dir: Mutex<PathBuf>,
     cache_dir: PathBuf,
     /// Zählt bei jeder Änderung der Bibliothek hoch; die Oberfläche lädt die Liste dann neu.
     pub library_rev: AtomicU64,
@@ -132,7 +136,8 @@ impl AppState {
         };
         let settings_file = data_dir.join("settings.json");
         let settings = Settings::load(&settings_file);
-        let (ctl, audio, audio_handle) = audio::start(settings.audio_device.clone());
+        let (mut ctl, audio, audio_handle) = audio::start(settings.audio_device.clone());
+        let recorder = Recorder::spawn(ctl.take_master_tap().ok_or("Der Mitschnitt-Abgriff ist schon vergeben.")?);
         Ok(AppState(Arc::new(Inner {
             ctl: Mutex::new(ctl),
             engine_rate: audio.sample_rate,
@@ -143,6 +148,8 @@ impl AppState {
             lib: Mutex::new(lib),
             loaded: Mutex::new([None; 4]),
             transition: Mutex::new(None),
+            recorder,
+            recordings_dir: Mutex::new(data_dir.join("aufnahmen")),
             cache_dir,
             library_rev: AtomicU64::new(1),
             work: (Mutex::new(true), Condvar::new()),
@@ -232,6 +239,42 @@ impl AppState {
         } else {
             Err("Die Audio-Engine nimmt keine Befehle an.".into())
         }
+    }
+
+    /// Ordner, in dem Mitschnitte landen.
+    pub fn set_recordings_dir(&self, dir: PathBuf) {
+        *self.recordings_dir.lock().unwrap() = dir;
+    }
+
+    /// Beginnt einen Mitschnitt des Master-Signals (REC-01). `stamp` ist der Zeitstempel für den
+    /// Dateinamen (die Oberfläche kennt die Ortszeit); fehlt er, zählt die Unix-Zeit.
+    pub fn start_recording(&self, stamp: Option<&str>) -> Result<RecordingInfo, String> {
+        let dir = self.recordings_dir.lock().unwrap().clone();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        // Nur Ziffern, Leerzeichen und Bindestriche: Der Name kommt von außen.
+        let clean: String = stamp.unwrap_or("").chars().filter(|c| c.is_ascii_digit() || *c == ' ' || *c == '-').take(32).collect();
+        let stamp = if clean.trim().is_empty() {
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string()
+        } else {
+            clean.trim().to_string()
+        };
+        // Vorhandene Dateien nie überschreiben.
+        let mut path = dir.join(format!("Deckwerk {stamp}.wav"));
+        let mut n = 2;
+        while path.exists() {
+            path = dir.join(format!("Deckwerk {stamp} ({n}).wav"));
+            n += 1;
+        }
+        self.recorder.start(&path)
+    }
+
+    /// Beendet den Mitschnitt und schließt die Datei ab.
+    pub fn stop_recording(&self) -> Result<RecordingInfo, String> {
+        self.recorder.stop()
+    }
+
+    pub fn recording_status(&self) -> Option<RecordingInfo> {
+        self.recorder.status()
     }
 
     pub fn touch_library(&self) {

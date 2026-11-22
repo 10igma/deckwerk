@@ -31,7 +31,7 @@ Aus dem Wurzelordner:
 | Kommandozeile | `cargo run --release -p dw-cli -- analyze <Datei>` bzw. `mix <A> <B> -o mix.wav` bzw. `check docs/referenz-tracks.csv <Musikordner>` (Analyse gegen Referenzwerte); `raster <Datei>` misst, ob das Beat-Raster auf den Anschlägen sitzt; `transition <A> <B> -o mix.wav …` rendert einen Übergang wie live |
 | Installer (aus `app/`) | `node ../ui/node_modules/@tauri-apps/cli/tauri.js build` |
 
-Umgebungsvariablen der Anwendung: `DECKWERK_DATA` (Ordner für Bibliothek und Cache), `DECKWERK_MUSIC` (Ordner, der beim Start importiert wird).
+Umgebungsvariablen der Anwendung: `DECKWERK_DATA` (Ordner für Bibliothek und Cache), `DECKWERK_MUSIC` (Ordner, der beim Start importiert wird), `DECKWERK_RECORDINGS` (Ordner für Mitschnitte).
 
 ## Aufbau
 

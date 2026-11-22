@@ -14,6 +14,9 @@ Die Oberfläche spricht den Kern nur über `CoreApi` (`ui/src/core/api.ts`) an. 
 | `transition_templates` | `bars: number` | `Transition[]` | eingebaute Vorlagen für Übergänge in dieser Länge (`bass_swap`, `fade`; TRANS-01) |
 | `transition_start` | `from: DeckId`, `to: DeckId`, `transition: Transition`, `when: TransitionWhen` | `TransitionRun` | Übergang vom laufenden Deck `from` zum Deck `to` einplanen (TRANS-05). `when` = `{ type: "next", align_bars }`: Beginn an der nächsten Taktgrenze des laufenden Tracks in diesem Raster; ein stehendes `to` steigt an seiner Stelle ein. `when` = `{ type: "end_in", beats }`: Ende in so vielen Clock-Beats (auf den nächsten Taktanfang gerückt), der Beginn wird um die Länge zurückgerechnet; ein stehendes `to` erreicht seine Stelle genau am Ende und startet entsprechend früher, notfalls vor seinem Anfang und bis dorthin stumm. Ein stehendes `to` rückt auf den Taktanfang neben seiner Position, bekommt Beat-Sync und wird von der Engine gestartet; läuft `to` schon im Takt mit, werden nur die Regler gefahren. Der erste Befehl liegt mindestens zwei Beats nach dem Aufruf. Abgelehnt mit Klartext, wenn ein laufendes Deck weder Master noch im Beat-Sync ist, der Tempo-Abstand über 8 % liegt, ein Track zu kurz ist, das gewählte Ende zu nah liegt oder schon ein Übergang läuft |
 | `transition_cancel` | – | – | verwirft alle vorgemerkten Befehle; die Regler bleiben stehen |
+| `record_start` | `stamp: string | null` | `RecordingInfo` | Mitschnitt des Master-Signals nach dem Limiter beginnen (REC-01): WAV, 24 bit, Abtastrate der Engine, Datei `Deckwerk <stamp>.wav` im Ordner der Mitschnitte. `stamp` ist der Zeitstempel in Ortszeit; übernommen werden nur Ziffern, Leerzeichen und Bindestriche. Vorhandene Dateien werden nie überschrieben |
+| `record_stop` | – | `RecordingInfo` | Mitschnitt beenden und Datei abschließen |
+| `record_status` | – | `RecordingInfo | null` | laufender Mitschnitt (Stand höchstens eine Sekunde alt) oder der zuletzt von selbst abgebrochene mit `error` |
 | `deck_load` | `deck: DeckId`, `trackId: string` | – | Track laden; erfüllt, wenn das Deck spielbereit ist |
 | `deck_loaded` | – | `{ a, b, c, d: string \| null }` | Tracks auf den Decks |
 | `track_waveform` | `trackId: string` | `ArrayBuffer` | Wellenform im Binärformat „DWWF" |
@@ -92,6 +95,7 @@ Das gewählte Ausgabegerät steht in `settings.json` im Datenordner (`{ "audio_d
 |---|---|
 | `DECKWERK_DATA` | Ordner für Bibliothek und Cache statt des Benutzerdaten-Ordners |
 | `DECKWERK_MUSIC` | Ordner, der beim Start importiert wird |
+| `DECKWERK_RECORDINGS` | Ordner für Mitschnitte statt „Deckwerk" im Musik-Ordner des Benutzers |
 
 ## Übergang als Datenobjekt
 
@@ -109,3 +113,5 @@ Das gewählte Ausgabegerät steht in `settings.json` im Datenordner (`{ "audio_d
 Ein Stützpunkt hat `beat` (Master-Beats relativ zu T0, negativ = davor), `value` und `curve` (`linear`, `smooth`, `step`) für den Weg vom vorigen Punkt. Vor dem ersten Stützpunkt fasst die Spur den Regler nicht an. EQ-Wege von oder zu Kill laufen linear im Pegelfaktor, alle anderen linear im Wert. Gesendet wird in Schritten von einem Viertel-Beat; die Engine glättet dazwischen.
 
 `TransitionRun`: `from`, `to`, `name`, `bars`, `t0_beat`, `end_beat` (Clock-Beats). Den Stand liest die Oberfläche aus `Snapshot.clock_beats`.
+
+`RecordingInfo`: `path`, `active`, `seconds` (bisher geschriebene Länge), `dropped_frames` (verlorene Frames, 0 = lückenlos), `error` (Grund, falls die Aufnahme von selbst abbrach). Während der Aufnahme stehen die Längen einmal je Sekunde im Dateikopf; die Datei ist dann auch nach einem Absturz lesbar.

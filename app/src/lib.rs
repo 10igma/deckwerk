@@ -2,6 +2,7 @@
 
 pub mod audio;
 pub mod commands;
+pub mod recorder;
 pub mod state;
 pub mod worker;
 
@@ -16,6 +17,10 @@ pub fn run() {
                 None => app.path().app_data_dir()?,
             };
             let state = AppState::start(&data_dir).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            // Mitschnitte in den Musik-Ordner des Benutzers, sonst bleiben sie im Datenordner.
+            if let Some(dir) = std::env::var_os("DECKWERK_RECORDINGS").map(std::path::PathBuf::from).or_else(|| app.path().audio_dir().ok().map(|d| d.join("Deckwerk"))) {
+                state.set_recordings_dir(dir);
+            }
             // Musikordner aus der Umgebung beim Start importieren (für Tests und den ersten Start).
             if let Some(dir) = std::env::var_os("DECKWERK_MUSIC") {
                 let _ = state.import(&[std::path::PathBuf::from(dir)]);
@@ -58,6 +63,9 @@ pub fn run() {
             commands::transition_templates,
             commands::transition_start,
             commands::transition_cancel,
+            commands::record_start,
+            commands::record_stop,
+            commands::record_status,
         ])
         .run(tauri::generate_context!())
         .expect("Deckwerk konnte nicht gestartet werden");

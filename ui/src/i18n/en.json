@@ -309,5 +309,10 @@
   "menu.startTooLate": "This point is too close: the start needs at least {n} beats of lead.",
   "menu.viewHere": "Move view here",
   "menu.deckHere": "Move deck {deck} here",
-  "menu.close": "Close"
+  "menu.close": "Close",
+  "rec.stop": "Stop recording",
+  "rec.hint": "records the master (after the limiter), WAV 24 bit; the file goes to the music folder under “Deckwerk”",
+  "rec.saved": "Recording saved ({length}): {path}",
+  "rec.savedGaps": "Recording saved ({length}), but with gaps – the disk could not keep up: {path}",
+  "rec.failed": "Recording not possible: {reason}"
 }

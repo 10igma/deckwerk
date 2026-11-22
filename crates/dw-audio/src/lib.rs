@@ -5,4 +5,4 @@
 pub mod device;
 mod host;
 
-pub use host::{create, Controller, ErrorCounter, Processor, Routing};
+pub use host::{create, Controller, ErrorCounter, MasterTap, Processor, Routing};

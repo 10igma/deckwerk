@@ -11,6 +11,7 @@ import {
   type EngineStatus,
   type AppSettings,
   type ImportResult,
+  type RecordingInfo,
   type RefreshResult,
   type Transition,
   type TransitionRun,
@@ -180,6 +181,18 @@ export class TauriCore implements CoreApi {
 
   cancelTransition(): Promise<void> {
     return this.invoke<void>('transition_cancel');
+  }
+
+  startRecording(stamp: string): Promise<RecordingInfo> {
+    return this.invoke<RecordingInfo>('record_start', { stamp });
+  }
+
+  stopRecording(): Promise<RecordingInfo> {
+    return this.invoke<RecordingInfo>('record_stop');
+  }
+
+  recordingStatus(): Promise<RecordingInfo | null> {
+    return this.invoke<RecordingInfo | null>('record_status');
   }
 
   listAudioDevices(): Promise<AudioDevice[]> {

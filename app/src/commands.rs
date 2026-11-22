@@ -128,6 +128,22 @@ pub fn transition_cancel(state: State<AppState>) -> Result<(), String> {
     state.cancel_transition()
 }
 
+/// Mitschnitt des Master-Signals beginnen (REC-01). `stamp`: Zeitstempel für den Dateinamen.
+#[tauri::command]
+pub fn record_start(state: State<AppState>, stamp: Option<String>) -> Result<crate::recorder::RecordingInfo, String> {
+    state.start_recording(stamp.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn record_stop(state: State<AppState>) -> Result<crate::recorder::RecordingInfo, String> {
+    state.stop_recording()
+}
+
+#[tauri::command]
+pub fn record_status(state: State<AppState>) -> Option<crate::recorder::RecordingInfo> {
+    state.recording_status()
+}
+
 /// Musikordner neu durchsuchen (BIB-19).
 #[tauri::command(async)]
 pub fn library_refresh(state: State<AppState>) -> Result<crate::state::RefreshReport, String> {

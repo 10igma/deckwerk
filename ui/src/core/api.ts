@@ -5,6 +5,7 @@ import type {
   EngineStatus,
   AppSettings,
   ImportResult,
+  RecordingInfo,
   RefreshResult,
   Transition,
   TransitionRun,
@@ -61,6 +62,12 @@ export interface CoreApi {
   startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun>;
   /** Bricht den eingeplanten oder laufenden Übergang ab; die Regler bleiben stehen. */
   cancelTransition(): Promise<void>;
+  /** Mitschnitt des Master-Signals beginnen (REC-01); `stamp` ist der Zeitstempel für den Dateinamen. */
+  startRecording(stamp: string): Promise<RecordingInfo>;
+  /** Mitschnitt beenden; liefert Pfad und Länge der Datei. */
+  stopRecording(): Promise<RecordingInfo>;
+  /** Laufender Mitschnitt, sonst null. */
+  recordingStatus(): Promise<RecordingInfo | null>;
   /** Ausgabegeräte des Systems (ENG-01). */
   listAudioDevices(): Promise<AudioDevice[]>;
   /**

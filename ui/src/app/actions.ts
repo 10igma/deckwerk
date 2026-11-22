@@ -530,6 +530,47 @@ export async function setRefreshOnStart(on: boolean): Promise<string | null> {
   }
 }
 
+// --- Mitschnitt ----------------------------------------------------------------------
+
+/** Zeitstempel für den Dateinamen in Ortszeit: „2026-11-22 13-05-09". */
+export function recordingStamp(now: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}-${p(now.getMinutes())}-${p(now.getSeconds())}`;
+}
+
+/** Mitschnitt des Master-Signals starten oder beenden (REC-01). */
+export async function toggleRecording(): Promise<void> {
+  if (!core) return;
+  const running = getUi().recording;
+  try {
+    if (running) {
+      setUi({ recording: null });
+      const done = await core.stopRecording();
+      const length = `${Math.floor(done.seconds / 60)}:${String(Math.floor(done.seconds % 60)).padStart(2, '0')}`;
+      if (done.error) showNotice(say('rec.failed', { reason: done.error }), 'error');
+      else if (done.dropped_frames > 0) showNotice(say('rec.savedGaps', { path: done.path, length }), 'error', 12000);
+      else showNotice(say('rec.saved', { path: done.path, length }), 'warn', 12000);
+    } else {
+      const info = await core.startRecording(recordingStamp(new Date()));
+      setUi({ recording: { info, since: Date.now() } });
+    }
+  } catch (err) {
+    showNotice(say('rec.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Nach dem Laden der Oberfläche: Läuft im Kern noch eine Aufnahme? */
+export async function syncRecording(): Promise<void> {
+  if (!core) return;
+  try {
+    const info = await core.recordingStatus();
+    if (info && info.active) setUi({ recording: { info, since: Date.now() - info.seconds * 1000 } });
+    else if (info && info.error) showNotice(say('rec.failed', { reason: info.error }), 'error');
+  } catch {
+    // Ohne Auskunft bleibt die Taste im Ruhezustand.
+  }
+}
+
 // --- Übergänge ---------------------------------------------------------------------
 
 /** Länge und Raster, die zur Wahl stehen (Takte). */

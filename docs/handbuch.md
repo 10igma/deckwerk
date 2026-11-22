@@ -57,6 +57,8 @@ Von oben nach unten:
 - **Versatz:** Laufen zwei Decks auseinander, füllt sich die Lücke zwischen ihren Marken auf der Schiene gelb.
 - **Bedienung:** Ziehen in der Wellenform schiebt das Deck an oder bremst es, das Mausrad ändert den Ausschnitt.
 
+**Mitschnitt:** Die Taste „Aufn." oben rechts (oder `Strg` + `R`) schneidet mit, was auf dem Master zu hören ist – nach dem Limiter, also genau das, was an die Lautsprecher geht. Solange aufgenommen wird, leuchtet die Taste rot und zeigt die Laufzeit. Ein zweiter Druck beendet die Aufnahme; die Meldung nennt Länge und Speicherort. Die Datei ist eine WAV mit 24 bit und heißt `Deckwerk <Datum> <Uhrzeit>.wav`; sie liegt im Musik-Ordner deines Benutzers im Unterordner „Deckwerk". Während der Aufnahme wird laufend geschrieben: Stürzt das Programm ab, ist die Datei bis zur letzten Sekunde lesbar. Der Kopfhörer-Weg wird nicht aufgenommen.
+
 **Übergang auf Knopfdruck:** Unten rechts in der Bühne, links neben dem Vorausblick, wählst du eine Vorlage („Bass-Tausch" oder „Überblenden") und eine Länge (4 bis 32 Takte). Es gibt zwei Wege, ihn zu legen:
 
 - **Das Ende bestimmen (empfohlen):** Schieb die Ansicht mit dem Vorausblick dorthin, wo der Übergang fertig sein soll. Die gestrichelte Linie in der Bildmitte ist dann das Ende, und ein blasser Balken am oberen Rand zeigt, von wo bis wo der Übergang laufen würde. Steht das zweite Deck, stell es auf die Stelle, die es an dieser Linie erreicht haben soll (zum Beispiel seinen ersten vollen Takt). Die Taste heißt dann „Übergang A → B endet hier". Deckwerk rechnet zurück: Der Übergang beginnt um seine Länge vor der Linie, und das zweite Deck startet so viel früher, dass es seine Stelle genau am Ende erreicht – notfalls vor seinem Anfang, dann läuft es bis dorthin stumm. Liegt die Linie zu nah für die gewählte Länge, ist die Taste gesperrt.
@@ -206,6 +208,6 @@ Mit der Umgebungsvariable `DECKWERK_DATA` lässt sich ein anderer Ordner wählen
 - **Import nur durch Ablegen** auf das Fenster; einen Ordner-Dialog gibt es noch nicht. Unter Linux ist das Ablegen selbst noch nicht von Hand geprüft.
 - **Nur zwei Decks in der Oberfläche**, obwohl der Kern vier kann.
 - **Kein Key Lock:** Wer das Tempo ändert, ändert die Tonhöhe mit.
-- **Noch nicht gebaut:** Loops, Hotcues, Beatjump, Effekte, Aufnahme, Playlists in der Oberfläche, die Ansichten „Bibliothek", „Vorbereiten" und „Auto-Mix", Stems, Remix-Decks, Import aus Traktor und Rekordbox.
+- **Noch nicht gebaut:** Loops, Hotcues, Beatjump, Effekte, Playlists in der Oberfläche, die Ansichten „Bibliothek", „Vorbereiten" und „Auto-Mix", Stems, Remix-Decks, Import aus Traktor und Rekordbox.
 
 Die Reihenfolge, in der das kommt, steht im [Umsetzungsplan](spezifikation.md#11-umsetzungsplan).

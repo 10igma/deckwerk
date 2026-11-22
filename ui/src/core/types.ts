@@ -273,6 +273,18 @@ export interface TransitionRun {
   end_beat: number;
 }
 
+/** Stand eines Mitschnitts (`record_start`, `record_stop`, `record_status`; REC-01). */
+export interface RecordingInfo {
+  path: string;
+  active: boolean;
+  /** Bisher geschriebene Länge in Sekunden. */
+  seconds: number;
+  /** Frames, die verloren gingen, weil das Schreiben nicht nachkam (0 = lückenlos). */
+  dropped_frames: number;
+  /** Grund, falls die Aufnahme von selbst abgebrochen ist. */
+  error: string | null;
+}
+
 /** Ergebnis von `library_refresh`. */
 export interface RefreshResult {
   /** Durchsuchte Musikordner. */

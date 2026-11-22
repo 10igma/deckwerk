@@ -1,6 +1,6 @@
 // Kopfzeile (8.2): Ansichten · Master-Clock · Q/S · Aufnahme · Last · Uhr · Einstellungen.
 import { useEffect, useRef, useState } from 'react';
-import { getAppSettings, listAudioDevices, selectAudioDevice, setRefreshOnStart, toggleSnap } from './actions';
+import { getAppSettings, listAudioDevices, selectAudioDevice, setRefreshOnStart, syncRecording, toggleRecording, toggleSnap } from './actions';
 import { getDeckAssets } from './assets';
 import { nowDate } from './env';
 import { useEngineStatus, useFrame, useSnap } from './frame';
@@ -191,6 +191,39 @@ function AudioOutput() {
   );
 }
 
+/** Mitschnitt des Master-Signals (REC-01): starten, laufende Zeit, beenden. */
+function RecordButton() {
+  const t = useT();
+  const lang = useLang();
+  const recording = useUi((s) => s.recording);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    void syncRecording();
+  }, []);
+  useEffect(() => {
+    if (!recording) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [recording]);
+  const secs = recording ? Math.max(0, Math.floor((now - recording.since) / 1000)) : 0;
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  return (
+    <KeyBtn
+      mode="toggle"
+      size="sm"
+      active={recording !== null}
+      accent="var(--status-danger)"
+      onPress={() => void toggleRecording()}
+      ariaLabel={recording ? t('rec.stop') : t('hdr.record')}
+      tip={{ name: recording ? t('rec.stop') : t('hdr.record'), value: recording ? recording.info.path : t('rec.hint'), keys: [lang === 'de' ? 'Strg' : 'Ctrl', 'R'] }}
+    >
+      <Icon name="rec" size="0.85em" />
+      {recording ? <span className="dw-num">{clock}</span> : t('hdr.recordShort')}
+    </KeyBtn>
+  );
+}
+
 /** Bibliothek: Musikordner beim Start nach neuen Dateien durchsuchen. */
 function LibrarySettings() {
   const t = useT();
@@ -337,10 +370,7 @@ export function Header({ route }: { route: RouteId }) {
         <KeyBtn mode="toggle" size="sm" active={snap} onPress={toggleSnap} tip={{ name: t('hdr.snap'), value: snap ? t('state.on') : t('state.off'), keys: shortcutKeys('global.snap', undefined, lang) }} ariaLabel={t('hdr.snap')}>
           <span className="dw-num">S</span>
         </KeyBtn>
-        <KeyBtn mode="toggle" size="sm" disabled tip={{ name: t('hdr.record'), value: t('hdr.later', { stage: 2 }), keys: [lang === 'de' ? 'Strg' : 'Ctrl', 'R'] }}>
-          <Icon name="rec" size="0.85em" />
-          {t('hdr.recordShort')}
-        </KeyBtn>
+        <RecordButton />
         <LoadMeter />
         <WallClock />
         <div className="hdr__gear">

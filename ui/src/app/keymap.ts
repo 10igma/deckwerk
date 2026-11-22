@@ -129,7 +129,7 @@ export const DEFAULT_KEYMAP: Binding[] = [
   { code: 'PageUp', shift: 'fine', action: 'stage.peek_back', mode: 'trigger', repeat: true, stage: 1 },
   { code: 'Home', action: 'stage.peek_reset', mode: 'trigger', stage: 1 },
   { code: 'F9', action: 'global.quantize', mode: 'trigger', stage: 2 },
-  { code: 'KeyR', mod: true, action: 'global.record', mode: 'trigger', stage: 2 },
+  { code: 'KeyR', mod: true, action: 'global.record', mode: 'trigger', stage: 1 },
 ];
 
 export interface KeyLike {

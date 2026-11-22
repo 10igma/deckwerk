@@ -368,3 +368,66 @@ fn a_prepared_transition_plays_live() {
     // abgebrochene sie gelassen hat – das Überblenden fasst sie nicht an.
     assert_eq!((s.decks[0].fader, s.decks[0].eq_db[0]), (1.0, 0.0));
 }
+
+/// REC-01: Der Mitschnitt schreibt das Master-Signal lückenlos als WAV. Die Datei ist schon
+/// während der Aufnahme lesbar, enthält nach dem Stoppen so viel Ton, wie Zeit vergangen ist,
+/// und bestehende Dateien werden nicht überschrieben.
+#[test]
+fn recording_writes_the_master_signal_to_a_wav_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    let recordings = tmp.path().join("aufnahmen");
+    state.set_recordings_dir(recordings.clone());
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    {
+        let mut ctl = state.ctl.lock().unwrap();
+        ctl.send(Command::Seek { deck: DeckId::A, pos: 20.0 });
+        ctl.send(Command::Play { deck: DeckId::A, on: true });
+    }
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].playing);
+
+    assert!(state.stop_recording().unwrap_err().contains("keine Aufnahme"));
+    assert_eq!(state.recording_status(), None);
+    let started = Instant::now();
+    let info = state.start_recording(Some("2026-11-22 13-05-09")).unwrap();
+    assert!(info.active && info.path.ends_with("Deckwerk 2026-11-22 13-05-09.wav"), "{}", info.path);
+    assert!(state.start_recording(None).unwrap_err().contains("läuft schon"));
+
+    // Nach gut zwei Sekunden: Die Datei ist lesbar, obwohl die Aufnahme noch läuft.
+    std::thread::sleep(Duration::from_millis(2300));
+    let partial = dw_decode::decode_file(std::path::Path::new(&info.path)).unwrap();
+    let secs = partial.audio.frames() as f64 / partial.audio.sample_rate as f64;
+    assert!(secs >= 0.9 && secs <= 2.4, "lesbar während der Aufnahme: {secs} s");
+    let status = state.recording_status().unwrap();
+    assert!(status.active && status.seconds >= 0.9, "{status:?}");
+
+    let done = state.stop_recording().unwrap();
+    let elapsed = started.elapsed().as_secs_f64();
+    assert!(!done.active && done.error.is_none());
+    assert_eq!(done.dropped_frames, 0, "Aufnahme mit Lücken");
+    assert!((done.seconds - elapsed).abs() < 0.3, "Länge {} s, vergangen {elapsed} s", done.seconds);
+    assert_eq!(state.recording_status(), None);
+
+    // Inhalt: Abtastrate der Engine, so lang wie gemeldet, und es ist Ton darauf.
+    let file = dw_decode::decode_file(std::path::Path::new(&done.path)).unwrap();
+    assert_eq!(file.audio.sample_rate, state.engine_rate);
+    assert_eq!(file.bits_per_sample, Some(24));
+    assert!((file.audio.frames() as f64 / state.engine_rate as f64 - done.seconds).abs() < 1e-6);
+    let peak = file.audio.data.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(peak > 0.05, "Aufnahme ist still (Spitze {peak})");
+
+    // Gleicher Zeitstempel noch einmal: neue Datei daneben, die alte bleibt.
+    let again = state.start_recording(Some("2026-11-22 13-05-09")).unwrap();
+    assert!(again.path.ends_with("Deckwerk 2026-11-22 13-05-09 (2).wav"), "{}", again.path);
+    state.stop_recording().unwrap();
+    // Ein Name von außen kann den Ordner nicht verlassen.
+    let odd = state.start_recording(Some("../../böse")).unwrap();
+    assert!(std::path::Path::new(&odd.path).parent() == Some(recordings.as_path()), "{}", odd.path);
+    state.stop_recording().unwrap();
+    assert_eq!(std::fs::read_dir(&recordings).unwrap().count(), 3);
+}
