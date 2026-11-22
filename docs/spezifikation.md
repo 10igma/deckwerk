@@ -260,6 +260,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | TRANS-04 | Eigene Vorlagen anlegen, ändern, speichern | S | 5 | Vorlage ist im Auto-Mix wählbar |
 | TRANS-05 | Übergänge sind im Live-Modus einzeln auslösbar („nächsten Übergang jetzt spielen") | S | 5 | Auslösen startet quantisiert an der nächsten Phrasengrenze |
 | TRANS-06 | Ein Übergang lässt sich im Editor vorhören: Er spielt auf den geladenen Decks ab einem gewählten Takt, ohne gespeichert zu sein; danach stehen Decks und Regler wie vorher | S | 5 | Beide Decks laufen im Takt (Phase < 0,01 Beat), die Regler stehen zu Beginn so, wie der Übergang sie bis dorthin gestellt hätte; nach dem Ende und nach einem Abbruch stimmen Stelle, Fader, EQ, Filter, Sync und Master-Wahl mit dem Stand davor überein |
+| TRANS-07 | Übergänge lassen sich für ein bestimmtes Paar von Tracks speichern, mit Art (Reglerverläufe) und Ort (Stellen beider Tracks am Beginn); beliebig viele je Paar und Richtung. Der Auto-Mix wählt später daraus | S | 5 | Gespeicherte Übergänge erscheinen nur, wenn beide Tracks geladen sind, überdauern einen Neustart und beginnen live an der gespeicherten Stelle (Abweichung < 0,05 Beat) |
 
 ### 4.9 Auto-Mix (AUTO)
 

@@ -2,7 +2,7 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, cancelTransition, chooseTransition, focusDeck, loadSavedTransitions, openEditor, peekAfter, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
+import { bend, cancelTransition, choosePair, chooseTransition, focusDeck, loadPairTransitions, loadSavedTransitions, openEditor, pairRoles, peekAfter, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
@@ -223,19 +223,34 @@ function TransitionBar() {
   const playingA = useSnap((s) => s.decks[0].playing);
   const playingB = useSnap((s) => s.decks[1].playing);
   const saved = useUi((s) => s.savedTransitions);
-  const own = saved.some((s) => s.name === name);
+  const pairs = useUi((s) => s.pairTransitions);
+  const pairChoice = useUi((s) => s.pairChoice);
+  const pair = pairs.find((p) => p.id === pairChoice) ?? null;
+  const own = pair !== null || saved.some((s) => s.name === name);
   useEffect(() => {
     void loadSavedTransitions();
   }, []);
+  // Für das Paar gespeicherte Übergänge: neu holen, sobald ein anderer Track auf A oder B liegt.
+  const trackA = useUi((s) => s.deckTracks.a?.id ?? null);
+  const trackB = useUi((s) => s.deckTracks.b?.id ?? null);
+  useEffect(() => {
+    void loadPairTransitions();
+  }, [trackA, trackB]);
   const over = useSnap((s) => run !== null && s.clock_beats > run.end_beat);
   useEffect(() => {
     if (over) setUi({ transition: null });
   }, [over]);
   const master = useSnap((s) => s.master);
   const peek = useUi((s) => s.peekBeats);
-  const roles = transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB }, master);
+  // Ein Paar-Übergang bringt Richtung und Ort mit; er braucht nur, dass sein gehender Track läuft.
+  const pairDecks = pair ? pairRoles(pair, { a: trackA ? { id: trackA } : null, b: trackB ? { id: trackB } : null }) : null;
+  const roles = pair
+    ? pairDecks && (pairDecks.from === 'a' ? playingA : playingB)
+      ? pairDecks
+      : null
+    : transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB }, master);
   // Mit Vorausblick endet der Übergang an der Linie in der Bildmitte; dafür muss sie weit genug voraus liegen.
-  const tooLate = peek > 0 && peek < bars * 4 + TRANSITION_LEAD;
+  const tooLate = !pair && peek > 0 && peek < bars * 4 + TRANSITION_LEAD;
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
   if (run) {
@@ -262,7 +277,21 @@ function TransitionBar() {
   }
   return (
     <div className="stage__trans" onPointerDown={stop}>
-      <select className="stage__select" value={name} aria-label={t('trans.template')} onChange={(e) => chooseTransition(e.target.value)}>
+      <select
+        className="stage__select"
+        value={pair ? `pair:${pair.id}` : name}
+        aria-label={t('trans.template')}
+        onChange={(e) => (e.target.value.startsWith('pair:') ? choosePair(Number(e.target.value.slice(5))) : chooseTransition(e.target.value))}
+      >
+        {pairs.length > 0 && (
+          <optgroup label={t('pair.group')}>
+            {pairs.map((p) => (
+              <option key={p.id} value={`pair:${p.id}`}>
+                {p.out_track === trackA ? 'A→B' : 'B→A'} {p.transition.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {TRANSITION_NAMES.map((n) => (
           <option key={n} value={n}>
             {t(n === 'bass_swap' ? 'trans.bassSwap' : 'trans.fade')}
@@ -288,11 +317,11 @@ function TransitionBar() {
         onPress={() => void startTransition()}
         tip={{
           name: t('trans.start'),
-          value: !roles ? t('trans.needDecks') : tooLate ? t('trans.tooLate', { n: bars * 4 + TRANSITION_LEAD }) : peek > 0 ? t('trans.endHint') : t('trans.startHint'),
+          value: pair ? t('pair.startHint') : !roles ? t('trans.needDecks') : tooLate ? t('trans.tooLate', { n: bars * 4 + TRANSITION_LEAD }) : peek > 0 ? t('trans.endHint') : t('trans.startHint'),
         }}
         ariaLabel={t('trans.start')}
       >
-        {roles ? t(peek > 0 ? 'trans.fromToEnd' : 'trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
+        {roles ? t(peek > 0 && !pair ? 'trans.fromToEnd' : 'trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
       </KeyBtn>
       <KeyBtn size="sm" onPress={() => void openEditor()} tip={{ name: t('ed.open'), value: t('ed.openHint') }} ariaLabel={t('ed.open')}>
         {t('ed.openShort')}

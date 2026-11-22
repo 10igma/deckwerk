@@ -51,6 +51,19 @@ pub struct TransitionRun {
     pub end_beat: f64,
 }
 
+/// Ein für ein bestimmtes Paar gespeicherter Übergang (TRANS-07): Art (die Kurven) und Ort.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PairTransition {
+    pub id: u64,
+    /// Track, der geht, und Track, der kommt (Kennungen der Bibliothek).
+    pub out_track: String,
+    pub in_track: String,
+    /// Stellen beider Tracks am Beginn T0 des Übergangs, in Sekunden.
+    pub out_pos: f64,
+    pub in_pos: f64,
+    pub transition: Transition,
+}
+
 /// Stand eines Decks vor dem Vorhören.
 #[derive(Clone, Debug)]
 struct SavedDeck {
@@ -388,6 +401,99 @@ impl AppState {
     pub fn finish_preview_if_over(&self, clock_beats: f64) -> bool {
         let over = self.preview.lock().unwrap().as_ref().is_some_and(|p| clock_beats > p.run.end_beat + 0.25);
         over && self.stop_preview().is_ok()
+    }
+    fn pairs_file(&self) -> PathBuf {
+        self.settings_file.with_file_name("pair_transitions.json")
+    }
+
+    fn all_pair_transitions(&self) -> Vec<PairTransition> {
+        std::fs::read(self.pairs_file()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    }
+
+    fn write_pair_transitions(&self, all: &[PairTransition]) -> Result<(), String> {
+        let file = self.pairs_file();
+        let json = serde_json::to_vec_pretty(all).map_err(|e| e.to_string())?;
+        std::fs::write(&file, json).map_err(|e| format!("{}: {e}", file.display()))
+    }
+
+    fn track_on(&self, deck: DeckId) -> Result<String, String> {
+        self.loaded.lock().unwrap()[deck.index()].map(|t| t.to_string()).ok_or_else(|| format!("Auf Deck {} liegt kein Track.", ["A", "B", "C", "D"][deck.index()]))
+    }
+
+    /// Für das Paar der Tracks auf den Decks `a` und `b` gespeicherte Übergänge (TRANS-07), in
+    /// beiden Richtungen, in der Reihenfolge des Anlegens. Fehlt ein Track, ist die Liste leer.
+    pub fn pair_transitions(&self, a: DeckId, b: DeckId) -> Vec<PairTransition> {
+        let (Ok(ta), Ok(tb)) = (self.track_on(a), self.track_on(b)) else { return Vec::new() };
+        self.all_pair_transitions().into_iter().filter(|p| (p.out_track == ta && p.in_track == tb) || (p.out_track == tb && p.in_track == ta)).collect()
+    }
+
+    /// Speichert `transition` für das Paar der Tracks auf `from` und `to`, mit dem Ort: Die Stellen,
+    /// an denen beide Decks stehen, sind Beginn (`When::StartHere`) oder Ende (`When::EndHere`) –
+    /// wie beim Vorhören. Läuft gerade ein Vorhören, gelten die Stellen von davor. Gleicher Name für
+    /// dasselbe Paar in derselben Richtung ersetzt; sonst kommt ein Eintrag dazu. Liefert die Liste
+    /// des Paars.
+    pub fn save_pair_transition(&self, from: DeckId, to: DeckId, transition: &Transition, when: When) -> Result<Vec<PairTransition>, String> {
+        let name = transition.name.trim();
+        if name.is_empty() || name.chars().count() > 60 {
+            return Err("Der Übergang braucht einen Namen mit höchstens 60 Zeichen.".into());
+        }
+        if !matches!(when, When::StartHere | When::EndHere) {
+            return Err("Der Ort ergibt sich aus den Stellen der stehenden Decks: als Beginn oder als Ende.".into());
+        }
+        let (out_track, in_track) = (self.track_on(from)?, self.track_on(to)?);
+        let snap = self.ctl.lock().unwrap().snapshot().clone();
+        let previewed = self.preview.lock().unwrap().as_ref().map(|p| p.saved.clone());
+        let pos_of = |d: DeckId| -> Result<f64, String> {
+            if let Some(saved) = previewed.as_ref().and_then(|p| p.decks.iter().find(|x| x.deck == d)) {
+                return Ok(saved.pos);
+            }
+            let s = &snap.decks[d.index()];
+            if s.playing {
+                return Err("Zum Speichern für das Paar müssen beide Decks stehen; ihre Stellen legen den Ort fest.".into());
+            }
+            Ok(s.pos)
+        };
+        let (out_now, in_now) = (pos_of(from)?, pos_of(to)?);
+        let (grid_out, grid_in) = (self.grid_on(from)?, self.grid_on(to)?);
+        let (out, inn) = (&snap.decks[from.index()], &snap.decks[to.index()]);
+        let plan = plan_live(
+            transition,
+            Roles { out: from, inn: to },
+            0.0,
+            LiveDeck { grid: &grid_out, playing: true, pos: out_now, duration: out.duration, track_bpm: out.track_bpm },
+            LiveDeck { grid: &grid_in, playing: false, pos: in_now, duration: inn.duration, track_bpm: inn.track_bpm },
+            when,
+        )
+        .map_err(|e| e.to_string())?;
+        let out_pos = grid_out.sec_at(grid_out.beat_at(out_now) + plan.t0);
+        let mut all = self.all_pair_transitions();
+        let clean = Transition { name: name.to_string(), ..transition.clone() };
+        match all.iter_mut().find(|p| p.out_track == out_track && p.in_track == in_track && p.transition.name == name) {
+            Some(slot) => {
+                slot.out_pos = out_pos;
+                slot.in_pos = plan.in_pos;
+                slot.transition = clean;
+            }
+            None => {
+                let id = all.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+                all.push(PairTransition { id, out_track, in_track, out_pos, in_pos: plan.in_pos, transition: clean });
+            }
+        }
+        self.write_pair_transitions(&all)?;
+        Ok(self.pair_transitions(from, to))
+    }
+
+    pub fn delete_pair_transition(&self, id: u64) -> Result<(), String> {
+        let mut all = self.all_pair_transitions();
+        all.retain(|p| p.id != id);
+        self.write_pair_transitions(&all)
+    }
+
+    fn grid_on(&self, deck: DeckId) -> Result<dw_core::BeatGrid, String> {
+        let name = ["A", "B", "C", "D"][deck.index()];
+        let id = self.loaded.lock().unwrap()[deck.index()].ok_or_else(|| format!("Auf Deck {name} liegt kein Track."))?;
+        let analysis = self.lib.lock().unwrap().analysis(id).map_err(|e| e.to_string())?;
+        analysis.map(|a| a.grid).ok_or_else(|| format!("Der Track auf Deck {name} ist noch nicht analysiert."))
     }
     /// Ordner, in dem Mitschnitte landen.
     pub fn set_recordings_dir(&self, dir: PathBuf) {

@@ -2,7 +2,7 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type Transition, type TransitionWhen } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type PairTransition, type Transition, type TransitionWhen } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
@@ -608,16 +608,24 @@ export function transitionWhen(peekBeats: number): TransitionWhen {
 export async function startTransition(when?: TransitionWhen): Promise<void> {
   if (!core) return;
   const snap = latestSnapshot();
-  const roles = transitionRoles(snap.decks[0], snap.decks[1], snap.master);
+  const ui = getUi();
+  // Ein für das Paar gespeicherter Übergang bringt Richtung und Ort mit.
+  const pair = chosenPair();
+  const pairDecks = pair ? pairRoles(pair) : null;
+  if (pair && (!pairDecks || !snap.decks[deckIndex(pairDecks.from)].playing)) {
+    showNotice(say('pair.needOut', { deck: pairDecks ? pairDecks.from.toUpperCase() : '?' }));
+    return;
+  }
+  const roles = pairDecks ?? transitionRoles(snap.decks[0], snap.decks[1], snap.master);
   if (!roles) {
     showNotice(say('trans.needDecks'));
     return;
   }
-  const ui = getUi();
   try {
     const transition = await selectedTransition();
     if (!transition) return;
-    const run = await core.startTransition(roles.from, roles.to, transition, when ?? transitionWhen(ui.peekBeats));
+    const place: TransitionWhen | null = pair ? { type: 'at', out_pos: pair.out_pos, in_pos: pair.in_pos } : null;
+    const run = await core.startTransition(roles.from, roles.to, transition, place ?? when ?? transitionWhen(ui.peekBeats));
     // Der Vorausblick hat seinen Dienst getan: zurück zur Abspielstelle, die Zone bleibt eingezeichnet.
     setUi({ transition: run, peekBeats: 0 });
   } catch (err) {
@@ -629,6 +637,8 @@ export async function startTransition(when?: TransitionWhen): Promise<void> {
 export async function selectedTransition(): Promise<Transition | null> {
   if (!core) return null;
   const ui = getUi();
+  const pair = chosenPair();
+  if (pair) return pair.transition;
   const own = ui.savedTransitions.find((t) => t.name === ui.transitionName);
   if (own) return own;
   const templates = await core.listTransitions(ui.transitionBars);
@@ -638,7 +648,83 @@ export async function selectedTransition(): Promise<Transition | null> {
 /** Wählt eine Vorlage oder einen eigenen Übergang; ein eigener bringt seine Länge mit. */
 export function chooseTransition(name: string): void {
   const own = getUi().savedTransitions.find((t) => t.name === name);
-  setUi(own ? { transitionName: name, transitionBars: own.bars } : { transitionName: name });
+  setUi(own ? { transitionName: name, transitionBars: own.bars, pairChoice: null } : { transitionName: name, pairChoice: null });
+}
+
+/** Der gewählte Paar-Übergang, falls einer gewählt ist und zu den geladenen Tracks gehört. */
+export function chosenPair(): PairTransition | null {
+  const ui = getUi();
+  return ui.pairChoice === null ? null : (ui.pairTransitions.find((p) => p.id === ui.pairChoice) ?? null);
+}
+
+/** Welches Deck für einen Paar-Übergang geht und welches kommt – nach den geladenen Tracks. */
+export function pairRoles(pair: Pick<PairTransition, 'out_track' | 'in_track'>, tracks: Record<'a' | 'b', { id: TrackId } | null> = getUi().deckTracks): { from: DeckId; to: DeckId } | null {
+  if (tracks.a?.id === pair.out_track && tracks.b?.id === pair.in_track) return { from: 'a', to: 'b' };
+  if (tracks.b?.id === pair.out_track && tracks.a?.id === pair.in_track) return { from: 'b', to: 'a' };
+  return null;
+}
+
+/** Lädt die für das Paar auf A und B gespeicherten Übergänge; nach jedem Laden eines Decks. */
+export async function loadPairTransitions(): Promise<void> {
+  if (!core) return;
+  try {
+    const list = await core.listPairTransitions('a', 'b');
+    setUi({ pairTransitions: list, pairChoice: list.some((p) => p.id === getUi().pairChoice) ? getUi().pairChoice : null });
+  } catch {
+    setUi({ pairTransitions: [], pairChoice: null });
+  }
+}
+
+/**
+ * Wählt einen Paar-Übergang. Stehen beide Decks, werden sie an den gespeicherten Ort gestellt
+ * (Beginn des Übergangs) – von dort lässt er sich vorhören oder verschieben und neu speichern.
+ */
+export function choosePair(id: number): void {
+  const pair = getUi().pairTransitions.find((p) => p.id === id);
+  if (!pair) return;
+  setUi({ pairChoice: id, transitionBars: pair.transition.bars, previewAnchor: 'start' });
+  const roles = pairRoles(pair);
+  const snap = latestSnapshot();
+  if (roles && !snap.decks[0].playing && !snap.decks[1].playing) {
+    send({ type: 'seek', deck: roles.from, pos: pair.out_pos });
+    send({ type: 'seek', deck: roles.to, pos: pair.in_pos });
+    showNotice(say('pair.placed'));
+  }
+}
+
+/** Speichert den Entwurf im Editor mit seinem Ort für das Paar auf den Decks (TRANS-07). */
+export async function saveEditorForPair(): Promise<void> {
+  const ui = getUi();
+  if (!core || !ui.editor) return;
+  const snap = latestSnapshot();
+  const pair = chosenPair();
+  const roles = (pair ? pairRoles(pair) : null) ?? previewRoles(snap.decks[0], snap.decks[1], snap.master);
+  if (!roles) {
+    showNotice(say('ed.previewNeedDecks'));
+    return;
+  }
+  try {
+    const name = ui.editor.draft.name.trim();
+    const list = await core.savePairTransition(roles.from, roles.to, { ...ui.editor.draft, name }, { type: ui.previewAnchor === 'end' ? 'end_here' : 'start_here' });
+    const out = ui.deckTracks[roles.from]?.id;
+    const saved = list.find((p) => p.transition.name === name && p.out_track === out);
+    setUi({ pairTransitions: list, pairChoice: saved?.id ?? null, ...(saved ? { transitionBars: saved.transition.bars } : {}) });
+    showNotice(say('pair.saved', { name, from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }));
+  } catch (err) {
+    showNotice(say('pair.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Löscht den gewählten Paar-Übergang. */
+export async function deleteChosenPair(): Promise<void> {
+  const pair = chosenPair();
+  if (!core || !pair) return;
+  try {
+    await core.deletePairTransition(pair.id);
+    await loadPairTransitions();
+  } catch (err) {
+    showNotice(errorText(err), 'error');
+  }
 }
 
 /** Lädt die selbst gebauten Übergänge (beim Start der Oberfläche). */
@@ -656,9 +742,9 @@ export async function openEditor(): Promise<void> {
   const ui = getUi();
   const current = await selectedTransition();
   if (!current) return;
-  const own = ui.savedTransitions.some((t) => t.name === current.name);
+  const own = ui.pairChoice !== null || ui.savedTransitions.some((t) => t.name === current.name);
   const draft: Transition = own ? current : { ...current, name: freeName(say('ed.newName'), ui.savedTransitions.map((t) => t.name)) };
-  setUi({ editor: { draft: JSON.parse(JSON.stringify(draft)) as Transition, original: own ? current.name : null } });
+  setUi({ editor: { draft: JSON.parse(JSON.stringify(draft)) as Transition, original: own && ui.pairChoice === null ? current.name : null } });
 }
 
 export function closeEditor(): void {

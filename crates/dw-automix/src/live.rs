@@ -24,6 +24,10 @@ pub enum When {
     /// jetzige Stelle genau am Ende – es startet entsprechend früher, notfalls vor seinem Anfang
     /// und bis dorthin stumm.
     EndIn { beats: f64 },
+    /// Fester Ort, wie für ein Paar gespeichert (TRANS-07): Der Übergang beginnt, wenn der laufende
+    /// Track `out_pos` erreicht; das stehende neue Deck steigt bei `in_pos` ein (Sekunden, jeweils auf
+    /// den nächstgelegenen Taktanfang gerückt).
+    At { out_pos: f64, in_pos: f64 },
     /// Nur zum Vorhören mit stehenden Decks: Der Übergang beginnt genau dort, wo beide Decks stehen
     /// (jeweils auf den nächstgelegenen Taktanfang gerückt). Ohne Vorlauf, deshalb nicht live.
     StartHere,
@@ -34,7 +38,7 @@ pub enum When {
 impl When {
     /// Lässt sich so ein Übergang im laufenden Betrieb einplanen?
     pub fn is_live(self) -> bool {
-        matches!(self, When::Next { .. } | When::EndIn { .. })
+        matches!(self, When::Next { .. } | When::EndIn { .. } | When::At { .. })
     }
 }
 
@@ -62,6 +66,8 @@ pub enum LiveError {
     InTooShort(u32),
     #[error("Bis zum gewählten Ende sind es {0:.0} Beats; der Übergang über {1} Takte braucht {2:.0}. Das Ende weiter nach hinten legen oder eine kürzere Länge wählen")]
     TooLate(f64, u32, f64),
+    #[error("Die gespeicherte Stelle des Übergangs ist schon vorbei oder zu nah (es fehlen {0:.0} Beats); das laufende Deck weiter vorn starten")]
+    Passed(f64),
     #[error("{0}")]
     Invalid(String),
 }
@@ -138,6 +144,19 @@ pub fn plan_live(transition: &Transition, roles: Roles, clock_beats: f64, out: L
             }
             start
         }
+        When::At { out_pos, in_pos } => {
+            if !out_pos.is_finite() || !in_pos.is_finite() {
+                return Err(LiveError::Invalid("Ort des Übergangs ist keine Zahl".into()));
+            }
+            if inn.playing {
+                return Err(LiveError::Invalid("Für einen gespeicherten Paar-Übergang muss das neue Deck stehen".into()));
+            }
+            let start = nearest_downbeat(out.grid, out.grid.beat_at(out_pos));
+            if (start as f64) < earliest {
+                return Err(LiveError::Passed(earliest - start as f64));
+            }
+            start
+        }
         When::StartHere => nearest_downbeat(out.grid, out_beat),
         When::EndHere => nearest_downbeat(out.grid, out_beat) - l as i64,
     };
@@ -163,6 +182,7 @@ pub fn plan_live(transition: &Transition, roles: Roles, clock_beats: f64, out: L
     // das der Einstieg bei T0 oder die Stelle, die es am Ende erreicht haben soll.
     let mut mark = nearest_downbeat(inn.grid, in_beat);
     let entry = match when {
+        When::At { in_pos, .. } => nearest_downbeat(inn.grid, inn.grid.beat_at(in_pos)) as f64,
         When::Next { .. } | When::StartHere => {
             if inn.grid.sec_at(mark as f64) < 0.0 {
                 mark += 4;
@@ -225,6 +245,11 @@ pub fn plan_preview(transition: &Transition, roles: Roles, out: LiveDeck, inn: L
     if !from_beat.is_finite() {
         return Err(LiveError::Invalid("Beginn des Vorhörens ist keine Zahl".into()));
     }
+    // Fester Ort: Wo die Decks gerade stehen, spielt beim Vorhören keine Rolle.
+    let (out, inn) = match when {
+        When::At { out_pos, .. } if out_pos.is_finite() => (LiveDeck { pos: out.grid.sec_at(out.grid.beat_at(out_pos) - 16.0), ..out }, LiveDeck { playing: false, ..inn }),
+        _ => (out, inn),
+    };
     // Mit Clock 0 ist `t0` der Abstand von der jetzigen Stelle bis T0 in Beats.
     let plan = plan_live(transition, roles, 0.0, out, inn, when)?;
     let l = transition.beats();
@@ -420,6 +445,20 @@ mod tests {
         assert!((gb.beat_at(p.in_pos) - (66.0 - 64.0 + 52.0)).abs() < 1e-9);
         assert!(When::Next { align_bars: 1 }.is_live() && !When::StartHere.is_live() && !When::EndHere.is_live());
         assert_eq!(serde_json::to_string(&When::StartHere).unwrap(), r#"{"type":"start_here"}"#);
+        // Fester Ort (TRANS-07): live beginnt der Übergang, wenn A die gespeicherte Stelle erreicht,
+        // B steigt an seiner gespeicherten Stelle ein – gleich, wo B gerade steht.
+        let at = When::At { out_pos: ga.sec_at(97.2), in_pos: gb.sec_at(130.3) };
+        let fixed = plan_live(&t, ROLES, 500.0, a, b, at).unwrap();
+        assert!((fixed.t0 - (500.0 + 97.0 - 37.5)).abs() < 1e-9, "T0 {}", fixed.t0);
+        assert!((gb.beat_at(fixed.in_pos) - 130.0).abs() < 1e-9);
+        assert_eq!(fixed.now[0], Command::Seek { deck: B, pos: fixed.in_pos });
+        // Ist A schon daran vorbei oder zu nah davor, sagt die Absage das.
+        let late = plan_live(&t, ROLES, 500.0, deck(&ga, ga.sec_at(95.0), 120.0), b, at).unwrap_err();
+        assert!(matches!(late, LiveError::Passed(n) if (n - 1.0).abs() < 1e-9), "{late:?}");
+        // Vorhören am festen Ort geht von überall, auch wenn A dahinter steht.
+        let p = plan_preview(&t, ROLES, deck(&ga, ga.sec_at(300.0), 120.0), b, at, 0.0).unwrap();
+        assert!((ga.beat_at(p.out_pos) - 93.0).abs() < 1e-9 && (gb.beat_at(p.in_pos) - 126.0).abs() < 1e-9);
+        assert_eq!(serde_json::from_str::<When>(r#"{"type":"at","out_pos":12.5,"in_pos":3}"#).unwrap(), When::At { out_pos: 12.5, in_pos: 3.0 });
         // Hinter dem Ende gewählt: Es bleibt beim letzten Takt.
         assert_eq!(plan_preview(&t, ROLES, a, b, when, 999.0).unwrap().start, 56.0);
 

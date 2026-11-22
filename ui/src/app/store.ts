@@ -1,7 +1,7 @@
 // Zustand der Oberfläche (alles, was nicht aus dem Kern kommt). Kleiner eigener Speicher
 // auf Basis von useSyncExternalStore.
 import { useSyncExternalStore } from 'react';
-import type { DeckId, RecordingInfo, TrackId, TrackInfo, Transition, TransitionRun } from '../core/types';
+import type { DeckId, PairTransition, RecordingInfo, TrackId, TrackInfo, Transition, TransitionRun } from '../core/types';
 import type { Lang } from '../lib/format';
 
 export type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'duration';
@@ -64,6 +64,9 @@ export interface UiState {
   savedTransitions: Transition[];
   /** Übergang im Editor: der Entwurf und der Name, unter dem er gespeichert ist (null = neu). */
   editor: { draft: Transition; original: string | null } | null;
+  /** Für das Paar auf den Decks A und B gespeicherte Übergänge (TRANS-07) und der gewählte davon. */
+  pairTransitions: PairTransition[];
+  pairChoice: number | null;
   /** Laufendes Vorhören im Editor (TRANS-06). */
   preview: TransitionRun | null;
   /** Ab hier wird vorgehört: Beats ab T0, immer ein Taktanfang. */
@@ -133,6 +136,8 @@ let state: UiState = {
   transition: null,
   savedTransitions: [],
   editor: null,
+  pairTransitions: [],
+  pairChoice: null,
   preview: null,
   previewFrom: 0,
   previewAnchor: 'start',

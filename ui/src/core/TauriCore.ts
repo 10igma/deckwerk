@@ -13,6 +13,7 @@ import {
   type ImportResult,
   type RecordingInfo,
   type RefreshResult,
+  type PairTransition,
   type Transition,
   type TransitionRun,
   type TransitionWhen,
@@ -185,6 +186,18 @@ export class TauriCore implements CoreApi {
 
   stopPreview(): Promise<void> {
     return this.invoke<void>('transition_preview_stop');
+  }
+
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]> {
+    return this.invoke<PairTransition[]>('pair_list', { a, b });
+  }
+
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]> {
+    return this.invoke<PairTransition[]>('pair_save', { from, to, transition, when });
+  }
+
+  deletePairTransition(id: number): Promise<void> {
+    return this.invoke<void>('pair_delete', { id });
   }
 
   cancelTransition(): Promise<void> {

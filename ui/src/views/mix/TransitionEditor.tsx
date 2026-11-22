@@ -1,7 +1,7 @@
 // Editor für Übergänge (TRANS-04): je Regler eine Spur mit den Kurven des gehenden und des kommenden
 // Decks. Punkte setzen (Klick), ziehen, löschen (Doppelklick); waagerecht rasten sie auf Beats.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { closeEditor, deleteSavedTransition, previewEditor, saveEditor, stopPreview } from '../../app/actions';
+import { closeEditor, deleteChosenPair, deleteSavedTransition, previewEditor, saveEditor, saveEditorForPair, stopPreview } from '../../app/actions';
 import { useFrame, useSnap } from '../../app/frame';
 import { setUi, useUi } from '../../app/store';
 import type { Transition, TransitionPoint } from '../../core/types';
@@ -195,6 +195,7 @@ export function TransitionEditor() {
   const preview = useUi((s) => s.preview);
   const previewFrom = useUi((s) => s.previewFrom);
   const anchor = useUi((s) => s.previewAnchor);
+  const pairChosen = useUi((s) => s.pairChoice !== null);
   // Zu Ende gespielt: Die Hülle hat aufgeräumt, die Taste springt zurück.
   const over = useSnap((s) => preview !== null && s.clock_beats > preview.end_beat);
   useEffect(() => {
@@ -276,6 +277,14 @@ export function TransitionEditor() {
         <KeyBtn size="sm" onPress={() => void saveEditor()} tip={{ name: t('ed.save'), value: t('ed.saveHint') }}>
           {t('ed.save')}
         </KeyBtn>
+        <KeyBtn size="sm" onPress={() => void saveEditorForPair()} tip={{ name: t('pair.save'), value: t('pair.saveHint') }}>
+          {t('pair.saveShort')}
+        </KeyBtn>
+        {pairChosen && (
+          <KeyBtn size="sm" onPress={() => void deleteChosenPair()} tip={{ name: t('pair.delete'), value: t('pair.deleteHint') }} ariaLabel={t('pair.delete')}>
+            {t('pair.deleteShort')}
+          </KeyBtn>
+        )}
         <KeyBtn size="sm" onPress={closeEditor}>
           {t('ed.close')}
         </KeyBtn>

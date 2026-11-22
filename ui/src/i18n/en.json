@@ -349,5 +349,17 @@
   "ed.anchor": "Where the transition lies for the preview",
   "ed.anchorStart": "Starts here",
   "ed.anchorEnd": "Ends here",
-  "ed.anchorHint": "With both decks stopped, their positions are the start or the end of the transition (the nearest downbeat each)"
+  "ed.anchorHint": "With both decks stopped, their positions are the start or the end of the transition (the nearest downbeat each)",
+  "pair.group": "For this pair",
+  "pair.save": "Save for this pair",
+  "pair.saveShort": "For pair",
+  "pair.saveHint": "saves curves and place for exactly these two tracks: the positions of the stopped decks are the start or the end of the transition (choice on the left). Same name replaces, another name adds one more – as many per pair as you like",
+  "pair.saved": "“{name}” saved for this pair ({from} → {to}).",
+  "pair.failed": "Could not save for the pair: {reason}",
+  "pair.delete": "Delete pair transition",
+  "pair.deleteShort": "Delete pair",
+  "pair.deleteHint": "deletes the chosen transition saved for this pair",
+  "pair.needOut": "This pair transition needs deck {deck} playing – the track that leaves.",
+  "pair.placed": "Both decks are at the saved start of the transition.",
+  "pair.startHint": "plays the saved transition at its place: it starts when the playing track reaches the saved position"
 }

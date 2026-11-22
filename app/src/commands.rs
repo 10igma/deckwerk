@@ -149,6 +149,23 @@ pub fn transition_preview_stop(state: State<AppState>) -> Result<(), String> {
     state.stop_preview()
 }
 
+/// Für das Paar auf zwei Decks gespeicherte Übergänge, beide Richtungen (TRANS-07).
+#[tauri::command]
+pub fn pair_list(state: State<AppState>, a: DeckId, b: DeckId) -> Vec<crate::state::PairTransition> {
+    state.pair_transitions(a, b)
+}
+
+/// Übergang mit Ort für das Paar speichern; `when` ist `start_here` oder `end_here`.
+#[tauri::command]
+pub fn pair_save(state: State<AppState>, from: DeckId, to: DeckId, transition: dw_automix::Transition, when: dw_automix::When) -> Result<Vec<crate::state::PairTransition>, String> {
+    state.save_pair_transition(from, to, &transition, when)
+}
+
+#[tauri::command]
+pub fn pair_delete(state: State<AppState>, id: u64) -> Result<(), String> {
+    state.delete_pair_transition(id)
+}
+
 /// Vorbereiteten Übergang einplanen (TRANS-05).
 #[tauri::command]
 pub fn transition_start(

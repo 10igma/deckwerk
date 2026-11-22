@@ -260,7 +260,19 @@ export interface Transition {
  * Wann der Übergang liegt: Beginn an der nächsten Taktgrenze im Raster, oder Ende in so vielen Clock-Beats
  * (auf den nächsten Taktanfang gerückt), wobei der Kern den Beginn zurückrechnet.
  */
-export type TransitionWhen = { type: 'next'; align_bars: number } | { type: 'end_in'; beats: number } | { type: 'start_here' } | { type: 'end_here' };
+export type TransitionWhen = { type: 'next'; align_bars: number } | { type: 'end_in'; beats: number } | { type: 'at'; out_pos: number; in_pos: number } | { type: 'start_here' } | { type: 'end_here' };
+
+/** Für ein bestimmtes Paar gespeicherter Übergang (TRANS-07): Kurven und Ort. */
+export interface PairTransition {
+  id: number;
+  /** Track, der geht, und Track, der kommt. */
+  out_track: TrackId;
+  in_track: TrackId;
+  /** Stellen beider Tracks am Beginn des Übergangs in Sekunden. */
+  out_pos: number;
+  in_pos: number;
+  transition: Transition;
+}
 
 /** Ein eingeplanter oder laufender Übergang (`transition_start`). */
 export interface TransitionRun {

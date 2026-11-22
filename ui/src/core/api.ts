@@ -7,6 +7,7 @@ import type {
   ImportResult,
   RecordingInfo,
   RefreshResult,
+  PairTransition,
   Transition,
   TransitionRun,
   TransitionWhen,
@@ -68,6 +69,14 @@ export interface CoreApi {
   previewTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen, fromBeat: number): Promise<TransitionRun>;
   /** Beendet das Vorhören und stellt den Stand von vorher wieder her. */
   stopPreview(): Promise<void>;
+  /** Für das Paar der Tracks auf zwei Decks gespeicherte Übergänge, beide Richtungen (TRANS-07). */
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]>;
+  /**
+   * Speichert Kurven und Ort für das Paar auf `from` und `to`. `when` ist `start_here` oder `end_here`:
+   * Die Stellen der stehenden Decks sind Beginn oder Ende. Gleicher Name in derselben Richtung ersetzt.
+   */
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]>;
+  deletePairTransition(id: number): Promise<void>;
   /** Selbst gebaute Übergänge (TRANS-04). */
   listSavedTransitions(): Promise<Transition[]>;
   /** Speichert einen Übergang unter seinem Namen (ersetzt einen gleichnamigen); liefert die neue Liste. */

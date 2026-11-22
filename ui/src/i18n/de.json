@@ -349,5 +349,17 @@
   "ed.anchor": "Lage des Übergangs beim Vorhören",
   "ed.anchorStart": "Beginn hier",
   "ed.anchorEnd": "Ende hier",
-  "ed.anchorHint": "Stehen beide Decks, sind ihre Stellen der Beginn oder das Ende des Übergangs (jeweils der nächste Taktanfang)"
+  "ed.anchorHint": "Stehen beide Decks, sind ihre Stellen der Beginn oder das Ende des Übergangs (jeweils der nächste Taktanfang)",
+  "pair.group": "Für dieses Paar",
+  "pair.save": "Für dieses Paar speichern",
+  "pair.saveShort": "Für Paar",
+  "pair.saveHint": "speichert Kurven und Ort für genau diese zwei Tracks: Die Stellen der stehenden Decks sind Beginn oder Ende des Übergangs (Auswahl links). Gleicher Name ersetzt, ein anderer Name legt einen weiteren an – beliebig viele je Paar",
+  "pair.saved": "„{name}“ für dieses Paar gespeichert ({from} → {to}).",
+  "pair.failed": "Speichern für das Paar nicht möglich: {reason}",
+  "pair.delete": "Paar-Übergang löschen",
+  "pair.deleteShort": "Paar löschen",
+  "pair.deleteHint": "löscht den gewählten, für dieses Paar gespeicherten Übergang",
+  "pair.needOut": "Für diesen Paar-Übergang muss Deck {deck} laufen – der Track, der geht.",
+  "pair.placed": "Beide Decks stehen am gespeicherten Beginn des Übergangs.",
+  "pair.startHint": "spielt den gespeicherten Übergang an seinem Ort: Er beginnt, wenn der laufende Track die gespeicherte Stelle erreicht"
 }

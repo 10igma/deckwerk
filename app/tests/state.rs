@@ -571,3 +571,81 @@ fn a_transition_can_be_previewed_and_everything_is_put_back() {
     // Ohne laufendes Vorhören ist Beenden kein Fehler.
     state.stop_preview().unwrap();
 }
+
+/// TRANS-07: Für ein Paar lassen sich beliebig viele Übergänge mit Ort speichern; sie überdauern
+/// einen Neustart, gelten nur für dieses Paar und spielen live am gespeicherten Ort.
+#[test]
+fn transitions_are_saved_per_pair_with_their_place() {
+    use dw_automix::{Transition, When};
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    write_track(&music, "Dritter.wav", 129.0, Key::from_camelot(9, 'A').unwrap(), 3);
+    let data = tmp.path().join("daten");
+    let state = AppState::start(&data).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    let id = |title: &str| rows.iter().find(|r| r.title.starts_with(title)).unwrap().id;
+    let snap = |state: &AppState| state.ctl.lock().unwrap().snapshot().clone();
+    let load = |state: &AppState, a: &str, b: &str| {
+        state.load_deck(DeckId::A, id(a)).unwrap();
+        state.load_deck(DeckId::B, id(b)).unwrap();
+        wait_for("Decks geladen", || snap(state).decks[0].loaded && snap(state).decks[1].loaded);
+    };
+    load(&state, "Erster", "Zweiter");
+    assert!(state.pair_transitions(DeckId::A, DeckId::B).is_empty());
+    for cmd in [Command::Seek { deck: DeckId::A, pos: 9.0 }, Command::Seek { deck: DeckId::B, pos: 14.0 }] {
+        state.ctl.lock().unwrap().send(cmd);
+    }
+    wait_for("Stellen", || (snap(&state).decks[0].pos - 9.0).abs() < 1e-6 && (snap(&state).decks[1].pos - 14.0).abs() < 1e-6);
+
+    // Zwei Arten für dasselbe Paar: Beginn hier, und eine zweite mit Ende hier.
+    let mut swap = Transition::bass_swap(4);
+    swap.name = "Früh".into();
+    let list = state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::StartHere).unwrap();
+    assert_eq!(list.len(), 1);
+    // Der Ort liegt auf dem Taktanfang neben den Stellen (128 BPM: ein Takt = 1,875 s).
+    assert!((list[0].out_pos - 9.0).abs() < 1.0 && (list[0].in_pos - 14.0).abs() < 1.0, "{:?}", (list[0].out_pos, list[0].in_pos));
+    let mut fade = Transition::fade(4);
+    fade.name = "Spät".into();
+    let list = state.save_pair_transition(DeckId::A, DeckId::B, &fade, When::EndHere).unwrap();
+    assert_eq!(list.len(), 2);
+    let beats_back = (list[0].out_pos - list[1].out_pos) * 128.0 / 60.0;
+    assert!((beats_back - 16.0).abs() < 0.01, "Ende hier liegt {beats_back} Beats früher");
+    // Gleicher Name ersetzt, statt zu verdoppeln; die Gegenrichtung ist ein eigener Eintrag.
+    assert_eq!(state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::StartHere).unwrap().len(), 2);
+    assert_eq!(state.save_pair_transition(DeckId::B, DeckId::A, &swap, When::StartHere).unwrap().len(), 3);
+    assert!(state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::Next { align_bars: 4 }).is_err());
+    let early = list[0].clone();
+
+    // Neustart; ein anderes Paar hat keine, dieses seine drei.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    load(&state, "Erster", "Dritter");
+    assert!(state.pair_transitions(DeckId::A, DeckId::B).is_empty());
+    load(&state, "Zweiter", "Erster");
+    wait_for("Paar zurück", || state.pair_transitions(DeckId::A, DeckId::B).len() == 3);
+    let found = state.pair_transitions(DeckId::B, DeckId::A).into_iter().find(|p| p.id == early.id).unwrap();
+    assert_eq!(found, early);
+
+    // Live am gespeicherten Ort: „Erster" liegt jetzt auf B und geht; „Zweiter" steht irgendwo.
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::B, on: true });
+    wait_for("Wiedergabe", || snap(&state).decks[1].pos > 0.3);
+    let at = When::At { out_pos: early.out_pos, in_pos: early.in_pos };
+    let run = state.start_transition(DeckId::B, DeckId::A, &early.transition, at).unwrap();
+    wait_for("Beginn", || snap(&state).clock_beats > run.t0_beat + 1.0);
+    let s = snap(&state);
+    let beat = 60.0 / 128.0;
+    assert!(((s.decks[1].pos - early.out_pos) / beat - (s.clock_beats - run.t0_beat)).abs() < 0.05, "B bei {} s", s.decks[1].pos);
+    assert!(s.decks[0].playing && ((s.decks[0].pos - early.in_pos) / (60.0 / 130.0) - (s.clock_beats - run.t0_beat)).abs() < 0.6, "A bei {} s", s.decks[0].pos);
+    state.cancel_transition().unwrap();
+    // Daran vorbei: klare Absage.
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: false });
+    wait_for("A steht", || !snap(&state).decks[0].playing);
+    assert!(state.start_transition(DeckId::B, DeckId::A, &early.transition, at).unwrap_err().contains("schon vorbei"));
+
+    state.delete_pair_transition(early.id).unwrap();
+    assert_eq!(state.pair_transitions(DeckId::A, DeckId::B).len(), 2);
+}

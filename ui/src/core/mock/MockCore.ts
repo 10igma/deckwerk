@@ -15,6 +15,7 @@ import {
   type ImportResult,
   type RecordingInfo,
   type RefreshResult,
+  type PairTransition,
   type Transition,
   type TransitionRun,
   type TransitionWhen,
@@ -291,7 +292,11 @@ export class MockCore implements CoreApi {
     const outBeat = this.beatOf(out);
     let boundary: number;
     if (when.type === 'start_here' || when.type === 'end_here') return Promise.reject('Diese Lage gibt es nur beim Vorhören mit stehenden Decks.');
-    if (when.type === 'next') {
+    if (when.type === 'at') {
+      // Fester Ort: Beginn, wenn der laufende Track die gespeicherte Stelle erreicht.
+      boundary = Math.round(beatAt(out.track.grid, when.out_pos) / 4) * 4;
+      if (boundary < outBeat + 3) return Promise.reject('Die gespeicherte Stelle des Übergangs ist schon vorbei oder zu nah; das laufende Deck weiter vorn starten');
+    } else if (when.type === 'next') {
       // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
       const span = 4 * Math.max(1, when.align_bars);
       boundary = Math.ceil((outBeat + 3) / span) * span;
@@ -305,9 +310,9 @@ export class MockCore implements CoreApi {
     this.run = { from, to, name: transition.name, bars: transition.bars, t0_beat: t0, end_beat: t0 + l + 1 };
     if (!inn.playing) {
       inn.sync = 'beat';
-      const mark = Math.round(beatAt(inn.track.grid, inn.pos) / 4) * 4;
+      const mark = Math.round(beatAt(inn.track.grid, when.type === 'at' ? when.in_pos : inn.pos) / 4) * 4;
       // Mit vorgegebenem Ende erreicht das Deck seine jetzige Stelle erst dort: Es startet um die Länge früher.
-      inn.pos = when.type === 'next' ? Math.max(0, secAt(inn.track.grid, mark)) : secAt(inn.track.grid, mark - l);
+      inn.pos = when.type === 'at' ? secAt(inn.track.grid, mark) : when.type === 'next' ? Math.max(0, secAt(inn.track.grid, mark)) : secAt(inn.track.grid, mark - l);
     }
     return Promise.resolve({ ...this.run });
   }
@@ -348,6 +353,36 @@ export class MockCore implements CoreApi {
     const inn = this.decks[deckIndex(p.run.to)];
     if (!inn.playing && t >= Math.max(0, p.start) && t < p.run.bars * 4) this.apply({ type: 'play', deck: p.run.to, on: true });
     if (this.clockBeats > p.run.end_beat) void this.stopPreview();
+  }
+
+  private pairs: PairTransition[] = [];
+
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]> {
+    const [ta, tb] = [this.decks[deckIndex(a)].track?.id, this.decks[deckIndex(b)].track?.id];
+    if (!ta || !tb) return Promise.resolve([]);
+    return Promise.resolve(this.pairs.filter((p) => (p.out_track === ta && p.in_track === tb) || (p.out_track === tb && p.in_track === ta)).map((p) => ({ ...p })));
+  }
+
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]> {
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    const name = transition.name.trim();
+    if (!out.track || !inn.track) return Promise.reject('Auf beiden Decks muss ein Track liegen.');
+    if (name === '') return Promise.reject('Der Übergang braucht einen Namen mit höchstens 60 Zeichen.');
+    if (when.type !== 'start_here' && when.type !== 'end_here') return Promise.reject('Der Ort ergibt sich aus den Stellen der stehenden Decks: als Beginn oder als Ende.');
+    if (out.playing || inn.playing) return Promise.reject('Zum Speichern für das Paar müssen beide Decks stehen; ihre Stellen legen den Ort fest.');
+    const back = when.type === 'end_here' ? transition.bars * 4 : 0;
+    const at = (d: MockDeck) => secAt(d.track!.grid, Math.round(beatAt(d.track!.grid, d.pos) / 4) * 4 - back);
+    const entry = { out_track: out.track.id, in_track: inn.track.id, out_pos: at(out), in_pos: at(inn), transition: { ...transition, name } };
+    const old = this.pairs.find((p) => p.out_track === entry.out_track && p.in_track === entry.in_track && p.transition.name === name);
+    if (old) Object.assign(old, entry);
+    else this.pairs.push({ id: Math.max(0, ...this.pairs.map((p) => p.id)) + 1, ...entry });
+    return this.listPairTransitions(from, to);
+  }
+
+  deletePairTransition(id: number): Promise<void> {
+    this.pairs = this.pairs.filter((p) => p.id !== id);
+    return Promise.resolve();
   }
 
   cancelTransition(): Promise<void> {

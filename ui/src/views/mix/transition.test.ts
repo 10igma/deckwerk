@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { previewRoles, transitionRoles, transitionWhen } from '../../app/actions';
+import { pairRoles, previewRoles, transitionRoles, transitionWhen } from '../../app/actions';
 import { MockCore } from '../../core/mock/MockCore';
 import { MOCK_TRACKS } from '../../core/mock/tracks';
 import { stageTarget, transitionProgress, transitionZone } from './WaveStage';
@@ -158,5 +158,60 @@ describe('Vorhören im Editor (TRANS-06)', () => {
     expect(after.decks[1].pos).toBeCloseTo(45, 6);
     // Ohne Track auf einem Deck: Absage im Klartext.
     await expect(new MockCore({ scene: 'empty', manualClock: true }).previewTransition('a', 'b', swap, { type: 'next', align_bars: 4 }, 0)).rejects.toMatch(/liegt kein Track/);
+  });
+});
+
+describe('Übergänge je Paar (TRANS-07)', () => {
+  it('Rollen ergeben sich aus den geladenen Tracks, in beiden Richtungen', () => {
+    const pair = { out_track: 'x', in_track: 'y' };
+    expect(pairRoles(pair, { a: { id: 'x' }, b: { id: 'y' } })).toEqual({ from: 'a', to: 'b' });
+    expect(pairRoles(pair, { a: { id: 'y' }, b: { id: 'x' } })).toEqual({ from: 'b', to: 'a' });
+    expect(pairRoles(pair, { a: { id: 'x' }, b: { id: 'z' } })).toBe(null);
+    expect(pairRoles(pair, { a: null, b: { id: 'y' } })).toBe(null);
+  });
+
+  it('simulierter Kern: beliebig viele je Paar mit Ort; live beginnt der Übergang an der gespeicherten Stelle', async () => {
+    const core = new MockCore({ scene: 'loaded', manualClock: true });
+    const step = (seconds: number) => {
+      for (let s = 0; s < seconds; s += 1 / 60) core.step(1 / 60);
+    };
+    for (const deck of ['a', 'b'] as const) core.send({ type: 'play', deck, on: false });
+    core.send({ type: 'seek', deck: 'a', pos: 60 });
+    core.send({ type: 'seek', deck: 'b', pos: 45 });
+    step(0.1);
+    const [swap, fade] = await core.listTransitions(4);
+    expect(await core.listPairTransitions('a', 'b')).toEqual([]);
+    let list = await core.savePairTransition('a', 'b', { ...swap, name: 'Früh' }, { type: 'start_here' });
+    list = await core.savePairTransition('a', 'b', { ...fade, name: 'Spät' }, { type: 'end_here' });
+    expect(list.map((p) => p.transition.name)).toEqual(['Früh', 'Spät']);
+    // Beginn hier: neben der Stelle; Ende hier: um die Länge (16 Beats) davor.
+    const bpm = core.snapshot().decks[0].track_bpm;
+    expect(Math.abs(list[0].out_pos - 60)).toBeLessThan((2 * 60) / bpm + 1e-6);
+    expect(((list[0].out_pos - list[1].out_pos) * bpm) / 60).toBeCloseTo(16, 6);
+    // Gleicher Name ersetzt; die Gegenrichtung ist ein eigener Eintrag; beide Abfragerichtungen liefern alle.
+    expect((await core.savePairTransition('a', 'b', { ...swap, name: 'Früh' }, { type: 'start_here' })).length).toBe(2);
+    expect((await core.savePairTransition('b', 'a', { ...swap, name: 'Früh' }, { type: 'start_here' })).length).toBe(3);
+    expect((await core.listPairTransitions('b', 'a')).length).toBe(3);
+    await expect(core.savePairTransition('a', 'b', swap, { type: 'next', align_bars: 4 })).rejects.toMatch(/Beginn oder als Ende/);
+
+    // Live: A startet 32 Beats vor der gespeicherten Stelle, B steht woanders.
+    const early = list[0];
+    core.send({ type: 'seek', deck: 'a', pos: early.out_pos - (32 * 60) / bpm });
+    core.send({ type: 'seek', deck: 'b', pos: 200 });
+    core.send({ type: 'play', deck: 'a', on: true });
+    step(0.5);
+    const run = await core.startTransition('a', 'b', early.transition, { type: 'at', out_pos: early.out_pos, in_pos: early.in_pos });
+    const s = core.snapshot();
+    const toStart = ((early.out_pos - s.decks[0].pos) * s.decks[0].track_bpm) / 60;
+    expect(run.t0_beat - s.clock_beats).toBeCloseTo(toStart, 3);
+    expect(s.decks[1].pos).toBeCloseTo(early.in_pos, 6);
+    // Daran vorbei: Absage.
+    await core.cancelTransition();
+    core.send({ type: 'play', deck: 'b', on: false });
+    core.send({ type: 'seek', deck: 'a', pos: early.out_pos + 5 });
+    step(0.1);
+    await expect(core.startTransition('a', 'b', early.transition, { type: 'at', out_pos: early.out_pos, in_pos: early.in_pos })).rejects.toMatch(/schon vorbei/);
+    await core.deletePairTransition(early.id);
+    expect((await core.listPairTransitions('a', 'b')).length).toBe(2);
   });
 });
