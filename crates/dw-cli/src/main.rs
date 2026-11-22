@@ -28,9 +28,12 @@ const HELP: &str = "Deckwerk – Kommandozeile
 
   deckwerk transition <A> <B> -o <Ausgabe.wav> --a-pos <s> --end-in <Beats> --b-mark <s>
                       [--template bass_swap|fade] [--bars 32] [--lead 16] [--tail 16]
+                      [--b-grid-shift-ms 0]
       Übergang rendern, wie die Anwendung ihn live fährt: A läuft und steht bei --a-pos; der
       Übergang endet --end-in Beats später (auf den nächsten Taktanfang gerückt), und B hat
       dann die Stelle --b-mark erreicht. --lead/--tail: Takte von A davor und von B danach.
+      --b-grid-shift-ms verschiebt das Beat-Raster von B (negativ = früher), um ein falsch
+      sitzendes Raster zum Probehören auszugleichen.
 
   deckwerk check <Referenz.csv> <Musikordner> [--tol 0.05]
       Analyse gegen Referenzwerte prüfen (ANA-02, ANA-06): analysiert jede Datei der Referenz
@@ -433,10 +436,15 @@ fn cmd_transition(mut args: Vec<String>) -> Result<()> {
     let a_pos = need(&mut args, "--a-pos")?;
     let end_in = need(&mut args, "--end-in")?;
     let b_mark = need(&mut args, "--b-mark")?;
+    let b_shift_ms: f64 = number(option(&mut args, "--b-grid-shift-ms")?, 0.0, "--b-grid-shift-ms")?;
     let [a_path, b_path] = args.as_slice() else { bail!("transition braucht genau zwei Dateien") };
 
     let (a_audio, a) = load(Path::new(a_path))?;
-    let (b_audio, b) = load(Path::new(b_path))?;
+    let (b_audio, mut b) = load(Path::new(b_path))?;
+    if b_shift_ms != 0.0 {
+        // Raster mit festem Tempo (alles, was die Analyse bisher liefert): Beat 0 verschieben.
+        b.grid = dw_core::BeatGrid::constant(b.grid.bpm_at(0.0), b.grid.sec_at(0.0) + b_shift_ms / 1000.0, b.grid.bar_offset);
+    }
     println!("A: {:.2} BPM, {} · B: {:.2} BPM, {}", a.bpm, key_text(&a), b.bpm, key_text(&b));
     let transition = Transition::templates(bars).into_iter().find(|t| t.name == template).ok_or_else(|| anyhow!("unbekannte Vorlage „{template}“ (bass_swap, fade)"))?;
     let track = |audio, an: &TrackAnalysis| Arc::new(Track { audio, grid: an.grid.clone(), gain_db: an.auto_gain_db(REFERENCE_LUFS) });
