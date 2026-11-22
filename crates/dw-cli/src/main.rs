@@ -26,6 +26,14 @@ const HELP: &str = "Deckwerk – Kommandozeile
       --lead  Takte von A vor dem Übergang (Standard 16)
       --tail  Takte von B nach dem Übergang (Standard 16)
 
+  deckwerk check <Referenz.csv> <Musikordner> [--tol 0.05]
+      Analyse gegen Referenzwerte prüfen (ANA-02, ANA-06): analysiert jede Datei der Referenz
+      neu und meldet die Trefferquote bei Tempo und Tonart.
+      Referenz: Zeilen „Datei;BPM;Tonart;Quelle“, Tonart in Camelot (z. B. 9A). Ein „?“ hinter
+      einem Wert heißt: nur eine Quelle; solche Werte werden getrennt ausgewiesen. Leere Felder
+      werden nicht gewertet, Zeilen mit # sind Kommentare.
+      --tol  erlaubte Tempo-Abweichung in BPM (Standard 0,05)
+
   deckwerk testtrack <Ausgabe.wav> [--bpm 132] [--key 8A] [--seed 1]
       Synthetischen Techno-Track mit bekanntem Tempo und bekannter Tonart erzeugen.
 ";
@@ -91,6 +99,7 @@ fn run() -> Result<()> {
     match args.remove(0).as_str() {
         "analyze" => cmd_analyze(args),
         "mix" => cmd_mix(args),
+        "check" => cmd_check(args),
         "testtrack" => cmd_testtrack(args),
         other => bail!("unbekannter Befehl „{other}“ (Hilfe: deckwerk --help)"),
     }
@@ -219,4 +228,225 @@ fn cmd_testtrack(mut args: Vec<String>) -> Result<()> {
         audio.duration()
     );
     Ok(())
+}
+
+/// Eine Zeile der Referenzdatei: Dateiname und, soweit bekannt, Tempo und Tonart.
+#[derive(Debug, PartialEq)]
+struct Reference {
+    file: String,
+    bpm: Option<f64>,
+    /// Tempo durch zwei unabhängige Quellen belegt (kein „?“ in der Datei).
+    bpm_sure: bool,
+    key: Option<Key>,
+    key_sure: bool,
+}
+
+/// Liest die Referenz: „Datei;BPM;Tonart;Quelle". Ein „?" hinter einem Wert kennzeichnet ihn als
+/// nur einfach belegt. Leere Felder bleiben ungewertet; Zeilen mit `#` und die Kopfzeile werden
+/// übergangen.
+fn parse_reference(text: &str) -> Result<Vec<Reference>> {
+    let mut rows = Vec::new();
+    for (nr, line) in text.lines().enumerate() {
+        let line = line.trim().trim_start_matches('\u{feff}');
+        if line.is_empty() || line.starts_with('#') || line.to_lowercase().starts_with("datei;") {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(';').map(str::trim).collect();
+        let file = fields[0].to_string();
+        // „?" am Ende: Wert aus nur einer Quelle.
+        let field = |i: usize| {
+            let raw = fields.get(i).copied().unwrap_or("");
+            (raw.trim_end_matches('?').trim(), !raw.ends_with('?'))
+        };
+        let ((bpm_text, bpm_sure), (key_text, key_sure)) = (field(1), field(2));
+        let bpm = match bpm_text {
+            "" => None,
+            v => Some(v.replace(',', ".").parse::<f64>().map_err(|_| anyhow!("Zeile {}: „{v}“ ist kein Tempo", nr + 1))?),
+        };
+        let key = match key_text {
+            "" => None,
+            v => Some(parse_camelot(v).ok_or_else(|| anyhow!("Zeile {}: „{v}“ ist keine Camelot-Tonart", nr + 1))?),
+        };
+        rows.push(Reference { file, bpm, bpm_sure, key, key_sure });
+    }
+    Ok(rows)
+}
+
+fn parse_camelot(text: &str) -> Option<Key> {
+    let letter = text.chars().last()?;
+    let number: u8 = text[..text.len() - letter.len_utf8()].parse().ok()?;
+    Key::from_camelot(number, letter)
+}
+
+/// Einordnung eines gemessenen Tempos gegen die Referenz.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum TempoVerdict {
+    Match,
+    /// Doppeltes oder halbes Tempo (ANA-02 zählt diese Fehler eigens).
+    Octave,
+    Off,
+}
+
+fn tempo_verdict(found: f64, expected: f64, tol: f64) -> TempoVerdict {
+    if (found - expected).abs() <= tol {
+        TempoVerdict::Match
+    } else if (found - expected * 2.0).abs() <= tol * 2.0 || (found - expected / 2.0).abs() <= tol / 2.0 {
+        TempoVerdict::Octave
+    } else {
+        TempoVerdict::Off
+    }
+}
+
+/// Gewichtete Wertung einer Tonart nach Spezifikation 5.3: exakt 1,0; Quinte daneben 0,5;
+/// Paralleltonart 0,3; gleichnamige Tonart (Dur/Moll) 0,2; sonst 0.
+fn key_score(found: Key, expected: Key) -> f64 {
+    let (found_nr, found_letter) = found.camelot();
+    let (expected_nr, expected_letter) = expected.camelot();
+    let step = (found_nr as i32 - expected_nr as i32).rem_euclid(12);
+    if found == expected {
+        1.0
+    } else if found_letter == expected_letter && (step == 1 || step == 11) {
+        0.5
+    } else if found_nr == expected_nr {
+        0.3
+    } else if found.pitch_class() == expected.pitch_class() {
+        0.2
+    } else {
+        0.0
+    }
+}
+
+fn cmd_check(mut args: Vec<String>) -> Result<()> {
+    let tol: f64 = number(option(&mut args, "--tol")?, 0.05, "--tol")?;
+    let [reference, folder] = args.as_slice() else { bail!("erwartet: deckwerk check <Referenz.csv> <Musikordner>") };
+    let text = std::fs::read_to_string(reference).with_context(|| reference.clone())?;
+    let rows = parse_reference(&text)?;
+    // Je Kennzahl zwei Zählungen: [nur doppelt belegte Referenzwerte, alle Referenzwerte].
+    let (mut tempo_n, mut tempo_ok, mut tempo_octave) = ([0usize; 2], [0usize; 2], [0usize; 2]);
+    let (mut key_n, mut key_exact, mut key_weighted) = ([0usize; 2], [0usize; 2], [0.0f64; 2]);
+    let add = |counter: &mut [usize; 2], sure: bool| {
+        counter[1] += 1;
+        counter[0] += sure as usize;
+    };
+    let mut absent = 0usize;
+    for row in &rows {
+        let path = Path::new(folder).join(&row.file);
+        if !path.is_file() {
+            println!("fehlt     {}", row.file);
+            absent += 1;
+            continue;
+        }
+        let (_, a) = match load(&path) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                println!("unlesbar  {} ({e:#})", row.file);
+                absent += 1;
+                continue;
+            }
+        };
+        let tempo = match row.bpm {
+            Some(expected) => {
+                let weak = if row.bpm_sure { "" } else { "?" };
+                add(&mut tempo_n, row.bpm_sure);
+                match tempo_verdict(a.bpm, expected, tol) {
+                    TempoVerdict::Match => {
+                        add(&mut tempo_ok, row.bpm_sure);
+                        format!("Tempo ok {:.2}", a.bpm)
+                    }
+                    TempoVerdict::Octave => {
+                        add(&mut tempo_octave, row.bpm_sure);
+                        format!("Tempo HALB/DOPPELT {:.2} statt {expected}{weak}", a.bpm)
+                    }
+                    TempoVerdict::Off => format!("Tempo FALSCH {:.2} statt {expected}{weak}", a.bpm),
+                }
+            }
+            None => format!("Tempo – {:.2}", a.bpm),
+        };
+        let key = match (row.key, a.key) {
+            (Some(expected), Some(found)) => {
+                add(&mut key_n, row.key_sure);
+                let score = key_score(found, expected);
+                key_weighted[1] += score;
+                key_weighted[0] += if row.key_sure { score } else { 0.0 };
+                if score == 1.0 {
+                    add(&mut key_exact, row.key_sure);
+                    format!("Tonart ok {}", found.camelot_string())
+                } else {
+                    let weak = if row.key_sure { "" } else { "?" };
+                    format!("Tonart FALSCH {} statt {}{weak} ({score:.1})", found.camelot_string(), expected.camelot_string())
+                }
+            }
+            (Some(expected), None) => {
+                add(&mut key_n, row.key_sure);
+                format!("Tonart FALSCH – statt {}", expected.camelot_string())
+            }
+            (None, found) => format!("Tonart – {}", found.map_or("–".into(), |k| k.camelot_string())),
+        };
+        println!("{tempo:<38} {key:<34} {}", row.file);
+    }
+    let pct = |n: usize, of: usize| if of == 0 { 0.0 } else { 100.0 * n as f64 / of as f64 };
+    println!();
+    println!("Ziele: Tempo ≥ 97 % innerhalb ±{tol} BPM, halb/doppelt ≤ 2 % (ANA-02); Tonart exakt ≥ 70 %, gewichtet ≥ 0,80 (ANA-06)");
+    for (i, label) in ["Doppelt belegte Referenz", "Alle Referenzwerte (auch einfach belegte)"].into_iter().enumerate() {
+        println!(
+            "{label}: Tempo {} von {} = {:.0} %, halb/doppelt {} = {:.1} %; Tonart exakt {} von {} = {:.0} %, gewichtet {:.2}",
+            tempo_ok[i],
+            tempo_n[i],
+            pct(tempo_ok[i], tempo_n[i]),
+            tempo_octave[i],
+            pct(tempo_octave[i], tempo_n[i]),
+            key_exact[i],
+            key_n[i],
+            pct(key_exact[i], key_n[i]),
+            if key_n[i] == 0 { 0.0 } else { key_weighted[i] / key_n[i] as f64 }
+        );
+    }
+    if absent > 0 {
+        println!("{absent} Dateien der Referenz fehlen im Ordner oder sind unlesbar und wurden nicht gewertet.");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reference_file_is_parsed_with_gaps_and_comments() {
+        let text = "# Kommentar\nDatei;BPM;Tonart;Quelle\na.mp3;128;9A;Beatport\nb.mp3;;8B?;nur Tonart\nc.mp3;100,5?;;Tempo mit Komma\n\nd.mp3\n";
+        let rows = parse_reference(text).unwrap();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0], Reference { file: "a.mp3".into(), bpm: Some(128.0), bpm_sure: true, key: Key::from_camelot(9, 'A'), key_sure: true });
+        // „?" = nur eine Quelle.
+        assert_eq!((rows[1].bpm, rows[1].key, rows[1].key_sure), (None, Key::from_camelot(8, 'B'), false));
+        assert_eq!((rows[2].bpm, rows[2].bpm_sure, rows[2].key), (Some(100.5), false, None));
+        assert_eq!((rows[3].bpm, rows[3].key), (None, None));
+        assert!(parse_reference("a.mp3;schnell;9A").is_err());
+        assert!(parse_reference("a.mp3;128;13A").is_err());
+    }
+
+    #[test]
+    fn tempo_is_classified_as_match_octave_or_off() {
+        assert_eq!(tempo_verdict(128.04, 128.0, 0.05), TempoVerdict::Match);
+        assert_eq!(tempo_verdict(128.06, 128.0, 0.05), TempoVerdict::Off);
+        assert_eq!(tempo_verdict(200.0, 100.0, 0.05), TempoVerdict::Octave);
+        assert_eq!(tempo_verdict(70.0, 140.0, 0.05), TempoVerdict::Octave);
+        assert_eq!(tempo_verdict(137.0, 130.0, 0.05), TempoVerdict::Off);
+    }
+
+    /// Gewichtung nach Spezifikation 5.3.
+    #[test]
+    fn key_score_follows_the_specified_weights() {
+        let k = |n, l| Key::from_camelot(n, l).unwrap();
+        assert_eq!(key_score(k(9, 'A'), k(9, 'A')), 1.0);
+        // Quinte daneben: e-Moll (9A) gegen a-Moll (8A) und h-Moll (10A), auch über die 12 hinweg.
+        assert_eq!(key_score(k(8, 'A'), k(9, 'A')), 0.5);
+        assert_eq!(key_score(k(10, 'A'), k(9, 'A')), 0.5);
+        assert_eq!(key_score(k(1, 'B'), k(12, 'B')), 0.5);
+        // Paralleltonart: e-Moll (9A) gegen G-Dur (9B).
+        assert_eq!(key_score(k(9, 'B'), k(9, 'A')), 0.3);
+        // Gleichnamig: E-Dur (12B) gegen e-Moll (9A).
+        assert_eq!(key_score(k(12, 'B'), k(9, 'A')), 0.2);
+        assert_eq!(key_score(k(3, 'A'), k(9, 'A')), 0.0);
+    }
 }

@@ -28,7 +28,7 @@ Aus dem Wurzelordner:
 | Oberfläche prüfen | `pnpm --dir ui typecheck && pnpm --dir ui test` |
 | Oberfläche im Browser mit simuliertem Kern | `pnpm --dir ui dev` (Zustände per `?scene=empty\|loaded\|synced\|transition`) |
 | Screenshots und Maßprüfung der Oberfläche | `pnpm --dir ui build && pnpm --dir ui shots` |
-| Kommandozeile | `cargo run --release -p dw-cli -- analyze <Datei>` bzw. `mix <A> <B> -o mix.wav` |
+| Kommandozeile | `cargo run --release -p dw-cli -- analyze <Datei>` bzw. `mix <A> <B> -o mix.wav` bzw. `check docs/referenz-tracks.csv <Musikordner>` (Analyse gegen Referenzwerte) |
 | Installer (aus `app/`) | `node ../ui/node_modules/@tauri-apps/cli/tauri.js build` |
 
 Umgebungsvariablen der Anwendung: `DECKWERK_DATA` (Ordner für Bibliothek und Cache), `DECKWERK_MUSIC` (Ordner, der beim Start importiert wird).

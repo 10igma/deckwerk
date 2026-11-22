@@ -10,12 +10,12 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 
 ## Nächster Schritt
 
-1. **Reste der Abnahme** (braucht dich): Schritt 3 ist mit Referenzwerten aus dem Netz für 21 Tracks ausgewertet (Abschnitt „Referenzwerte aus dem Netz"), offen bleibt dort dein Urteil zu den vier strittigen Tracks; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
+1. **Reste der Abnahme** (braucht dich): Schritt 3 ist mit Referenzwerten aus dem Netz für 21 Tracks ausgewertet, seit der zweiten Runde für 52 Tracks als Datei mit Prüfbefehl (Abschnitt „Referenzdatei und Prüfbefehl"); offen bleiben von Hand gezählte Tempi für das langsame Material; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
 2. **Einstellungen:** Das Audiogerät ist wählbar (seit 21.11.2026, als Auswahlliste; unter Windows im Fenster bestätigt, unter macOS und Linux nicht). Es fehlen Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
 3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster. Seit dem 22.11.2026 gibt es „Bibliothek aktualisieren" und das Aktualisieren beim Start (BIB-19); es fehlen noch: Musikordner in den Einstellungen entfernen, Überwachung im laufenden Betrieb.
 4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
 5. **Installer auf Windows und macOS starten** (braucht dich oder einen Rechner mit diesen Systemen). Sie liegen als Artefakte am Pipeline-Lauf auf GitHub.
-6. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt.
+6. Danach Stufe 2: Key Lock, Loops, Hotcues, vier Decks in der Oberfläche, Mitschnitt. Vorgabe vom 22.11.2026 nach dem Vergleich mit Traktor: Stufe 2 steht fest auf der Liste, ebenso Stufe 4 (Effekte) und Stufe 6 (Stems); in diesen dreien ist Traktor deutlich weiter. Controller (MIDI/HID) sind laut Spezifikation 1.3 nicht Teil der ersten Version; ob das so bleibt, ist nicht entschieden.
 
 ## Erledigte Anforderungen
 
@@ -45,7 +45,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 
 ## Nicht geprüft
 
-- **Analyse an echter Musik (teilweise).** Seit dem 22.11.2026 gibt es einen Vergleich an 21 echten Tracks gegen Werte aus dem Netz (Abschnitt „Referenzwerte aus dem Netz"): Tempo 18/21, Tonart 15/18. Die Referenz ist nicht von Hand geprüft; Raster, Downbeat und Lautheit sind an echter Musik weiter ungeprüft.
+- **Analyse an echter Musik (teilweise).** Seit dem 22.11.2026 gibt es einen Vergleich an 21 echten Tracks gegen Werte aus dem Netz (Abschnitt „Referenzwerte aus dem Netz"): Stand nach der zweiten Runde im Abschnitt „Referenzdatei und Prüfbefehl": Tempo 29/29 bei doppelt belegter Referenz, 38/49 mit den einfach belegten; Tonart 8/9 bzw. 29/35. Die Referenz ist nicht von Hand geprüft; Raster, Downbeat und Lautheit sind an echter Musik weiter ungeprüft.
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
 - **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich erst mit cpal 0.18 öffnen (Fehler 4 im Windows-Abschnitt), in der Anwendung ist es seither über die Einstellungen wählbar und wurde so benutzt. cpal 0.18 ist unter macOS und Linux weder gebaut noch gestartet; das zeigt erst die Pipeline.
 - **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist sie ebenfalls aus den Quellen gebaut und gestartet (21.11.2026), mit der Toolchain `stable-msvc`; den Windows-Installer hat noch niemand gestartet.
@@ -238,6 +238,29 @@ Für Schritt 3 der Abnahme wurden 20 Tracks aus `mp3/` gewählt und Tempo und To
 - **Tonart:** Von 18 Tracks mit einer brauchbaren Referenz stimmen 15 exakt (83 %; Ziel ANA-06: ≥ 70 %). Alle drei Fehler haben den richtigen Grundton und das falsche Tongeschlecht (Dur/Moll). Bei drei Tracks widersprechen sich die Quellen; bei einem davon (`explore_your_future`) trifft Deckwerk keine der genannten Tonarten und liegt eine Quinte daneben.
 - **Was daraus folgt:** Das Tempo ist im üblichen Bereich zuverlässig; die Schwäche liegt außerhalb davon (100 BPM als 200). Bei der Tonart ist die Verwechslung von Dur und Moll das Muster, nicht der Grundton. Beides ist noch nicht behoben.
 - **Nicht gewertet:** Tracks ohne Referenz mit auffälligen Werten (200 BPM, 95–110 BPM, 157,51 BPM, Tempo-Sicherheit nahe 0) – vor allem Noosfære und die kurzen Klipsun-Stücke, für die im Netz keine Werte zu erwarten sind.
+
+## Referenzdatei und Prüfbefehl (22.11.2026)
+
+Die Referenz liegt jetzt als Datei im Repository: `docs/referenz-tracks.csv` (52 Tracks, zwei Recherche-Runden). Der Befehl `deckwerk check docs/referenz-tracks.csv <Musikordner>` analysiert jede Datei neu und meldet die Trefferquote; damit lässt sich nach jeder Änderung an der Analyse nachmessen. Die Musikdateien liegen nicht im Repository.
+
+**Zwei Güten in der Datei:** Ein Wert ohne Zeichen ist durch zwei unabhängige Quellen belegt, ein Wert mit „?" nur durch eine. Widersprechen sich die Quellen, bleibt das Feld leer und wird nicht gewertet. Die Tabelle im Abschnitt davor (erste Runde) wertete großzügiger; maßgeblich sind die Zahlen hier.
+
+**Was die zweite Runde über die Quellen gezeigt hat:** Beatport ist auch beim Tempo nicht verlässlich. Es nennt 95 statt 126 BPM (Consciousness, Higher Power), 80, 95 und 130 statt 137–138 (Ikon-Album), 102 und 92 gegen 136 und 137 bei Shazam (Atmos). Die 130 BPM für `close_to_the_sun` sind damit widerlegt (Volumo 137, Shazam 136); Deckwerk lag mit 137 richtig. Bei der Tonart nennt Volumo fast durchweg Moll, wo Beatport Dur nennt, bei gleichem Grundton – Dur/Moll ist also auch unter den Quellen strittig. Shazam liegt regelmäßig 1 BPM tiefer als die anderen.
+
+**Stand vor jeder Änderung an der Analyse** (`deckwerk check`, 22.11.2026, Toleranz ±0,05 BPM):
+
+| Referenz | Tempo richtig | halb/doppelt | Tonart exakt | Tonart gewichtet |
+|---|---|---|---|---|
+| doppelt belegt | 29 von 29 (100 %) | 0 | 8 von 9 (89 %) | 0,91 |
+| alle, auch einfach belegte | 38 von 49 (78 %) | 4 (8,2 %) | 29 von 35 (83 %) | 0,87 |
+| Ziel (ANA-02, ANA-06) | ≥ 97 % | ≤ 2 % | ≥ 70 % | ≥ 0,80 |
+
+**Befund:**
+
+- **Tempo:** Wo zwei Quellen übereinstimmen, trifft Deckwerk jedes Tempo. Alle elf Abweichungen liegen bei einfach belegten Werten, zehn davon bei langsamem oder beatarmem Material: Noosfære (Downtempo, 74–124 BPM laut Beatport), drei kurze Zwischenstücke von Klipsun, „1000 Different Stories" (100 BPM) und „Dune" (93 BPM, Zuordnung unsicher). Vier davon sind halb/doppelt (164 statt 82, 200 statt 100 zweimal, 140 statt 70). Da genau hier nur Beatport als Quelle vorliegt und Beatport sich beim Tempo mehrfach geirrt hat, ist offen, wie viele dieser elf wirklich Fehler von Deckwerk sind. Sicher falsch sind die beiden 200 BPM. Auffällig: Die Tempo-Sicherheit von Deckwerk ist bei fast allen diesen Tracks niedrig (0–0,5), die Analyse „weiß" also, dass sie unsicher ist.
+- **Tonart:** Ziel erreicht, auch streng gezählt. Die sechs Abweichungen: viermal richtiger Grundton oder Paralleltonart mit falschem Tongeschlecht (Wertung 0,2), einmal eine Quinte daneben, einmal ganz daneben. Der eine Fehler bei doppelt belegter Referenz ist „Consciousness (Eric Prydz Remix)": g-Moll statt G-Dur.
+- **Kommandozeile und Anwendung weichen leicht ab:** `deckwerk check` meldet für `welcome_to_the_opera_(kobosil` 152,00 BPM, die Bibliothek der Anwendung 152,04. Die Kommandozeile wandelt vor der Analyse auf 48 kHz; ob die Anwendung das auch tut, ist nicht nachgesehen. Offener Punkt.
+- **Was das für die nächste Arbeit heißt:** Der Bereich 120–152 BPM braucht am Tempo nichts. Zu tun ist bei langsamem Material (unter 110 BPM) und bei der Wahl zwischen Dur und Moll. Für beides taugt die Datei als Messlatte; für das langsame Material bräuchte es bessere Referenzen (von Hand gezählt), bevor man daran dreht.
 
 ## Bauen unter Windows
 
