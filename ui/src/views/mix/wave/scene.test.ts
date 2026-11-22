@@ -42,8 +42,8 @@ function gridLines(rects: Rect[], y: number, laneH: number): number[] {
   return rects.filter((r) => r.y === y && r.h === laneH && r.w <= 3 && r.color[0] === 1 && r.color[1] === 1 && r.color[3] < 1).map((r) => r.x + r.w / 2);
 }
 
-/** Abspielmarke: weiße, deckende Linie über die ganze Höhe. */
-const playheads = (rects: Rect[]): Rect[] => rects.filter((r) => r.h === HEIGHT && r.w === 2 && r.color[0] === 1 && r.color[2] === 1 && r.color[3] === 1);
+/** Abspielmarke: weiße, deckende Linie über die ganze Höhe oder, im Vorausblick, über eine Bahn. */
+const playheads = (rects: Rect[]): Rect[] => rects.filter((r) => r.h >= 100 && r.w === 2 && r.color[0] === 1 && r.color[2] === 1 && r.color[3] === 1);
 /** Striche der Mittellinie im Vorausblick: Warnfarbe. */
 const centreDashes = (rects: Rect[]): Rect[] => rects.filter((r) => r.color[0] === 1 && r.color[1] === 0.8 && r.color[2] === 0 && r.w === 2 && r.x === WIDTH / 2 - 1);
 
@@ -109,9 +109,29 @@ describe('Vorausblick in den Wellenformen (VIS-13)', () => {
     }
   });
 
-  it('ein stehendes Deck verschiebt sich mit, als liefe es ab jetzt', () => {
-    const cued = lane('b', 120, { pos: 0, playing: false });
+  it('ein stehendes Deck bleibt an seiner Stelle, solange das andere läuft', () => {
+    // B steht am Einsatz bei Sekunde 30; A läuft und zeigt die Stelle in 128 Beats.
+    const cued = lane('b', 120, { pos: 30, playing: false });
     const scene = buildScene(input([a, cued], 128));
+    expect(scene.lanes[0].idxCenter).toBeCloseTo(74 * 750, 6);
+    expect(scene.lanes[1].idxCenter).toBeCloseTo(30 * 750, 6);
+    // Die Abspielmarke von B bleibt in der Bildmitte, in seiner Bahn; die von A liegt außerhalb.
+    expect(scene.lanes[1].headX).toBe(500);
+    const heads = playheads(scene.rects);
+    expect(heads.map((r) => r.x + r.w / 2)).toEqual([500]);
+    expect(heads[0].y).toBe(scene.lanes[1].y);
+    expect(heads[0].h).toBe(scene.lanes[1].h);
+    // Das stehende Deck lässt sich weiter verschieben (Suchen), die Ansicht folgt seiner Stelle.
+    const moved = buildScene(input([a, lane('b', 120, { pos: 45, playing: false })], 128));
+    expect(moved.lanes[1].idxCenter).toBeCloseTo(45 * 750, 6);
+    expect(moved.lanes[0].idxCenter).toBeCloseTo(74 * 750, 6);
+  });
+
+  it('läuft kein Deck, verschieben sich alle', () => {
+    const stopped = lane('a', 120, { pos: 10, playing: false });
+    const cued = lane('b', 120, { pos: 0, playing: false });
+    const scene = buildScene(input([stopped, cued], 128));
+    expect(scene.lanes[0].idxCenter).toBeCloseTo(74 * 750, 6);
     expect(scene.lanes[1].idxCenter).toBeCloseTo(64 * 750, 6);
   });
 

@@ -300,7 +300,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | VIS-10 | Layout skaliert von 1280×720 bis 4K, HiDPI-fähig | M | 0 | keine abgeschnittenen Elemente in den Prüfauflösungen 1280×720, 1920×1080, 2560×1440, 3840×2160 |
 | VIS-11 | Dunkles Design als Standard; zusätzlich kontrastreiches Design | M/S | 0 | Text-Kontrast ≥ 4,5:1, Bedienelemente ≥ 3:1 |
 | VIS-12 | Farben für Frequenzbänder und Tonarten sind auch bei Rot-Grün-Sehschwäche unterscheidbar (zusätzlich Helligkeit/Form) | S | 0 | Prüfung mit Simulationsfilter |
-| VIS-13 | Vorausblick: Die Detail-Wellenformen aller Decks lassen sich gemeinsam vor- und zurückschieben, ohne die Wiedergabe zu verändern; ein Griff führt zurück zur Abspielstelle | M | 1 | Bei einem Vorausblick von n Beats zeigt die Bildmitte je Deck die Stelle, die es in n Beats (Clock-Tempo) erreicht; Beat-Linien synchroner Decks bleiben untereinander; die verschobene Ansicht ist als solche gekennzeichnet |
+| VIS-13 | Vorausblick: Die Detail-Wellenformen der laufenden Decks lassen sich gemeinsam vor- und zurückschieben, ohne die Wiedergabe zu verändern; ein stehendes Deck bleibt dabei an seiner Stelle, solange ein anderes läuft; ein Griff führt zurück zur Abspielstelle | M | 1 | Bei einem Vorausblick von n Beats zeigt die Bildmitte je laufendem Deck die Stelle, die es in n Beats (Clock-Tempo) erreicht; Beat-Linien synchroner Decks bleiben untereinander; ein stehendes Deck zeigt in der Bildmitte weiter seine Abspielstelle; die verschobene Ansicht ist als solche gekennzeichnet |
 
 ### 4.12 Audio-Engine (ENG)
 

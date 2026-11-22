@@ -44,7 +44,7 @@
   "stage.peekFwd": "Ansicht nach vorn schieben",
   "stage.peekBack": "Ansicht zurück schieben",
   "stage.peekReset": "Zurück zur Abspielstelle",
-  "stage.peekHint": "verschiebt nur die Ansicht beider Decks, nicht die Wiedergabe · Shift + Mausrad",
+  "stage.peekHint": "verschiebt nur die Ansicht der laufenden Decks, nicht die Wiedergabe; ein stehendes Deck bleibt stehen · Shift + Mausrad",
   "deck.aria": "Deck {deck}",
   "deck.empty": "leer",
   "deck.dropHere": "Hier ablegen: lädt auf Deck {deck}",
