@@ -272,5 +272,10 @@
   "settings.refreshNoteEmpty": "On: the music folders are scanned for new files at start. None is known yet; folders you drag onto the window are remembered.",
   "lib.incomplete": "Incomplete",
   "lib.incompleteHint": "The file holds less audio than it announces – probably an interrupted copy. Copy it again, then press “Update”.",
-  "notice.incomplete": "“{title}” is incomplete: the file ends earlier than stated. Copy it again, then press “Update”."
+  "notice.incomplete": "“{title}” is incomplete: the file ends earlier than stated. Copy it again, then press “Update”.",
+  "lib.match": "Show matching tracks only",
+  "lib.matchShort": "Matching",
+  "lib.matchHint": "for deck {deck}: {bpm} BPM ±{pct} %, key compatible with {key}",
+  "lib.matchNoRef": "needs a loaded, analysed track as reference",
+  "lib.noneMatch": "No track in the library matches the reference deck in tempo and key."
 }

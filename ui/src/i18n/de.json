@@ -272,5 +272,10 @@
   "settings.refreshNoteEmpty": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Noch ist keiner bekannt; Ordner, die du auf das Fenster ziehst, werden gemerkt.",
   "lib.incomplete": "Unvollständig",
   "lib.incompleteHint": "Die Datei enthält weniger Audio, als sie ankündigt – vermutlich eine abgebrochene Kopie. Neu kopieren, dann „Aktualisieren“.",
-  "notice.incomplete": "„{title}“ ist unvollständig: Die Datei endet früher als angegeben. Neu kopieren, dann „Aktualisieren“."
+  "notice.incomplete": "„{title}“ ist unvollständig: Die Datei endet früher als angegeben. Neu kopieren, dann „Aktualisieren“.",
+  "lib.match": "Nur passende Tracks zeigen",
+  "lib.matchShort": "Passend",
+  "lib.matchHint": "zu Deck {deck}: {bpm} BPM ±{pct} %, Tonart verträglich mit {key}",
+  "lib.matchNoRef": "braucht einen geladenen, analysierten Track als Bezug",
+  "lib.noneMatch": "Kein Track der Bibliothek passt in Tempo und Tonart zum Bezugs-Deck."
 }

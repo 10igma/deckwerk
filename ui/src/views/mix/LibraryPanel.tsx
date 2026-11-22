@@ -8,8 +8,9 @@ import { setUi, useUi, type SortKey } from '../../app/store';
 import type { DeckId, TrackInfo } from '../../core/types';
 import { Cell, Icon, KeyBtn, KeyChip, ListRow, useTip } from '../../design/components';
 import { useLang, useT, type MsgKey } from '../../i18n';
+import { useSnap } from '../../app/frame';
 import { formatBpm, type Lang } from '../../lib/format';
-import { camelotSortValue, camelotString } from '../../lib/key';
+import { camelotSortValue, camelotString, harmonicCompat } from '../../lib/key';
 import { formatDuration } from '../../lib/time';
 
 // Titel und Künstler sind begrenzt, BPM und Tonart schließen direkt an; der Rest bleibt für spätere Spalten frei.
@@ -32,6 +33,31 @@ export function filterTracks(tracks: TrackInfo[], query: string): TrackInfo[] {
     const hay = fold(`${tr.title} ${tr.artist} ${tr.bpm > 0 ? tr.bpm : ''} ${tr.key === null ? '' : camelotString(tr.key)}`);
     return words.every((w) => hay.includes(w));
   });
+}
+
+/** Größter Tempo-Abstand, der noch als passend gilt (wie in den Übergängen, 5.10: Δ ≤ 6 %). */
+export const MATCH_TEMPO = 0.06;
+/** Kleinste harmonische Verträglichkeit K (5.11), die noch als passend gilt: bis „diagonal" und „+2". */
+export const MATCH_KEY = 0.6;
+
+/**
+ * Filter „passt zum laufenden Track" (BIB-11, vereinfacht): Tempo höchstens `MATCH_TEMPO` neben dem
+ * Bezugs-Track und Tonart mit K ≥ `MATCH_KEY` für den Wechsel vom Bezugs-Track aus. Verglichen werden
+ * die analysierten Werte der Tracks, nicht das gerade gespielte Tempo. Der Bezugs-Track selbst und
+ * Tracks ohne Tempo oder Tonart fallen heraus.
+ */
+export function matchTracks(tracks: TrackInfo[], ref: Pick<TrackInfo, 'id' | 'bpm' | 'key'> | null): TrackInfo[] {
+  if (!ref || !(ref.bpm > 0) || ref.key === null) return tracks;
+  const refKey = ref.key;
+  return tracks.filter((tr) => tr.id !== ref.id && tr.bpm > 0 && tr.key !== null && Math.abs(tr.bpm / ref.bpm - 1) <= MATCH_TEMPO + 1e-9 && harmonicCompat(refKey, tr.key) >= MATCH_KEY);
+}
+
+/** Bezugs-Deck für den Filter: der Master, sonst das laufende, sonst das erste geladene Deck. */
+export function matchDeck(master: DeckId | null, loaded: Record<'a' | 'b', boolean>, playing: Record<'a' | 'b', boolean>): 'a' | 'b' | null {
+  if ((master === 'a' || master === 'b') && loaded[master]) return master;
+  if (playing.a && loaded.a) return 'a';
+  if (playing.b && loaded.b) return 'b';
+  return loaded.a ? 'a' : loaded.b ? 'b' : null;
 }
 
 /** Sortieren; Tracks ohne Tempo bzw. Tonart (noch nicht analysiert) stehen immer am Ende. */
@@ -139,10 +165,22 @@ export function LibraryPanel() {
   const big = useUi((s) => s.libraryBig);
   const onA = useUi((s) => s.deckTracks.a?.id ?? null);
   const onB = useUi((s) => s.deckTracks.b?.id ?? null);
+  const matchOn = useUi((s) => s.matchFilter);
+  const trackA = useUi((s) => s.deckTracks.a);
+  const trackB = useUi((s) => s.deckTracks.b);
+  const master = useSnap((s) => s.master);
+  const playingA = useSnap((s) => s.decks[0].playing);
+  const playingB = useSnap((s) => s.decks[1].playing);
+  const refDeck = matchDeck(master, { a: trackA !== null, b: trackB !== null }, { a: playingA, b: playingB });
+  const ref = refDeck === 'a' ? trackA : refDeck === 'b' ? trackB : null;
+  const refUsable = ref !== null && ref.bpm > 0 && ref.key !== null;
   const dragId = useDraggedTrack();
   const body = useRef<HTMLDivElement | null>(null);
 
-  const rows = useMemo(() => sortTracks(filterTracks(tracks, search), sortKey, sortDir, lang), [tracks, search, sortKey, sortDir, lang]);
+  const rows = useMemo(
+    () => sortTracks(filterTracks(matchOn && refUsable ? matchTracks(tracks, ref) : tracks, search), sortKey, sortDir, lang),
+    [tracks, search, sortKey, sortDir, lang, matchOn, refUsable, ref],
+  );
 
   useEffect(() => {
     setVisibleTrackIds(rows.map((r) => r.id));
@@ -190,6 +228,23 @@ export function LibraryPanel() {
           </span>
         )}
         <span className="lib__hint">{t('lib.hint')}</span>
+        <KeyBtn
+          mode="toggle"
+          size="sm"
+          active={matchOn && refUsable}
+          disabled={!refUsable}
+          onPress={() => setUi({ matchFilter: !matchOn })}
+          tip={{
+            name: t('lib.match'),
+            value:
+              refUsable && ref && ref.key !== null && refDeck
+                ? t('lib.matchHint', { deck: refDeck.toUpperCase(), bpm: formatBpm(ref.bpm, lang, 1), pct: Math.round(MATCH_TEMPO * 100), key: camelotString(ref.key) })
+                : t('lib.matchNoRef'),
+          }}
+          ariaLabel={t('lib.match')}
+        >
+          {t('lib.matchShort')}
+        </KeyBtn>
         <RefreshButton />
         <KeyBtn
           mode="toggle"
@@ -269,7 +324,7 @@ export function LibraryPanel() {
               <span />
             </ListRow>
           ))}
-          {rows.length === 0 && <div className="lib__none">{t('lib.none', { query: search })}</div>}
+          {rows.length === 0 && <div className="lib__none">{matchOn && refUsable && search.trim() === '' ? t('lib.noneMatch') : t('lib.none', { query: search })}</div>}
         </div>
       )}
     </section>

@@ -54,6 +54,8 @@ export interface UiState {
   loading: PerDeck<TrackInfo | null>;
   /** Bibliothek aufgezogen: Decks schrumpfen auf eine Zeile (8.2). */
   libraryBig: boolean;
+  /** Liste zeigt nur, was zum Bezugs-Deck passt (BIB-11). */
+  matchFilter: boolean;
   /** Tracks in der Analyse-Warteschlange. */
   pendingAnalysis: number;
   /** Die Liste wurde mindestens einmal vom Kern geholt. */
@@ -109,6 +111,7 @@ let state: UiState = {
   armedId: null,
   loading: perDeck(() => null),
   libraryBig: false,
+  matchFilter: false,
   pendingAnalysis: 0,
   tracksReady: false,
   rendererInfo: '',
