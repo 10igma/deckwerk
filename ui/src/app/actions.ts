@@ -275,7 +275,9 @@ export function seek(deck: DeckId, pos: number, shift = false): boolean {
   let target = clamp(pos, 0, d.duration);
   const assets = getDeckAssets(deck);
   if (d.playing && assets) target = clamp(snapSeek(assets.analysis.grid, d.pos, target), 0, d.duration);
-  send({ type: 'seek', deck, pos: target });
+  // Laufendes Deck: Die Phase hält der Kern im Augenblick des Sprungs. Das hier berechnete Ziel
+  // stammt aus einer Position, die schon einige Millisekunden alt ist, und wäre allein nicht im Takt.
+  send({ type: d.playing ? 'seek_snap' : 'seek', deck, pos: target });
   return true;
 }
 

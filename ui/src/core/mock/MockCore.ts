@@ -410,6 +410,17 @@ export class MockCore implements CoreApi {
       case 'seek':
         if (d && d.track) d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
         break;
+      case 'seek_snap':
+        if (!d || !d.track) break;
+        if (d.playing) {
+          // Wie im Kern: um ganze Beats springen, der Bruchteil (die Phase) bleibt.
+          const now = this.beatOf(d);
+          const beat = now + Math.round(beatAt(d.track.grid, cmd.pos) - now);
+          d.pos = Math.min(Math.max(0, secAt(d.track.grid, beat)), d.track.duration);
+        } else {
+          d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
+        }
+        break;
       case 'tempo':
         if (d) d.manualOffset = Math.min(1, Math.max(-1, cmd.offset));
         break;

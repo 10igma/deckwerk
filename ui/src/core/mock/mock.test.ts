@@ -287,3 +287,23 @@ describe('MockCore', () => {
     expect(seen[1].decks[0].pos).toBe(seen[0].decks[0].pos);
   });
 });
+
+describe('Sprung im Takt (DECK-20)', () => {
+  it('ein laufendes Deck behält seine Phase, ein stehendes springt genau', () => {
+    const core = new MockCore({ manualClock: true });
+    core.loadNow('a', MOCK_TRACKS[0].id);
+    core.apply({ type: 'play', deck: 'a', on: true });
+    run(core, 3.21);
+    const before = last(core).decks[0];
+    const beat = 60 / 134;
+    // Ziel mitten zwischen zwei Beats: Gelandet wird ganze Beats weiter, höchstens einen halben neben dem Ziel.
+    core.apply({ type: 'seek_snap', deck: 'a', pos: 100.123 });
+    const after = last(core).decks[0];
+    expect(Math.abs(after.pos - 100.123)).toBeLessThanOrEqual(beat / 2 + 1e-9);
+    const beats = (after.pos - before.pos) / beat;
+    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-6);
+    core.apply({ type: 'play', deck: 'a', on: false });
+    core.apply({ type: 'seek_snap', deck: 'a', pos: 50.123 });
+    expect(last(core).decks[0].pos).toBeCloseTo(50.123, 9);
+  });
+});

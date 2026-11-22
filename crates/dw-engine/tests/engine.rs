@@ -425,3 +425,66 @@ fn play_in_with_beat_sync_stays_in_phase() {
     assert!(s.decks[1].phase.abs() < 1e-3, "Phase {}", s.decks[1].phase);
     assert!((s.decks[1].bpm - 120.0).abs() < 1e-3);
 }
+
+/// DECK-20: Ein Sprung im Takt erhält die Phase, auch wenn das Ziel aus einer veralteten Position
+/// berechnet wurde (die Oberfläche kennt die Position nur mit einigen Millisekunden Verzug).
+/// Geprüft am Master-Deck und an einem Deck im Beat-Sync; danach liegen die Klicks beider Decks
+/// wieder innerhalb von 1 ms übereinander.
+#[test]
+fn snapped_seek_keeps_the_phase_whatever_the_delay() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 600, 0));
+    e.load(B, click_track(126.0, 0.0, 600, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    e.apply(Command::Play { deck: A, on: true });
+    e.apply(Command::Play { deck: B, on: true });
+    run(&mut e, 4.0, &mut []);
+
+    // Ziel wie in der Oberfläche: ganze Beats ab der bekannten Position – die aber 20 ms alt ist.
+    let stale = e.snapshot().decks[0].pos;
+    run(&mut e, 0.020, &mut []);
+
+    // Zum Vergleich der einfache Sprung: Der Verzug bleibt als Versatz des Masters zu seiner Clock stehen.
+    let mut plain = Engine::new(SR);
+    plain.load(A, click_track(120.0, 0.0, 600, 0));
+    plain.apply(Command::Play { deck: A, on: true });
+    run(&mut plain, 4.02, &mut []);
+    plain.apply(Command::Seek { deck: A, pos: stale + 32.0 * 0.5 });
+    run(&mut plain, 1.0, &mut []);
+    let off = plain.snapshot().decks[0].phase;
+    println!("einfacher Sprung mit 20 ms Verzug: Phase des Masters {off:.4} Beats");
+    assert!(off.abs() > 0.03, "Vergleichsfall zeigt den Fehler nicht: {off}");
+
+    // Sprung im Takt am Master (A).
+    e.apply(Command::SeekSnap { deck: A, pos: stale + 32.0 * 0.5 });
+    run(&mut e, 1.0, &mut []);
+    let s = e.snapshot();
+    assert_eq!(s.master, Some(A));
+    assert!(s.decks[0].phase.abs() < 1e-3, "Master nach dem Sprung: Phase {}", s.decks[0].phase);
+    assert!(s.decks[1].phase.abs() < 1e-3, "B nach dem Sprung von A: Phase {}", s.decks[1].phase);
+    // Gelandet wird höchstens einen halben Beat neben dem Ziel (hier: 20 ms Verzug + 1 s Laufzeit danach).
+    assert!((s.decks[0].pos - (stale + 16.0 + 1.02)).abs() < 0.26, "A bei {}", s.decks[0].pos);
+
+    // Sprung im Takt am Deck im Beat-Sync (B), Ziel mitten zwischen zwei Beats.
+    e.apply(Command::SeekSnap { deck: B, pos: 100.123 });
+    run(&mut e, 1.0, &mut []);
+    let s = e.snapshot();
+    assert!(s.decks[1].phase.abs() < 1e-3, "B nach eigenem Sprung: Phase {}", s.decks[1].phase);
+    assert!((s.decks[1].pos - (100.123 + 120.0 / 126.0)).abs() < 0.26, "B bei {}", s.decks[1].pos);
+
+    // Hörbar im Takt: Jeder Klick von B liegt auf einem Klick von A.
+    let (mut fl, mut fr) = (ClickFinder::new(0, 0.2), ClickFinder::new(1, 0.2));
+    run(&mut e, 20.0, &mut [&mut fl, &mut fr]);
+    assert!(fl.clicks.len() >= 38 && fr.clicks.len() >= 38, "{} / {} Klicks", fl.clicks.len(), fr.clicks.len());
+    let worst = fr.clicks.iter().map(|&r| fl.clicks.iter().map(|&l| (l as i64 - r as i64).abs()).min().unwrap()).max().unwrap();
+    let worst_ms = worst as f64 / SR as f64 * 1000.0;
+    println!("nach zwei Sprüngen im Takt: größte Abweichung {worst_ms:.4} ms");
+    assert!(worst_ms <= 1.0, "Abweichung {worst_ms} ms");
+
+    // Ein stehendes Deck springt genau auf das Ziel.
+    e.apply(Command::Play { deck: B, on: false });
+    run(&mut e, 0.1, &mut []);
+    e.apply(Command::SeekSnap { deck: B, pos: 50.123 });
+    run(&mut e, 0.1, &mut []);
+    assert!((e.snapshot().decks[1].pos - 50.123).abs() < 1e-9);
+}

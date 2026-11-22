@@ -212,7 +212,7 @@ impl Engine {
                 let d = &mut self.decks[i];
                 // Ein vorgemerkter Sprung und ein laufendes Ausblenden gelten zuerst: Gezählt wird ab der Stelle, an der das Deck steht.
                 d.settle();
-                if let Some(Jump::To(p)) = d.jump.take() {
+                if let Some(Jump::To(p) | Jump::ToInPhase(p)) = d.jump.take() {
                     d.set_position(p);
                 }
                 let track_bpm = d.track_bpm();
@@ -222,6 +222,9 @@ impl Engine {
             }
             Command::Seek { deck, pos } => {
                 self.decks[deck.index()].request_jump(Jump::To(pos * self.sr));
+            }
+            Command::SeekSnap { deck, pos } => {
+                self.decks[deck.index()].request_jump(Jump::ToInPhase(pos * self.sr));
             }
             Command::Tempo { deck, offset } => {
                 self.decks[deck.index()].tempo_offset = offset.clamp(-0.99, 1.0);
@@ -368,7 +371,22 @@ impl Engine {
             let is_master = self.master == Some(i);
             let d = &mut self.decks[i];
             d.jump = None;
+            // Sprung im Takt: Das Ziel rückt um höchstens einen halben Beat, sodass das Deck nach dem
+            // Sprung denselben Abstand zur Clock hat wie davor. Der Abstand wird hier gemessen, im
+            // Augenblick des Sprungs – nicht dort, wo die Oberfläche das Ziel berechnet hat.
+            let jump = match jump {
+                Jump::ToInPhase(p) => match &d.track {
+                    Some(t) if d.playing => {
+                        let before = clock - d.beat();
+                        let landing = t.grid.beat_at(p / sr);
+                        Jump::To(t.grid.sec_at(landing + wrap_half(clock - landing - before)) * sr)
+                    }
+                    _ => Jump::To(p),
+                },
+                other => other,
+            };
             match jump {
+                Jump::ToInPhase(_) => {}
                 Jump::To(p) => {
                     d.set_position(p);
                     if is_master {

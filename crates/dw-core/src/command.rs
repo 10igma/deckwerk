@@ -81,6 +81,10 @@ pub enum Command {
     PlayIn { deck: DeckId, beats: f64 },
     /// Auf eine Position springen (Sekunden im Track).
     Seek { deck: DeckId, pos: f64 },
+    /// Sprung im Takt (DECK-20): Ein laufendes Deck landet auf dem Beat-Bruchteil, auf dem es ohne
+    /// Sprung gerade wäre – höchstens einen halben Beat neben `pos`. Seine Phase zur Clock bleibt damit
+    /// erhalten, gleich wie lange der Befehl unterwegs war. Ein stehendes Deck springt genau auf `pos`.
+    SeekSnap { deck: DeckId, pos: f64 },
     /// Tempo-Regler: Abweichung als Faktor, z. B. 0.02 = +2 %.
     Tempo { deck: DeckId, offset: f64 },
     /// Anschieben/Abbremsen: zusätzliche Abweichung, solange gehalten (0 = losgelassen).

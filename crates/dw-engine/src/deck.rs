@@ -12,6 +12,8 @@ use std::sync::Arc;
 pub(crate) enum Jump {
     /// Auf eine Frame-Position.
     To(f64),
+    /// Auf eine Frame-Position, im laufenden Deck verschoben auf die Phase, die es ohne Sprung hätte.
+    ToInPhase(f64),
     /// Auf die Position, die die Master-Clock vorgibt (Beat-Sync).
     Relock,
 }

@@ -192,7 +192,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | DECK-17 | Quantisierung (Q) und Snap (S) global und je Deck schaltbar; Quantisierungsweite 1/4, 1, 4, 16 Beats | M | 2 | Aktionen starten exakt auf dem Rasterpunkt |
 | DECK-18 | Anzeige: Titel, Künstler, Cover, BPM (Original und aktuell), Tonart (aktuell), Tempo-Abweichung in %, gespielte und verbleibende Zeit, Takt-/Beat-Zähler, Beats bis zum nächsten Cue/Abschnitt | M | 1 | Werte aktualisieren sich mit ≥ 30 Hz |
 | DECK-19 | Warnung am Trackende (einstellbar, Standard 30 s) | S | 2 | Deck blinkt, sobald die Restzeit unter dem Wert liegt |
-| DECK-20 | Wiedergabe-Position per Klick in die Übersichts-Wellenform; im laufenden Deck nur mit aktivem Snap auf Beat-Raster (phasenerhaltend) | M | 1 | Sprung ohne Knacken |
+| DECK-20 | Wiedergabe-Position per Klick in die Übersichts-Wellenform; im laufenden Deck nur mit aktivem Snap auf Beat-Raster (phasenerhaltend; die Phase hält der Kern im Augenblick des Sprungs) | M | 1 | Sprung ohne Knacken; Phase zur Clock nach dem Sprung wie davor (≤ 0,001 Beats), auch wenn der Befehl 20 ms unterwegs war; synchrone Decks danach ≤ 1 ms deckungsgleich |
 | DECK-21 | Auto-Cue: nach dem Laden auf „Laden"-Cue oder ersten Beat springen | M | 2 | einstellbar |
 | DECK-22 | Deck duplizieren (Track samt Position und Tempo auf ein anderes Deck kopieren) | S | 2 | beide Decks laufen phasengleich |
 

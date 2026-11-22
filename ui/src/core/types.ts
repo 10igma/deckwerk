@@ -22,6 +22,8 @@ export type Command =
   | { type: 'play_in'; deck: DeckId; beats: number }
   /** Position in Sekunden. */
   | { type: 'seek'; deck: DeckId; pos: number }
+  /** Sprung im Takt (DECK-20): Der Kern verschiebt das Ziel im laufenden Deck um höchstens einen halben Beat, sodass die Phase bleibt. */
+  | { type: 'seek_snap'; deck: DeckId; pos: number }
   /** Tempo-Regler als Faktor, 0.02 = +2 %. */
   | { type: 'tempo'; deck: DeckId; offset: number }
   /** Anschieben/Abbremsen, 0 = losgelassen. */
