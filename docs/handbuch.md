@@ -96,7 +96,7 @@ Wer mit der Maus über einem Bedienelement bleibt, sieht Name, aktuellen Wert un
 1. **Ersten Track laden und starten.** In der Liste auswählen, mit `Shift + ←` auf Deck A laden, `Q` startet. Das Deck wird Taktgeber; seine Taste „Clock" leuchtet, und sein Schild steht in der Kopfzeile neben dem Tempo.
 2. **Zweiten Track laden.** `Shift + →` lädt auf Deck B. Die Tonart-Marke zeigt, ob er zum laufenden Track passt (passt / geht / reibt).
 3. **Vorhören.** `Y` legt Deck B auf den Kopfhörer. Der Regler „Mix" im Kopfhörer-Teil blendet zwischen Vorhör-Signal und Master.
-4. **Angleichen.** `O` schaltet Sync für Deck B ein: Tempo und Phase folgen dem Master. Die Phasenanzeige steht dann in der Mitte, die Kicks in der Bühne stehen sich gegenüber.
+4. **Angleichen.** `O` schaltet Sync für Deck B ein: Tempo und Phase folgen dem Master. Das wirkt auch, wenn noch nichts läuft: Das Deck übernimmt sofort das Tempo des anderen Decks und rückt (Modus „Beat") um höchstens einen halben Beat, sodass die Beat-Linien beider Decks in der Bühne übereinanderstehen. Die Phasenanzeige steht dann in der Mitte, die Kicks in der Bühne stehen sich gegenüber.
 5. **Bass herausnehmen.** `H` nimmt bei B die Tiefen heraus (Kill).
 6. **Einsteigen.** Deck B am Phrasenwechsel von A mit `U` starten, den Kanalfader hochziehen.
 7. **Bässe tauschen.** Am nächsten Phrasenwechsel `G` (Tiefen bei A heraus) und `H` (Tiefen bei B hinein).

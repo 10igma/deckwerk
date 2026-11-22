@@ -237,6 +237,42 @@ impl Engine {
                 let i = deck.index();
                 let clock = self.clock_beats;
                 let is_master = self.master == Some(i);
+                // Sync an einem stehenden Deck wirkt sofort und sichtbar (DECK-08): Es übernimmt das
+                // Tempo, statt bis zum Start zu warten. Läuft etwas, ist das Tempo der Clock gemeint
+                // (die Phase rastet beim Start ein). Läuft nichts, richtet es sich am anderen Deck
+                // aus – am Master, sonst am ersten geladenen – und rückt im Modus „Beat" um höchstens
+                // einen halben Beat, sodass beide gleich im Beat stehen.
+                if mode != SyncMode::Off && self.decks[i].loaded() && !self.decks[i].playing {
+                    let any_playing = self.decks.iter().any(|d| d.playing);
+                    let other = self.master.filter(|&m| m != i && self.decks[m].loaded()).or_else(|| (0..4).find(|&j| j != i && self.decks[j].loaded()));
+                    let reference = if any_playing {
+                        (!is_master).then_some((self.clock_bpm, None))
+                    } else {
+                        other.map(|r| {
+                            let r = &mut self.decks[r];
+                            r.settle();
+                            (r.track_bpm() * (1.0 + r.tempo_offset), Some(r.beat()))
+                        })
+                    };
+                    if let Some((bpm, ref_beat)) = reference {
+                        let sr = self.sr;
+                        let d = &mut self.decks[i];
+                        d.settle();
+                        if bpm > 0.0 && d.track_bpm() > 0.0 {
+                            d.tempo_offset = (bpm / d.track_bpm() - 1.0).clamp(-0.99, 1.0);
+                        }
+                        if let (SyncMode::Beat, Some(ref_beat), None) = (mode, ref_beat, d.jump) {
+                            let beat = d.beat();
+                            let mut target = beat + wrap_half(ref_beat - beat);
+                            let grid = &d.track.as_ref().unwrap().grid;
+                            if grid.sec_at(target) < 0.0 && d.pos >= 0.0 {
+                                target += 1.0;
+                            }
+                            let p = grid.sec_at(target) * sr;
+                            d.set_position(p);
+                        }
+                    }
+                }
                 let d = &mut self.decks[i];
                 if mode == SyncMode::Off && d.sync != SyncMode::Off && d.playing && !is_master {
                     // Beim Verlassen des Sync das aktuelle Tempo behalten.

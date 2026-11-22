@@ -600,7 +600,18 @@ export class MockCore implements CoreApi {
           d.manualOffset = this.effectiveOffset(d, cmd.deck);
         }
         d.sync = cmd.mode;
-        if (cmd.mode === 'beat' && d.track && this.master !== cmd.deck && this.clockBpm > 0) this.alignPhase(d);
+        if (cmd.mode !== 'off' && d.track && !d.playing && !this.decks.some((x) => x.playing)) {
+          // Nichts läuft: Tempo des anderen Decks übernehmen und im Modus „Beat" in dessen Phase rücken.
+          const other = this.decks.find((x, j) => x !== d && x.track && DECK_IDS[j] === this.master) ?? this.decks.find((x) => x !== d && x.track);
+          if (other?.track) {
+            d.manualOffset = Math.min(1, Math.max(-0.99, (other.track.bpm * (1 + other.manualOffset)) / d.track.bpm - 1));
+            if (cmd.mode === 'beat') {
+              const beat = this.beatOf(d);
+              const target = beat + wrapPhase(this.beatOf(other) - beat);
+              d.pos = secAt(d.track.grid, secAt(d.track.grid, target) < 0 ? target + 1 : target);
+            }
+          }
+        } else if (cmd.mode === 'beat' && d.track && this.master !== cmd.deck && this.clockBpm > 0) this.alignPhase(d);
         break;
       case 'set_master':
         this.masterMode = cmd.deck;

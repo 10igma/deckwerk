@@ -18,7 +18,7 @@ export interface Notice {
 export interface UiState {
   lang: Lang;
   theme: Theme;
-  /** Sichtbare Beats in den parallelen Wellenformen (1–32). */
+  /** Sichtbare Beats in den parallelen Wellenformen (1–128). */
   zoomBeats: number;
   /**
    * Vorausblick (VIS-13): Die Wellenformen aller Decks zeigen die Stelle, die in so vielen Beats

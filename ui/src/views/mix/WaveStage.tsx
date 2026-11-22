@@ -21,7 +21,7 @@ import type { WaveRenderer } from './wave/renderer';
 import { buildScene, secondsPerPx, FALLBACK_BPM, type LaneInput, type StageColors } from './wave/scene';
 import { WebGLWaveRenderer } from './wave/webgl';
 
-export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32];
+export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32, 64, 128];
 const LANES: [DeckId, DeckId] = ['a', 'b'];
 /** Höhe der Beat-Schiene in rem (je Deck eine Hälfte). */
 export const RAIL_REM = 2;

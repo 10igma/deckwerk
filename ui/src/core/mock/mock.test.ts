@@ -288,6 +288,30 @@ describe('MockCore', () => {
   });
 });
 
+describe('Sync im Stand (DECK-08)', () => {
+  it('nichts läuft: Tempo des anderen Decks sofort, im Modus „Beat“ dieselbe Stelle im Beat', () => {
+    const core = new MockCore({ scene: 'loaded', manualClock: true });
+    for (const deck of ['a', 'b'] as const) core.send({ type: 'play', deck, on: false });
+    core.send({ type: 'sync', deck: 'b', mode: 'off' });
+    core.send({ type: 'tempo', deck: 'a', offset: 0.02 });
+    core.send({ type: 'seek', deck: 'a', pos: 20.13 });
+    core.send({ type: 'seek', deck: 'b', pos: 41 });
+    core.step(1 / 60);
+    const before = last(core);
+    core.send({ type: 'sync', deck: 'b', mode: 'tempo' });
+    core.step(1 / 60);
+    expect(last(core).decks[1].bpm).toBeCloseTo(before.decks[0].bpm, 6);
+    expect(last(core).decks[1].pos).toBe(before.decks[1].pos);
+    core.send({ type: 'sync', deck: 'b', mode: 'beat' });
+    core.step(1 / 60);
+    const s = last(core);
+    const frac = (b: number) => b - Math.floor(b);
+    expect(frac(s.decks[1].beat)).toBeCloseTo(frac(s.decks[0].beat), 6);
+    expect(Math.abs(s.decks[1].beat - before.decks[1].beat)).toBeLessThanOrEqual(0.5 + 1e-9);
+    expect(s.decks[0].pos).toBe(before.decks[0].pos);
+  });
+});
+
 describe('Sprung im Takt (DECK-20)', () => {
   it('ein laufendes Deck behält seine Phase, ein stehendes springt genau', () => {
     const core = new MockCore({ manualClock: true });
