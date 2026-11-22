@@ -283,7 +283,17 @@ pub fn plan_preview(transition: &Transition, roles: Roles, out: LiveDeck, inn: L
     scheduled.push((stop, Command::Play { deck: roles.out, on: false }));
     scheduled.push((stop, Command::Play { deck: roles.inn, on: false }));
     scheduled.sort_by(|a, b| a.0.total_cmp(&b.0));
-    Ok(PreviewPlan { start, stop, out_pos: out.grid.sec_at(out_t0 + start), in_pos: inn.grid.sec_at(in_t0 + start), now, scheduled })
+    // Stelle des neuen Decks zu Beginn des Vorhörens. Startet es erst später (an seinem Einsatz),
+    // wartet es genau dort, wo es einsteigt – nicht um den Vorlauf davor, sonst spielte es einen
+    // Takt zu früh im Track. Ist sein Einsatz schon vorbei, steht es entsprechend weiter.
+    let in_beat = if inn.playing {
+        in_t0 + start
+    } else if in_started {
+        in_t0 + (start - transition.start_in.unwrap_or(0.0))
+    } else {
+        in_t0
+    };
+    Ok(PreviewPlan { start, stop, out_pos: out.grid.sec_at(out_t0 + start), in_pos: inn.grid.sec_at(in_beat), now, scheduled })
 }
 
 #[cfg(test)]
@@ -406,7 +416,8 @@ mod tests {
         let p = plan_preview(&t, ROLES, a, b, when, 0.0).unwrap();
         assert_eq!((p.start, p.stop), (-4.0, 64.0 + PREVIEW_TAIL));
         assert!((ga.beat_at(p.out_pos) - (37.5 + live.t0 - 4.0)).abs() < 1e-9);
-        assert!((gb.beat_at(p.in_pos) - (66.0 - 4.0)).abs() < 1e-9);
+        // B wartet an seinem Einsatz (Beat 66) und startet dort bei T0 – nicht einen Takt davor.
+        assert!((gb.beat_at(p.in_pos) - 66.0).abs() < 1e-9, "B wartet bei Beat {}", gb.beat_at(p.in_pos));
         assert!(p.now.is_empty());
         assert_eq!(p.scheduled[0], (-4.0, Command::Play { deck: A, on: true }));
         assert!(p.scheduled.contains(&(0.0, Command::Play { deck: B, on: true })));
@@ -437,7 +448,7 @@ mod tests {
         // Stehen beide Decks, gelten ihre Stellen selbst: als Beginn …
         let p = plan_preview(&t, ROLES, a, b, When::StartHere, 0.0).unwrap();
         assert!((ga.beat_at(p.out_pos) - (37.0 - 4.0)).abs() < 1e-9, "A bei Beat {}", ga.beat_at(p.out_pos));
-        assert!((gb.beat_at(p.in_pos) - (66.0 - 4.0)).abs() < 1e-9);
+        assert!((gb.beat_at(p.in_pos) - 66.0).abs() < 1e-9);
         // … oder als Ende: Beide erreichen ihre Stelle, wenn der Übergang abgeschlossen ist.
         let p = plan_preview(&t, ROLES, a, b, When::EndHere, 56.0).unwrap();
         assert_eq!(p.start, 52.0);
@@ -457,7 +468,7 @@ mod tests {
         assert!(matches!(late, LiveError::Passed(n) if (n - 1.0).abs() < 1e-9), "{late:?}");
         // Vorhören am festen Ort geht von überall, auch wenn A dahinter steht.
         let p = plan_preview(&t, ROLES, deck(&ga, ga.sec_at(300.0), 120.0), b, at, 0.0).unwrap();
-        assert!((ga.beat_at(p.out_pos) - 93.0).abs() < 1e-9 && (gb.beat_at(p.in_pos) - 126.0).abs() < 1e-9);
+        assert!((ga.beat_at(p.out_pos) - 93.0).abs() < 1e-9 && (gb.beat_at(p.in_pos) - 130.0).abs() < 1e-9);
         assert_eq!(serde_json::from_str::<When>(r#"{"type":"at","out_pos":12.5,"in_pos":3}"#).unwrap(), When::At { out_pos: 12.5, in_pos: 3.0 });
         // Hinter dem Ende gewählt: Es bleibt beim letzten Takt.
         assert_eq!(plan_preview(&t, ROLES, a, b, when, 999.0).unwrap().start, 56.0);
