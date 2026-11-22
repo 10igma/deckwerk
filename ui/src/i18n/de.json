@@ -267,7 +267,7 @@
   "notice.refreshNoFolder": "Noch kein Musikordner bekannt. Zieh einen Ordner auf das Fenster.",
   "notice.refreshUnreachable": "{n} Musikordner nicht erreichbar. {added} Tracks neu.",
   "notice.refreshFailed": "Aktualisieren gescheitert: {reason}",
-  "settings.refreshOnStart": "Bibliothek beim Start aktualisieren",
-  "settings.refreshNote": "Musikordner: {folders}. Ordner, die du auf das Fenster ziehst, kommen dazu.",
-  "settings.refreshNoteEmpty": "Noch kein Musikordner bekannt. Ordner, die du auf das Fenster ziehst, werden gemerkt."
+  "settings.refreshOnStart": "Bibliothek",
+  "settings.refreshNote": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Musikordner: {folders}. Ordner, die du auf das Fenster ziehst, kommen dazu.",
+  "settings.refreshNoteEmpty": "An: Beim Start werden die Musikordner nach neuen Dateien durchsucht. Noch ist keiner bekannt; Ordner, die du auf das Fenster ziehst, werden gemerkt."
 }

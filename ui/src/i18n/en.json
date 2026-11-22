@@ -267,7 +267,7 @@
   "notice.refreshNoFolder": "No music folder known yet. Drag a folder onto the window.",
   "notice.refreshUnreachable": "{n} music folders unreachable. {added} tracks new.",
   "notice.refreshFailed": "Update failed: {reason}",
-  "settings.refreshOnStart": "Update library on start",
-  "settings.refreshNote": "Music folders: {folders}. Folders you drag onto the window are added.",
-  "settings.refreshNoteEmpty": "No music folder known yet. Folders you drag onto the window are remembered."
+  "settings.refreshOnStart": "Library",
+  "settings.refreshNote": "On: the music folders are scanned for new files at start. Music folders: {folders}. Folders you drag onto the window are added.",
+  "settings.refreshNoteEmpty": "On: the music folders are scanned for new files at start. None is known yet; folders you drag onto the window are remembered."
 }
