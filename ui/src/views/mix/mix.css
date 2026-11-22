@@ -969,3 +969,164 @@
   max-width: 46rem;
   font-size: var(--fs-3);
 }
+
+/* Editor für Übergänge (TRANS-04) */
+.ted {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: var(--lib-bar-h) minmax(0, 1fr);
+  background: var(--bg-1);
+}
+.ted__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 0.6rem;
+  border-bottom: 1px solid var(--line-1);
+  min-width: 0;
+}
+.ted__bar > .dw-key,
+.ted__curves > .dw-key {
+  height: max(28px, 1.8rem);
+}
+.ted__name {
+  width: 14rem;
+  height: max(28px, var(--ctl-h-sm));
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text-1);
+  font: 500 var(--fs-3) / 1 var(--font-text);
+}
+.ted__name:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--focus-ring);
+}
+.ted__point {
+  font-size: var(--fs-2);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ted__curves {
+  display: flex;
+  gap: var(--sp-1);
+  flex: none;
+}
+.ted__spacer {
+  flex: 1;
+}
+.ted__body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1.2rem repeat(5, minmax(2.4rem, 1fr));
+  padding: var(--sp-2) 0.6rem var(--sp-2);
+  gap: var(--sp-1);
+  overflow-y: auto;
+}
+.ted__row {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+.ted__label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ted__sides {
+  display: flex;
+  gap: var(--sp-1);
+}
+.ted__side {
+  height: 1.3rem;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  color: var(--text-3);
+  font: 600 var(--fs-1) / 1 var(--font-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ted__side[data-active='true'][data-side='out'] {
+  color: var(--bg-0);
+  background: var(--deck-a);
+}
+.ted__side[data-active='true'][data-side='in'] {
+  color: var(--bg-0);
+  background: var(--deck-b);
+}
+.ted__lane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  cursor: crosshair;
+  touch-action: none;
+}
+.ted__lane svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.ted__grid {
+  stroke: var(--line-1);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.ted__grid[data-strong='true'] {
+  opacity: 1;
+}
+.ted__grid[data-zero='true'] {
+  stroke: var(--text-3);
+  opacity: 1;
+}
+.ted__clash {
+  fill: var(--status-danger);
+  opacity: 0.22;
+}
+.ted__curve {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0.55;
+}
+.ted__curve[data-active='true'] {
+  opacity: 1;
+}
+.ted__curve[data-side='out'],
+.ted__dot[data-side='out'] {
+  stroke: var(--deck-a);
+}
+.ted__curve[data-side='in'],
+.ted__dot[data-side='in'] {
+  stroke: var(--deck-b);
+}
+.ted__dot {
+  fill: var(--bg-0);
+  stroke-width: 2;
+}
+.ted__dot[data-side='out'][data-selected='true'] {
+  fill: var(--deck-a);
+}
+.ted__dot[data-side='in'][data-selected='true'] {
+  fill: var(--deck-b);
+}
+.ted__ruler {
+  position: relative;
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+.ted__ruler span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}

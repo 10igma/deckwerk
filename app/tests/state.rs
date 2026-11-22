@@ -431,3 +431,56 @@ fn recording_writes_the_master_signal_to_a_wav_file() {
     state.stop_recording().unwrap();
     assert_eq!(std::fs::read_dir(&recordings).unwrap().count(), 3);
 }
+
+/// TRANS-04: Eigene Übergänge werden gespeichert, ersetzt, gelöscht und überdauern einen Neustart;
+/// Unsinn und die Namen der eingebauten Vorlagen werden abgelehnt.
+#[test]
+fn own_transitions_are_saved_and_survive_a_restart() {
+    use dw_automix::{Curve, Param, Side, Transition};
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("daten");
+    let state = AppState::start(&data).unwrap();
+    assert!(state.saved_transitions().is_empty());
+
+    let mut mine = Transition::bass_swap(16);
+    mine.name = "  Langer Tausch ".into();
+    // Bass-Tausch über zwei Takte statt eines Beats, weich.
+    let low_out = mine.lanes.iter_mut().find(|l| l.side == Side::Out && l.param == Param::EqLow).unwrap();
+    low_out.points[0].beat = 24.0;
+    low_out.points[1].curve = Curve::Smooth;
+    let list = state.save_transition(&mine).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "Langer Tausch");
+
+    let mut second = Transition::fade(8);
+    second.name = "Kurz".into();
+    assert_eq!(state.save_transition(&second).unwrap().len(), 2);
+    // Gleicher Name ersetzt.
+    mine.bars = 32;
+    let list = state.save_transition(&mine).unwrap();
+    assert_eq!((list.len(), list[0].bars), (2, 32));
+
+    // Abgelehnt: eingebauter Name, leerer Name, Werte außerhalb des Reglers.
+    assert!(state.save_transition(&Transition::fade(8)).unwrap_err().contains("eingebauten Vorlage"));
+    let mut nameless = Transition::fade(8);
+    nameless.name = "   ".into();
+    assert!(state.save_transition(&nameless).is_err());
+    let mut broken = second.clone();
+    broken.lanes[0].points[0].value = 3.0;
+    assert!(state.save_transition(&broken).is_err());
+    assert_eq!(state.saved_transitions().len(), 2);
+
+    // Neustart: beide sind da, mit Kill als Kill und der Kurvenform.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    let list = state.saved_transitions();
+    assert_eq!(list.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["Langer Tausch", "Kurz"]);
+    let low_out = list[0].lanes.iter().find(|l| l.side == Side::Out && l.param == Param::EqLow).unwrap();
+    assert_eq!((low_out.points[0].beat, low_out.points[1].value, low_out.points[1].curve), (24.0, f32::NEG_INFINITY, Curve::Smooth));
+
+    assert_eq!(state.delete_transition("Kurz").unwrap().len(), 1);
+    assert_eq!(state.delete_transition("gibt es nicht").unwrap().len(), 1);
+    // Eine kaputte Datei macht die Liste leer statt die Anwendung zu stoppen.
+    std::fs::write(data.join("transitions.json"), b"{ kaputt").unwrap();
+    assert!(state.saved_transitions().is_empty());
+}

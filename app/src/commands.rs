@@ -111,6 +111,23 @@ pub fn transition_templates(bars: u32) -> Vec<dw_automix::Transition> {
     dw_automix::Transition::templates(bars.clamp(1, 256))
 }
 
+/// Selbst gebaute Übergänge (TRANS-04).
+#[tauri::command]
+pub fn transition_saved(state: State<AppState>) -> Vec<dw_automix::Transition> {
+    state.saved_transitions()
+}
+
+/// Übergang speichern oder ersetzen; liefert die neue Liste.
+#[tauri::command]
+pub fn transition_save(state: State<AppState>, transition: dw_automix::Transition) -> Result<Vec<dw_automix::Transition>, String> {
+    state.save_transition(&transition)
+}
+
+#[tauri::command]
+pub fn transition_delete(state: State<AppState>, name: String) -> Result<Vec<dw_automix::Transition>, String> {
+    state.delete_transition(&name)
+}
+
 /// Vorbereiteten Übergang einplanen (TRANS-05).
 #[tauri::command]
 pub fn transition_start(

@@ -60,6 +60,11 @@ export interface CoreApi {
    * Abgelehnt mit Klartext, wenn die Voraussetzungen fehlen.
    */
   startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun>;
+  /** Selbst gebaute Übergänge (TRANS-04). */
+  listSavedTransitions(): Promise<Transition[]>;
+  /** Speichert einen Übergang unter seinem Namen (ersetzt einen gleichnamigen); liefert die neue Liste. */
+  saveTransition(transition: Transition): Promise<Transition[]>;
+  deleteTransition(name: string): Promise<Transition[]>;
   /** Bricht den eingeplanten oder laufenden Übergang ab; die Regler bleiben stehen. */
   cancelTransition(): Promise<void>;
   /** Mitschnitt des Master-Signals beginnen (REC-01); `stamp` ist der Zeitstempel für den Dateinamen. */

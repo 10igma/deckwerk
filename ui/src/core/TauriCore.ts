@@ -183,6 +183,18 @@ export class TauriCore implements CoreApi {
     return this.invoke<void>('transition_cancel');
   }
 
+  listSavedTransitions(): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_saved');
+  }
+
+  saveTransition(transition: Transition): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_save', { transition });
+  }
+
+  deleteTransition(name: string): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_delete', { name });
+  }
+
   startRecording(stamp: string): Promise<RecordingInfo> {
     return this.invoke<RecordingInfo>('record_start', { stamp });
   }

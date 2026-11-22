@@ -277,6 +277,49 @@ impl AppState {
         self.recorder.status()
     }
 
+    fn transitions_file(&self) -> PathBuf {
+        self.settings_file.with_file_name("transitions.json")
+    }
+
+    /// Selbst gebaute Übergänge (TRANS-04), in der Reihenfolge des Anlegens. Fehlt die Datei oder
+    /// ist sie unlesbar, ist die Liste leer.
+    pub fn saved_transitions(&self) -> Vec<Transition> {
+        std::fs::read(self.transitions_file()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    }
+
+    /// Speichert einen Übergang unter seinem Namen; ein vorhandener gleichen Namens wird ersetzt.
+    pub fn save_transition(&self, transition: &Transition) -> Result<Vec<Transition>, String> {
+        let name = transition.name.trim();
+        if name.is_empty() || name.chars().count() > 60 {
+            return Err("Der Übergang braucht einen Namen mit höchstens 60 Zeichen.".into());
+        }
+        if Transition::templates(transition.bars.max(1)).iter().any(|t| t.name == name) {
+            return Err(format!("„{name}“ ist der Name einer eingebauten Vorlage."));
+        }
+        transition.validate()?;
+        let mut all = self.saved_transitions();
+        let clean = Transition { name: name.to_string(), ..transition.clone() };
+        match all.iter_mut().find(|t| t.name == name) {
+            Some(slot) => *slot = clean,
+            None => all.push(clean),
+        }
+        self.write_transitions(&all)?;
+        Ok(all)
+    }
+
+    pub fn delete_transition(&self, name: &str) -> Result<Vec<Transition>, String> {
+        let mut all = self.saved_transitions();
+        all.retain(|t| t.name != name);
+        self.write_transitions(&all)?;
+        Ok(all)
+    }
+
+    fn write_transitions(&self, all: &[Transition]) -> Result<(), String> {
+        let file = self.transitions_file();
+        let json = serde_json::to_vec_pretty(all).map_err(|e| e.to_string())?;
+        std::fs::write(&file, json).map_err(|e| format!("{}: {e}", file.display()))
+    }
+
     pub fn touch_library(&self) {
         self.library_rev.fetch_add(1, Ordering::Relaxed);
     }

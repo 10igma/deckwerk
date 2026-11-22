@@ -2,6 +2,7 @@ import { useUi } from '../../app/store';
 import { DeckPanel, MiniDeck } from './DeckPanel';
 import { LibraryPanel } from './LibraryPanel';
 import { Mixer } from './Mixer';
+import { TransitionEditor } from './TransitionEditor';
 import { WaveStage } from './WaveStage';
 import './mix.css';
 
@@ -11,6 +12,7 @@ import './mix.css';
  */
 export function MixView() {
   const big = useUi((s) => s.libraryBig);
+  const editing = useUi((s) => s.editor !== null);
   return (
     <div className="mix" data-lib={big ? 'big' : 'normal'}>
       <WaveStage />
@@ -26,7 +28,8 @@ export function MixView() {
           <DeckPanel deck="b" side="right" />
         </div>
       )}
-      <LibraryPanel />
+      {/* Der Editor für Übergänge nimmt, solange er offen ist, den Platz der Bibliothek ein. */}
+      {editing ? <TransitionEditor /> : <LibraryPanel />}
     </div>
   );
 }

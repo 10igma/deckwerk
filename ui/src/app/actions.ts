@@ -2,10 +2,11 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type TransitionWhen } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type Transition, type TransitionWhen } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
+import { freeName } from '../lib/transition';
 import { translate, type MsgKey, type Params } from '../i18n';
 import { clearDeckAssets, getDeckAssets, loadDeckAssets } from './assets';
 import { latestSnapshot } from './frame';
@@ -614,14 +615,80 @@ export async function startTransition(when?: TransitionWhen): Promise<void> {
   }
   const ui = getUi();
   try {
-    const templates = await core.listTransitions(ui.transitionBars);
-    const transition = templates.find((t) => t.name === ui.transitionName) ?? templates[0];
+    const transition = await selectedTransition();
     if (!transition) return;
     const run = await core.startTransition(roles.from, roles.to, transition, when ?? transitionWhen(ui.peekBeats));
     // Der Vorausblick hat seinen Dienst getan: zurück zur Abspielstelle, die Zone bleibt eingezeichnet.
     setUi({ transition: run, peekBeats: 0 });
   } catch (err) {
     showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Der gewählte Übergang: ein selbst gebauter mit seiner eigenen Länge, sonst die eingebaute Vorlage in der gewählten Länge. */
+export async function selectedTransition(): Promise<Transition | null> {
+  if (!core) return null;
+  const ui = getUi();
+  const own = ui.savedTransitions.find((t) => t.name === ui.transitionName);
+  if (own) return own;
+  const templates = await core.listTransitions(ui.transitionBars);
+  return templates.find((t) => t.name === ui.transitionName) ?? templates[0] ?? null;
+}
+
+/** Wählt eine Vorlage oder einen eigenen Übergang; ein eigener bringt seine Länge mit. */
+export function chooseTransition(name: string): void {
+  const own = getUi().savedTransitions.find((t) => t.name === name);
+  setUi(own ? { transitionName: name, transitionBars: own.bars } : { transitionName: name });
+}
+
+/** Lädt die selbst gebauten Übergänge (beim Start der Oberfläche). */
+export async function loadSavedTransitions(): Promise<void> {
+  if (!core) return;
+  try {
+    setUi({ savedTransitions: await core.listSavedTransitions() });
+  } catch {
+    // Ohne Liste bleiben die eingebauten Vorlagen.
+  }
+}
+
+/** Öffnet den Editor mit dem gewählten Übergang; eine eingebaute Vorlage wird dabei zur Kopie mit eigenem Namen. */
+export async function openEditor(): Promise<void> {
+  const ui = getUi();
+  const current = await selectedTransition();
+  if (!current) return;
+  const own = ui.savedTransitions.some((t) => t.name === current.name);
+  const draft: Transition = own ? current : { ...current, name: freeName(say('ed.newName'), ui.savedTransitions.map((t) => t.name)) };
+  setUi({ editor: { draft: JSON.parse(JSON.stringify(draft)) as Transition, original: own ? current.name : null } });
+}
+
+export function closeEditor(): void {
+  setUi({ editor: null });
+}
+
+/** Speichert den Entwurf und wählt ihn aus. Der Editor bleibt offen. */
+export async function saveEditor(): Promise<void> {
+  const editor = getUi().editor;
+  if (!core || !editor) return;
+  try {
+    const name = editor.draft.name.trim();
+    let list = await core.saveTransition({ ...editor.draft, name });
+    // Umbenannt: Der alte Eintrag verschwindet.
+    if (editor.original !== null && editor.original !== name) list = await core.deleteTransition(editor.original);
+    setUi({ savedTransitions: list, editor: { draft: { ...editor.draft, name }, original: name }, transitionName: name, transitionBars: editor.draft.bars });
+    showNotice(say('ed.saved', { name }));
+  } catch (err) {
+    showNotice(say('ed.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+export async function deleteSavedTransition(name: string): Promise<void> {
+  if (!core) return;
+  try {
+    const list = await core.deleteTransition(name);
+    const ui = getUi();
+    setUi({ savedTransitions: list, editor: null, ...(ui.transitionName === name ? { transitionName: 'bass_swap' } : {}) });
+  } catch (err) {
+    showNotice(say('ed.failed', { reason: errorText(err) }), 'error');
   }
 }
 

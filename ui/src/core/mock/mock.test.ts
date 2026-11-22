@@ -331,3 +331,16 @@ describe('Mitschnitt (REC-01)', () => {
     expect(await core.recordingStatus()).toBe(null);
   });
 });
+
+describe('Eigene Übergänge (TRANS-04)', () => {
+  it('simulierter Kern: speichern, ersetzen, löschen; eingebaute Namen sind gesperrt', async () => {
+    const core = new MockCore({ manualClock: true });
+    const [template] = await core.listTransitions(16);
+    expect(await core.listSavedTransitions()).toEqual([]);
+    expect((await core.saveTransition({ ...template, name: ' Mein Tausch ' })).map((t) => t.name)).toEqual(['Mein Tausch']);
+    expect((await core.saveTransition({ ...template, name: 'Mein Tausch', bars: 32 }))[0].bars).toBe(32);
+    await expect(core.saveTransition({ ...template, name: 'fade' })).rejects.toContain('eingebauten Vorlage');
+    await expect(core.saveTransition({ ...template, name: '  ' })).rejects.toContain('Namen');
+    expect(await core.deleteTransition('Mein Tausch')).toEqual([]);
+  });
+});

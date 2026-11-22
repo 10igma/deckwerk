@@ -316,6 +316,28 @@ export class MockCore implements CoreApi {
     return Promise.resolve();
   }
 
+  private saved: Transition[] = [];
+
+  listSavedTransitions(): Promise<Transition[]> {
+    return Promise.resolve(this.saved.map((t) => ({ ...t })));
+  }
+
+  saveTransition(transition: Transition): Promise<Transition[]> {
+    const name = transition.name.trim();
+    if (name === '' || name.length > 60) return Promise.reject('Der Übergang braucht einen Namen mit höchstens 60 Zeichen.');
+    if (name === 'bass_swap' || name === 'fade') return Promise.reject(`„${name}“ ist der Name einer eingebauten Vorlage.`);
+    const clean = { ...transition, name };
+    const i = this.saved.findIndex((t) => t.name === name);
+    if (i >= 0) this.saved[i] = clean;
+    else this.saved.push(clean);
+    return this.listSavedTransitions();
+  }
+
+  deleteTransition(name: string): Promise<Transition[]> {
+    this.saved = this.saved.filter((t) => t.name !== name);
+    return this.listSavedTransitions();
+  }
+
   /** Führt den simulierten Übergang mit der Clock mit. */
   private advanceTransition(): void {
     const run = this.run;

@@ -2,7 +2,7 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, cancelTransition, focusDeck, peekAfter, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
+import { bend, cancelTransition, chooseTransition, focusDeck, loadSavedTransitions, openEditor, peekAfter, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
@@ -140,7 +140,7 @@ function StageMenu({ target, left, top, onClose }: { target: StageTarget; left: 
     run();
   };
   const length = bars * 4;
-  const template = t(name === 'fade' ? 'trans.fade' : 'trans.bassSwap');
+  const template = name === 'fade' ? t('trans.fade') : name === 'bass_swap' ? t('trans.bassSwap') : name;
   let body;
   if (target.kind === 'deck') {
     body = (
@@ -222,6 +222,11 @@ function TransitionBar() {
   const loadedB = useSnap((s) => s.decks[1].loaded);
   const playingA = useSnap((s) => s.decks[0].playing);
   const playingB = useSnap((s) => s.decks[1].playing);
+  const saved = useUi((s) => s.savedTransitions);
+  const own = saved.some((s) => s.name === name);
+  useEffect(() => {
+    void loadSavedTransitions();
+  }, []);
   const over = useSnap((s) => run !== null && s.clock_beats > run.end_beat);
   useEffect(() => {
     if (over) setUi({ transition: null });
@@ -257,15 +262,21 @@ function TransitionBar() {
   }
   return (
     <div className="stage__trans" onPointerDown={stop}>
-      <select className="stage__select" value={name} aria-label={t('trans.template')} onChange={(e) => setUi({ transitionName: e.target.value })}>
+      <select className="stage__select" value={name} aria-label={t('trans.template')} onChange={(e) => chooseTransition(e.target.value)}>
         {TRANSITION_NAMES.map((n) => (
           <option key={n} value={n}>
             {t(n === 'bass_swap' ? 'trans.bassSwap' : 'trans.fade')}
           </option>
         ))}
+        {saved.map((s) => (
+          <option key={s.name} value={s.name}>
+            {s.name}
+          </option>
+        ))}
       </select>
-      <select className="stage__select" value={bars} aria-label={t('trans.length')} onChange={(e) => setUi({ transitionBars: Number(e.target.value) })}>
-        {TRANSITION_BARS.map((b) => (
+      {/* Ein eigener Übergang bringt seine Länge mit. */}
+      <select className="stage__select" value={bars} disabled={own} aria-label={t('trans.length')} onChange={(e) => setUi({ transitionBars: Number(e.target.value) })}>
+        {[...new Set<number>([...TRANSITION_BARS, bars])].sort((a, b) => a - b).map((b) => (
           <option key={b} value={b}>
             {t('trans.bars', { n: b })}
           </option>
@@ -282,6 +293,9 @@ function TransitionBar() {
         ariaLabel={t('trans.start')}
       >
         {roles ? t(peek > 0 ? 'trans.fromToEnd' : 'trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
+      </KeyBtn>
+      <KeyBtn size="sm" onPress={() => void openEditor()} tip={{ name: t('ed.open'), value: t('ed.openHint') }} ariaLabel={t('ed.open')}>
+        {t('ed.openShort')}
       </KeyBtn>
     </div>
   );

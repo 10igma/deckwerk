@@ -1,7 +1,7 @@
 // Zustand der Oberfläche (alles, was nicht aus dem Kern kommt). Kleiner eigener Speicher
 // auf Basis von useSyncExternalStore.
 import { useSyncExternalStore } from 'react';
-import type { DeckId, RecordingInfo, TrackId, TrackInfo, TransitionRun } from '../core/types';
+import type { DeckId, RecordingInfo, TrackId, TrackInfo, Transition, TransitionRun } from '../core/types';
 import type { Lang } from '../lib/format';
 
 export type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'duration';
@@ -60,6 +60,10 @@ export interface UiState {
   recording: { info: RecordingInfo; since: number } | null;
   /** Eingeplanter oder laufender Übergang (TRANS-05). */
   transition: TransitionRun | null;
+  /** Selbst gebaute Übergänge (TRANS-04). */
+  savedTransitions: Transition[];
+  /** Übergang im Editor: der Entwurf und der Name, unter dem er gespeichert ist (null = neu). */
+  editor: { draft: Transition; original: string | null } | null;
   /** Gewählte Vorlage und Länge für den nächsten Übergang. */
   transitionName: string;
   transitionBars: number;
@@ -121,6 +125,8 @@ let state: UiState = {
   matchFilter: false,
   recording: null,
   transition: null,
+  savedTransitions: [],
+  editor: null,
   transitionName: 'bass_swap',
   transitionBars: 16,
   pendingAnalysis: 0,
