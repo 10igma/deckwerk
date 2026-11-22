@@ -10,7 +10,7 @@ Die Oberfläche wurde von zwei unabhängigen Prüfern (Art Director, UX) begutac
 
 ## Nächster Schritt
 
-1. **Reste der Abnahme** (braucht dich): Schritt 3 mit Referenzwerten für rund 20 Tracks; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
+1. **Reste der Abnahme** (braucht dich): Schritt 3 ist mit Referenzwerten aus dem Netz für 21 Tracks ausgewertet (Abschnitt „Referenzwerte aus dem Netz"), offen bleibt dort dein Urteil zu den vier strittigen Tracks; Schritt 7 an einem Interface mit vier Ausgängen; Schritt 8 mit festgehaltener Dauer und Last; unter macOS die Schritte 5, 6, 8 und 9. Stand und Befunde in den Abschnitten „Abnahme vom 21.11.2026 (Windows)" und „Abnahme vom 19.11.2026 (macOS)".
 2. **Einstellungen:** Das Audiogerät ist wählbar (seit 21.11.2026, als Auswahlliste; unter Windows im Fenster bestätigt, unter macOS und Linux nicht). Es fehlen Kanäle, Abtastrate, Puffer, Testton (ENG-01–03, ENG-05); Mixer-Einstellungen (Crossfader-Kurve und -Zuweisung, Split-Cue, Fader-Kurve, Auto-Gain); Clock-Modus (automatisch, fest, frei mit BPM). Im Kern ist das meiste vorhanden, es fehlen die Bedienelemente und für Split-Cue ein Befehl.
 3. **Import per Dialog** („Ordner hinzufügen"), zusätzlich zum Ablegen auf dem Fenster.
 4. **Schutz und Cue in den Kern verlegen:** Cue-Punkt, CDJ-Cue und der Live-Schutz leben bisher in der Oberfläche; Automation und ein späteres MIDI-Mapping würden sie umgehen.
@@ -45,6 +45,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 
 ## Nicht geprüft
 
+- **Analyse an echter Musik (teilweise).** Seit dem 22.11.2026 gibt es einen Vergleich an 21 echten Tracks gegen Werte aus dem Netz (Abschnitt „Referenzwerte aus dem Netz"): Tempo 18/21, Tonart 15/18. Die Referenz ist nicht von Hand geprüft; Raster, Downbeat und Lautheit sind an echter Musik weiter ungeprüft.
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
 - **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich erst mit cpal 0.18 öffnen (Fehler 4 im Windows-Abschnitt), in der Anwendung ist es seither über die Einstellungen wählbar und wurde so benutzt. cpal 0.18 ist unter macOS und Linux weder gebaut noch gestartet; das zeigt erst die Pipeline.
 - **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist sie ebenfalls aus den Quellen gebaut und gestartet (21.11.2026), mit der Toolchain `stable-msvc`; den Windows-Installer hat noch niemand gestartet.
@@ -197,6 +198,43 @@ Gefundene Fehler (Zählung setzt die der macOS-Abnahme fort):
 4. **7.1-Headset lässt sich nicht öffnen** (ENG-01, ENG-02), unter Windows. Mit „CORSAIR ST100 Headset Output" als Standardgerät meldet die Anwendung „Kein Audio: Gerät unterstützt die gewünschte Einstellung nicht: 48000 Hz, 4 Kanäle". Zwei Ursachen:
    - Die Voreinstellung begrenzte die Kanalzahl fest auf 2 bis 4; das Gerät meldet 8 Kanäle, und WASAPI nimmt im geteilten Modus neben Stereo nur die Kanalzahl des Geräts an. Behoben: Die Kanalzahl wird in fester Reihenfolge probeweise geöffnet (begrenzte Zahl, Zahl des Geräts, Stereo; `channel_candidates` in `crates/dw-audio/src/device.rs`); ein Gerät mit nur einer Möglichkeit wird wie bisher direkt geöffnet. Tests: drei Tests zu `channel_candidates` ebenda. An einem Gerät, dem das hilft, nicht bestätigt.
    - Auch danach öffnete das Gerät nicht. Direkt an WASAPI gemessen: Es nimmt 8 Kanäle mit Lautsprecher-Zuordnung (Maske 0x63F) und Stereo mit Zuordnung (Maske 0x3) an, lehnt beide ohne Zuordnung (Maske 0) aber ab. cpal 0.15.3 übergibt bei 32-bit-Gleitkomma immer die Maske 0 (`KSAUDIO_SPEAKER_DIRECTOUT`) und wertet die Antwort „ähnliches Format möglich" als Ablehnung; es meldet für das Gerät kein einziges unterstütztes Format. Die drei anderen Ausgänge des Rechners (Stereo) melden je vier Formate und öffnen. Behoben durch das Anheben von cpal auf 0.18.2: Dort öffnet die Ausgabe mit der Umwandlung durch Windows (`AUTOCONVERTPCM`), das Gerät meldet 112 statt 0 Formate. Gemessen über `dw_audio::device::start` mit stummem Signal: 2, 4 und 8 Kanäle bei 48 kHz öffnen. In der Anwendung am 21.11.2026 über die Einstellungen gewählt: Der Wechsel gelang und steht in `settings.json`; Rückmeldung „passt". Klang und Kopfhörer-Weg an diesem Gerät sind nicht eigens beurteilt. `cargo test --workspace` danach: 98 bestanden, 1 übersprungen.
+
+## Referenzwerte aus dem Netz (22.11.2026)
+
+Für Schritt 3 der Abnahme wurden 20 Tracks aus `mp3/` gewählt und Tempo und Tonart im Netz nachgeschlagen (vier Recherchen parallel, ohne Kenntnis der Werte von Deckwerk). Die Werte von Deckwerk stammen aus der Bibliothek dieses Rechners (`library.db`, Stand 22.11.2026).
+
+**Wie belastbar die Referenz ist:** Beatport ließ sich nur für die ersten fünf Tracks als Seite lesen, sonst kamen seine Werte aus Suchtreffern (HTTP 403). Beatport nennt das Tempo nur als ganze Zahl; seine Tonarten sind oft selbst maschinell bestimmt. Mixgraph stimmt überall mit Beatport überein und ist vermutlich keine unabhängige Quelle. SongBPM und Shazam sind eigene Messungen (Shazam liegt mehrfach 1 BPM tiefer). Mit ±0,05 BPM aus ANA-02 lässt sich an ganzzahligen Referenzen nur prüfen, ob Deckwerk dieselbe ganze Zahl trifft. Gehört und von Hand nachgezählt ist nichts davon.
+
+| Datei | Tempo Referenz | Tonart Referenz | Tempo Deckwerk | Tonart Deckwerk | Tempo stimmt | Tonart stimmt | Quellen |
+|---|---|---|---|---|---|---|---|
+| `01-boris_brejcha-engine` | 125 | As-Dur | 125,00 | As-Dur | ja | ja | Beatport (Seite gelesen), Mixgraph |
+| `02-boris_brejcha-lily_at_the_valley_(extended_mix)` | 125 | F-Dur | 125,00 | F-Dur | ja | ja | Beatport (Seite gelesen; dort „Original Mix", 7:50 wie die Datei) |
+| `01-boris_brejcha_and_mc_flipside-dirty_beat` | 125 | D-Dur | 125,00 | D-Dur | ja | ja | Beatport (Seite gelesen) |
+| `01-boris_brejcha_ft._chemutai_sage-alicante` | 125 | F-Dur | 125,00 | F-Dur | ja | ja | Beatport (Seite gelesen), Mixgraph |
+| `02-anyma-sacrifice` | 128 | a-Moll | 128,00 | a-Moll | ja | ja | Beatport (Seite gelesen, Extended Mix), Mixgraph; Shazam 127 |
+| `05-anyma-the_light` | 127 | a-Moll | 127,00 | a-Moll | ja | ja | Beatport, SongBPM, Tunebat |
+| `09-anyma-pictures_of_you` | 128 | e-Moll | 128,00 | e-Moll | ja | ja | Beatport, SongBPM, Songdata, Musicstax |
+| `07-anyma-simulation` | 126 | e-Moll | 126,00 | e-Moll | ja | ja | Beatport, Traxsource, SongBPM, Tunebat |
+| `20-anyma-welcome_to_the_opera_(kobosil` | 152 | strittig: F-Dur / f-Moll / Fis-Dur | 152,04 | F-Dur | nein (+0,04) | offen | Beatport führt 76 (halbes Tempo) und F-Dur; SongBPM 152, Fis-Dur; Fandom f-Moll |
+| `18-anyma-syren_(amelie_lens_remix)` | 142 | c-Moll | 142,01 | c-Moll | ja | ja | Beatport, Mixgraph; SongBPM nennt As-Dur; Tempo-Sicherheit in Deckwerk 0 % |
+| `21-anyma-explore_your_future_(daniel_av` | 105 | strittig: h-Moll / fis-Moll | 105,00 | e-Moll | ja | nein | Beatport h-Moll, SongBPM fis-Moll; Deckwerk trifft keine von beiden |
+| `01-anyma-eternity_(massano_remix)` | 127 | strittig: C-Dur / c-Moll | 127,00 | c-Moll | ja | offen | Beatport und Mixgraph C-Dur; SongBPM und Tunebat c-Moll |
+| `01-neelix_and_sighter-piano_man` | 140 | as-Moll | 140,00 | as-Moll | ja | ja | Beatport führt 70 (halbes Tempo), as-Moll; Shazam 139 |
+| `01-neelix_and_blazy_and_durs-miracle` | 143 | Ges-Dur (= Fis-Dur) | 143,00 | Fis-Dur | ja | ja | Beatport, Setlist.ID |
+| `01-liquid_soul-i_believe_in_dragons` | 138 | f-Moll | 138,00 | F-Dur | ja | nein (Dur statt Moll) | nur Volumo (Seite gelesen); Beatport nicht eindeutig zuzuordnen |
+| `01-victor_ruiz-the_ritual_phaxe_and_emok_remix` | 140 | Ges-Dur (= Fis-Dur) | 140,00 | Fis-Dur | ja | ja | Beatport, Mixgraph |
+| `01-pleasurekraft_and_zimmz-sympoiesis` | 134 | g-Moll | 134,00 | g-Moll | ja | ja | Beatport, Mixgraph, weitere |
+| `01-ghost_rider_and_phaxe-falling_vegas_remix` | 140 | D-Dur | 140,00 | D-Dur | ja | ja | Beatport, Mixgraph; Shazam 139 |
+| `01-klopfgeister-beneath_the_twilight` | 138 | G-Dur | 138,02 | g-Moll | ja | nein (Moll statt Dur) | Beatport (Liste), Mixgraph; Shazam 137; Tonart die schwächste Angabe dieser Gruppe |
+| `01-ikon-close_to_the_sun` | 130 (fraglich) | H-Dur | 137,00 | H-Dur | nein (137 statt 130) | ja | Beatport (Label-Liste), Mixgraph; kein dritter Beleg, Zuordnung der 130 zum Track nicht gesichert |
+| `09-ikon-1000_different_stories` | 100 | e-Moll | 200,00 | E-Dur | nein (doppelt) | nein (Dur statt Moll) | Angabe vom 21.11.2026 (siehe Abnahme Windows) |
+
+**Ergebnis (21 Tracks):**
+
+- **Tempo:** 18 von 21 innerhalb ±0,05 BPM der Referenz (86 %; Ziel ANA-02: ≥ 97 %). Ein Doppeltempo-Fehler (1 von 21 = 4,8 %; Ziel ≤ 2 %). Zwei weitere Abweichungen: 152,04 statt 152 (knapp über der Grenze, Tempo-Sicherheit 69 %) und 137 statt 130 bei `close_to_the_sun`, wo die Referenz selbst fraglich ist. Zwei Tracks, die Beatport mit halbem Tempo führt (70 und 76), erkennt Deckwerk im vollen Tempo.
+- **Tonart:** Von 18 Tracks mit einer brauchbaren Referenz stimmen 15 exakt (83 %; Ziel ANA-06: ≥ 70 %). Alle drei Fehler haben den richtigen Grundton und das falsche Tongeschlecht (Dur/Moll). Bei drei Tracks widersprechen sich die Quellen; bei einem davon (`explore_your_future`) trifft Deckwerk keine der genannten Tonarten und liegt eine Quinte daneben.
+- **Was daraus folgt:** Das Tempo ist im üblichen Bereich zuverlässig; die Schwäche liegt außerhalb davon (100 BPM als 200). Bei der Tonart ist die Verwechslung von Dur und Moll das Muster, nicht der Grundton. Beides ist noch nicht behoben.
+- **Nicht gewertet:** Tracks ohne Referenz mit auffälligen Werten (200 BPM, 95–110 BPM, 157,51 BPM, Tempo-Sicherheit nahe 0) – vor allem Noosfære und die kurzen Klipsun-Stücke, für die im Netz keine Werte zu erwarten sind.
 
 ## Bauen unter Windows
 
