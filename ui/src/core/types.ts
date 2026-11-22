@@ -22,6 +22,8 @@ export type Command =
   | { type: 'play_in'; deck: DeckId; beats: number }
   /** Position in Sekunden. */
   | { type: 'seek'; deck: DeckId; pos: number }
+  /** Verwirft alle vorgemerkten Befehle (laufenden Übergang abbrechen). */
+  | { type: 'cancel_scheduled' }
   /** Sprung im Takt (DECK-20): Der Kern verschiebt das Ziel im laufenden Deck um höchstens einen halben Beat, sodass die Phase bleibt. */
   | { type: 'seek_snap'; deck: DeckId; pos: number }
   /** Tempo-Regler als Faktor, 0.02 = +2 %. */
@@ -225,6 +227,44 @@ export interface ImportResult {
   duplicates: number;
   relinked: number;
   failed: [path: string, reason: string][];
+}
+
+/** Stützpunkt einer Automationsspur: Master-Beat relativ zu T0, Wert (EQ in dB, null = Kill), Kurvenform. */
+export interface TransitionPoint {
+  beat: number;
+  value: number | null;
+  curve?: 'linear' | 'smooth' | 'step';
+}
+
+/** Automationsspur eines Reglers am gehenden (`out`) oder kommenden (`in`) Deck. */
+export interface TransitionLane {
+  side: 'out' | 'in';
+  param: 'fader' | 'eq_low' | 'eq_mid' | 'eq_high' | 'filter';
+  points: TransitionPoint[];
+}
+
+/** Ein Übergang als Datenobjekt (TRANS-01, Format wie der Abschnitt „Automation" des Mix-Plans, 6.3). */
+export interface Transition {
+  name: string;
+  /** Länge in Takten. */
+  bars: number;
+  /** Start des kommenden Decks in Beats relativ zu T0; null = es läuft schon. */
+  start_in: number | null;
+  /** Stopp des gehenden Decks in Beats relativ zu T0; null = es läuft weiter. */
+  stop_out: number | null;
+  reset_out?: boolean;
+  lanes: TransitionLane[];
+}
+
+/** Ein eingeplanter oder laufender Übergang (`transition_start`). */
+export interface TransitionRun {
+  from: DeckId;
+  to: DeckId;
+  name: string;
+  bars: number;
+  /** Beginn T0 und Ende in Clock-Beats. */
+  t0_beat: number;
+  end_beat: number;
 }
 
 /** Ergebnis von `library_refresh`. */

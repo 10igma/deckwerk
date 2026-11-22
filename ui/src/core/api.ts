@@ -6,6 +6,8 @@ import type {
   AppSettings,
   ImportResult,
   RefreshResult,
+  Transition,
+  TransitionRun,
   LibraryStatus,
   LoadedTracks,
   Snapshot,
@@ -47,6 +49,16 @@ export interface CoreApi {
   getLoadedTracks(): Promise<LoadedTracks>;
   getWaveform(trackId: TrackId): Promise<Waveform>;
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis>;
+  /** Eingebaute Vorlagen für Übergänge in der gewünschten Länge (TRANS-01). */
+  listTransitions(bars: number): Promise<Transition[]>;
+  /**
+   * Plant einen Übergang vom laufenden Deck `from` zum stehenden Deck `to` ein (TRANS-05): Er beginnt an der
+   * nächsten Taktgrenze im Raster von `alignBars` Takten, der Kern fährt die Regler. Abgelehnt mit Klartext,
+   * wenn die Voraussetzungen fehlen.
+   */
+  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun>;
+  /** Bricht den eingeplanten oder laufenden Übergang ab; die Regler bleiben stehen. */
+  cancelTransition(): Promise<void>;
   /** Ausgabegeräte des Systems (ENG-01). */
   listAudioDevices(): Promise<AudioDevice[]>;
   /**

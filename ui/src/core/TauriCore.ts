@@ -12,6 +12,8 @@ import {
   type AppSettings,
   type ImportResult,
   type RefreshResult,
+  type Transition,
+  type TransitionRun,
   type LibraryStatus,
   type LoadedTracks,
   type Poll,
@@ -165,6 +167,18 @@ export class TauriCore implements CoreApi {
 
   setRefreshOnStart(on: boolean): Promise<void> {
     return this.invoke<void>('settings_refresh_on_start', { on });
+  }
+
+  listTransitions(bars: number): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_templates', { bars });
+  }
+
+  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun> {
+    return this.invoke<TransitionRun>('transition_start', { from, to, transition, alignBars });
+  }
+
+  cancelTransition(): Promise<void> {
+    return this.invoke<void>('transition_cancel');
   }
 
   listAudioDevices(): Promise<AudioDevice[]> {

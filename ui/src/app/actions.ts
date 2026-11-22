@@ -530,6 +530,55 @@ export async function setRefreshOnStart(on: boolean): Promise<string | null> {
   }
 }
 
+// --- Übergänge ---------------------------------------------------------------------
+
+/** Länge und Raster, die zur Wahl stehen (Takte). */
+export const TRANSITION_BARS = [4, 8, 16, 32] as const;
+/** Der Übergang beginnt an der nächsten Grenze dieses Rasters (Takte). */
+export const TRANSITION_ALIGN = 4;
+
+/**
+ * Welches Deck geht und welches kommt (Ansicht mit zwei Decks): Es läuft genau eines der beiden,
+ * das andere ist geladen und steht. Sonst null.
+ */
+export function transitionRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>): { from: DeckId; to: DeckId } | null {
+  if (!a.loaded || !b.loaded || a.playing === b.playing) return null;
+  return a.playing ? { from: 'a', to: 'b' } : { from: 'b', to: 'a' };
+}
+
+/** Plant den gewählten Übergang ein (TRANS-05): Start an der nächsten Grenze im Vier-Takt-Raster. */
+export async function startTransition(): Promise<void> {
+  if (!core) return;
+  const snap = latestSnapshot();
+  const roles = transitionRoles(snap.decks[0], snap.decks[1]);
+  if (!roles) {
+    showNotice(say('trans.needDecks'));
+    return;
+  }
+  const ui = getUi();
+  try {
+    const templates = await core.listTransitions(ui.transitionBars);
+    const transition = templates.find((t) => t.name === ui.transitionName) ?? templates[0];
+    if (!transition) return;
+    const run = await core.startTransition(roles.from, roles.to, transition, TRANSITION_ALIGN);
+    setUi({ transition: run });
+  } catch (err) {
+    showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Bricht den Übergang ab; die Regler bleiben stehen, wo sie sind. */
+export async function cancelTransition(): Promise<void> {
+  if (!core) return;
+  setUi({ transition: null });
+  try {
+    await core.cancelTransition();
+    showNotice(say('trans.cancelled'));
+  } catch (err) {
+    showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
 // --- Audio-Ausgabe ---------------------------------------------------------------
 
 /** Ausgabegeräte für die Einstellungen; ohne Kern oder bei einem Fehler eine leere Liste. */

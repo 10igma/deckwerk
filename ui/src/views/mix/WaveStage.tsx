@@ -2,13 +2,13 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, focusDeck, peekBy, peekReset, peekStep, send } from '../../app/actions';
+import { bend, cancelTransition, focusDeck, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, transitionRoles } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
 import { getUi, setUi, useUi } from '../../app/store';
 import { deckIndex, type DeckId } from '../../core/types';
-import { DeckPlate, Icon, KeyBtn, useTip } from '../../design/components';
+import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../../design/components';
 import { cssVar, remPx } from '../../design/tokens';
 import { useLang, useT } from '../../i18n';
 import { shortcutKeys } from '../../app/keymap';
@@ -83,6 +83,87 @@ function PeekControls() {
       )}
       <KeyBtn size="sm" onPress={() => peekStep(1, false)} ariaLabel={t('stage.peekFwd')} tip={{ name: t('stage.peekFwd'), value: t('stage.peekHint'), keys: shortcutKeys('stage.peek_fwd', undefined, lang) }}>
         <Icon name="faster" size="0.8em" />
+      </KeyBtn>
+    </div>
+  );
+}
+
+const TRANSITION_NAMES = ['bass_swap', 'fade'] as const;
+
+/** Stand eines Übergangs für die Anzeige: vor dem Start die Beats bis T0, danach der laufende Takt. */
+export function transitionProgress(clockBeats: number, t0: number, bars: number): { phase: 'waiting'; beats: number } | { phase: 'running'; bar: number } | { phase: 'done' } {
+  const t = clockBeats - t0;
+  if (t < 0) return { phase: 'waiting', beats: Math.ceil(-t - 1e-9) };
+  if (t >= bars * 4) return { phase: 'done' };
+  return { phase: 'running', bar: Math.floor(t / 4) + 1 };
+}
+
+/**
+ * Übergang auf Knopfdruck (TRANS-05): Vorlage und Länge wählen, starten. Der Kern beginnt an der
+ * nächsten Grenze im Vier-Takt-Raster und fährt die Regler; hier steht, wie weit er ist.
+ */
+function TransitionBar() {
+  const t = useT();
+  const run = useUi((s) => s.transition);
+  const name = useUi((s) => s.transitionName);
+  const bars = useUi((s) => s.transitionBars);
+  const loadedA = useSnap((s) => s.decks[0].loaded);
+  const loadedB = useSnap((s) => s.decks[1].loaded);
+  const playingA = useSnap((s) => s.decks[0].playing);
+  const playingB = useSnap((s) => s.decks[1].playing);
+  const over = useSnap((s) => run !== null && s.clock_beats > run.end_beat);
+  useEffect(() => {
+    if (over) setUi({ transition: null });
+  }, [over]);
+  const roles = transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB });
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+  if (run) {
+    const label = t('trans.fromTo', { from: run.from.toUpperCase(), to: run.to.toUpperCase() });
+    return (
+      <div className="stage__trans" data-active="true" onPointerDown={stop}>
+        <span className="stage__transstate dw-num" role="status">
+          {label}
+          {' · '}
+          <LiveText
+            read={(s) => {
+              const p = transitionProgress(s.clock_beats, run.t0_beat, run.bars);
+              if (p.phase === 'waiting') return t(p.beats === 1 ? 'trans.inBeat' : 'trans.inBeats', { n: p.beats });
+              if (p.phase === 'running') return t('trans.bar', { n: p.bar, of: run.bars });
+              return t('trans.finishing');
+            }}
+          />
+        </span>
+        <KeyBtn size="sm" onPress={() => void cancelTransition()} tip={{ name: t('trans.cancel'), value: t('trans.cancelHint') }} ariaLabel={t('trans.cancel')}>
+          {t('trans.cancelShort')}
+        </KeyBtn>
+      </div>
+    );
+  }
+  return (
+    <div className="stage__trans" onPointerDown={stop}>
+      <select className="stage__select" value={name} aria-label={t('trans.template')} onChange={(e) => setUi({ transitionName: e.target.value })}>
+        {TRANSITION_NAMES.map((n) => (
+          <option key={n} value={n}>
+            {t(n === 'bass_swap' ? 'trans.bassSwap' : 'trans.fade')}
+          </option>
+        ))}
+      </select>
+      <select className="stage__select" value={bars} aria-label={t('trans.length')} onChange={(e) => setUi({ transitionBars: Number(e.target.value) })}>
+        {TRANSITION_BARS.map((b) => (
+          <option key={b} value={b}>
+            {t('trans.bars', { n: b })}
+          </option>
+        ))}
+      </select>
+      <KeyBtn
+        size="sm"
+        disabled={!roles}
+        onPress={() => void startTransition()}
+        tip={{ name: t('trans.start'), value: roles ? t('trans.startHint') : t('trans.needDecks') }}
+        ariaLabel={t('trans.start')}
+      >
+        {roles ? t('trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
       </KeyBtn>
     </div>
   );
@@ -288,7 +369,10 @@ export function WaveStage() {
           <Icon name="minus" size="0.8em" />
         </KeyBtn>
       </div>
-      <PeekControls />
+      <div className="stage__bottom">
+        <TransitionBar />
+        <PeekControls />
+      </div>
     </div>
   );
 }

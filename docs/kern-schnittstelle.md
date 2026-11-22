@@ -11,6 +11,9 @@ Die Oberfläche spricht den Kern nur über `CoreApi` (`ui/src/core/api.ts`) an. 
 | `library_refresh` (zählt eine am selben Ort ersetzte Datei unter `added`; `TrackInfo.incomplete` meldet unvollständige Dateien, BIB-20) | – | `RefreshResult` | Musikordner erneut durchsuchen (BIB-19): neue Dateien aufnehmen, verschobene neu zuordnen, fehlende markieren. Musikordner sind die als Ordner importierten Orte; kennt die Hülle noch keine, übernimmt sie einmalig die Ordner der vorhandenen Tracks |
 | `settings_get` | – | `AppSettings` (`refresh_on_start`, `music_folders`) | Einstellungen der Hülle |
 | `settings_refresh_on_start` | `on: boolean` | – | Beim Start die Musikordner durchsuchen (Vorgabe an) |
+| `transition_templates` | `bars: number` | `Transition[]` | eingebaute Vorlagen für Übergänge in dieser Länge (`bass_swap`, `fade`; TRANS-01) |
+| `transition_start` | `from: DeckId`, `to: DeckId`, `transition: Transition`, `alignBars: number` | `TransitionRun` | Übergang vom laufenden zum stehenden Deck einplanen (TRANS-05): Beginn an der nächsten Taktgrenze des laufenden Tracks im Raster von `alignBars` Takten, frühestens zwei Beats nach dem Aufruf. Das stehende Deck rückt auf den Taktanfang neben seiner Position und bekommt Beat-Sync; Start, Reglerverläufe und Stopp fährt die Engine. Abgelehnt mit Klartext, wenn das laufende Deck weder Master noch im Beat-Sync ist, der Tempo-Abstand über 8 % liegt, ein Track zu kurz ist oder schon ein Übergang läuft |
+| `transition_cancel` | – | – | verwirft alle vorgemerkten Befehle; die Regler bleiben stehen |
 | `deck_load` | `deck: DeckId`, `trackId: string` | – | Track laden; erfüllt, wenn das Deck spielbereit ist |
 | `deck_loaded` | – | `{ a, b, c, d: string \| null }` | Tracks auf den Decks |
 | `track_waveform` | `trackId: string` | `ArrayBuffer` | Wellenform im Binärformat „DWWF" |
@@ -89,3 +92,20 @@ Das gewählte Ausgabegerät steht in `settings.json` im Datenordner (`{ "audio_d
 |---|---|
 | `DECKWERK_DATA` | Ordner für Bibliothek und Cache statt des Benutzerdaten-Ordners |
 | `DECKWERK_MUSIC` | Ordner, der beim Start importiert wird |
+
+## Übergang als Datenobjekt
+
+`Transition` beschreibt einen Übergang unabhängig davon, ob er offline gerendert oder live gefahren wird (Format wie der Abschnitt „Automation" des Mix-Plans, Spezifikation 6.3):
+
+| Feld | Bedeutung |
+|---|---|
+| `name` | Kennung der Vorlage oder frei gewählter Name |
+| `bars` | Länge in Takten (1 … 256) |
+| `start_in` | Start des kommenden Decks in Beats relativ zu T0; `null` = es läuft schon |
+| `stop_out` | Stopp des gehenden Decks in Beats relativ zu T0; `null` = es läuft weiter |
+| `reset_out` | nach dem Stopp die gefahrenen Regler des gehenden Decks in Ruhestellung bringen |
+| `lanes` | Automationsspuren: `side` (`out` = gehendes, `in` = kommendes Deck), `param` (`fader` 0 … 1, `eq_low` / `eq_mid` / `eq_high` in dB mit `null` = Kill, `filter` −1 … +1), `points` |
+
+Ein Stützpunkt hat `beat` (Master-Beats relativ zu T0, negativ = davor), `value` und `curve` (`linear`, `smooth`, `step`) für den Weg vom vorigen Punkt. Vor dem ersten Stützpunkt fasst die Spur den Regler nicht an. EQ-Wege von oder zu Kill laufen linear im Pegelfaktor, alle anderen linear im Wert. Gesendet wird in Schritten von einem Viertel-Beat; die Engine glättet dazwischen.
+
+`TransitionRun`: `from`, `to`, `name`, `bars`, `t0_beat`, `end_beat` (Clock-Beats). Den Stand liest die Oberfläche aus `Snapshot.clock_beats`.

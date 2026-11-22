@@ -1,7 +1,7 @@
 // Zustand der Oberfläche (alles, was nicht aus dem Kern kommt). Kleiner eigener Speicher
 // auf Basis von useSyncExternalStore.
 import { useSyncExternalStore } from 'react';
-import type { DeckId, TrackId, TrackInfo } from '../core/types';
+import type { DeckId, TrackId, TrackInfo, TransitionRun } from '../core/types';
 import type { Lang } from '../lib/format';
 
 export type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'duration';
@@ -56,6 +56,11 @@ export interface UiState {
   libraryBig: boolean;
   /** Liste zeigt nur, was zum Bezugs-Deck passt (BIB-11). */
   matchFilter: boolean;
+  /** Eingeplanter oder laufender Übergang (TRANS-05). */
+  transition: TransitionRun | null;
+  /** Gewählte Vorlage und Länge für den nächsten Übergang. */
+  transitionName: string;
+  transitionBars: number;
   /** Tracks in der Analyse-Warteschlange. */
   pendingAnalysis: number;
   /** Die Liste wurde mindestens einmal vom Kern geholt. */
@@ -112,6 +117,9 @@ let state: UiState = {
   loading: perDeck(() => null),
   libraryBig: false,
   matchFilter: false,
+  transition: null,
+  transitionName: 'bass_swap',
+  transitionBars: 16,
   pendingAnalysis: 0,
   tracksReady: false,
   rendererInfo: '',

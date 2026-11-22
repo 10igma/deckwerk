@@ -107,6 +107,52 @@
   gap: var(--sp-1);
   cursor: default;
 }
+/* Unten rechts: Übergang auf Knopfdruck und Vorausblick nebeneinander. */
+.stage__bottom {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  cursor: default;
+}
+.stage__bottom .stage__peek {
+  position: static;
+}
+.stage__trans {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.stage__select {
+  height: max(28px, var(--ctl-h-sm));
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text-1);
+  color-scheme: dark;
+  font: 500 var(--fs-2) / 1 var(--font-text);
+  cursor: pointer;
+}
+.stage__select:hover {
+  background: var(--bg-3);
+}
+.stage__select:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--focus-ring);
+}
+.stage__transstate {
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-1);
+  color: var(--status-warn);
+  text-shadow:
+    0 0 2px var(--bg-0),
+    1px 0 0 var(--bg-0),
+    -1px 0 0 var(--bg-0);
+  white-space: nowrap;
+}
 /* Vorausblick: unten rechts, damit er die Zoom-Tasten oben nicht verdrängt. */
 .stage__peek {
   position: absolute;

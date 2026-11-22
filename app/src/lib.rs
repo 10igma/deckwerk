@@ -55,6 +55,9 @@ pub fn run() {
             commands::track_analysis,
             commands::audio_devices,
             commands::audio_select,
+            commands::transition_templates,
+            commands::transition_start,
+            commands::transition_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("Deckwerk konnte nicht gestartet werden");

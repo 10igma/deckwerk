@@ -220,6 +220,7 @@ impl Engine {
                 d.pos -= beats * 60.0 / clock_bpm * rate.max(0.01) * sr;
                 self.start_deck(i);
             }
+            Command::CancelScheduled => self.scheduled.clear(),
             Command::Seek { deck, pos } => {
                 self.decks[deck.index()].request_jump(Jump::To(pos * self.sr));
             }

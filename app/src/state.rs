@@ -2,7 +2,8 @@
 
 use crate::audio::{self, AudioHandle, AudioInfo};
 use dw_audio::Controller;
-use dw_core::{AudioBuf, DeckId, TrackAnalysis, Waveform, ANALYSIS_VERSION};
+use dw_automix::{plan_live, LiveDeck, Roles, Transition};
+use dw_core::{AudioBuf, Command, DeckId, SyncMode, TrackAnalysis, Waveform, ANALYSIS_VERSION};
 use dw_engine::Track;
 use dw_library::{ImportReport, Library, TrackId};
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,18 @@ impl Default for Settings {
     fn default() -> Self {
         Settings { audio_device: None, music_folders: Vec::new(), refresh_on_start: true }
     }
+}
+
+/// Ein eingeplanter oder laufender Übergang (TRANS-05).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TransitionRun {
+    pub from: DeckId,
+    pub to: DeckId,
+    pub name: String,
+    pub bars: u32,
+    /// Beginn T0 und Ende in Clock-Beats.
+    pub t0_beat: f64,
+    pub end_beat: f64,
 }
 
 /// Ergebnis von „Bibliothek aktualisieren".
@@ -85,6 +98,8 @@ pub struct Inner {
     pub settings: Mutex<Settings>,
     pub lib: Mutex<Library>,
     pub loaded: Mutex<[Option<TrackId>; 4]>,
+    /// Der zuletzt eingeplante Übergang; gilt als laufend, bis die Clock sein Ende erreicht.
+    pub transition: Mutex<Option<TransitionRun>>,
     cache_dir: PathBuf,
     /// Zählt bei jeder Änderung der Bibliothek hoch; die Oberfläche lädt die Liste dann neu.
     pub library_rev: AtomicU64,
@@ -127,6 +142,7 @@ impl AppState {
             settings: Mutex::new(settings),
             lib: Mutex::new(lib),
             loaded: Mutex::new([None; 4]),
+            transition: Mutex::new(None),
             cache_dir,
             library_rev: AtomicU64::new(1),
             work: (Mutex::new(true), Condvar::new()),
@@ -151,6 +167,69 @@ impl AppState {
                 settings.save(&self.settings_file)?;
                 Ok(info)
             }
+        }
+    }
+
+    /// Plant einen vorbereiteten Übergang vom laufenden Deck `from` zum stehenden Deck `to` ein
+    /// (TRANS-05, AUTO-08): Er beginnt an der nächsten Taktgrenze im Raster von `align_bars` Takten,
+    /// die Engine fährt die Regler sample-genau. Das neue Deck rückt auf den Taktanfang neben seiner
+    /// Position und bekommt Beat-Sync.
+    pub fn start_transition(&self, from: DeckId, to: DeckId, transition: &Transition, align_bars: u32) -> Result<TransitionRun, String> {
+        let name = |d: DeckId| ["A", "B", "C", "D"][d.index()];
+        let snap = self.ctl.lock().unwrap().snapshot().clone();
+        if let Some(run) = self.transition.lock().unwrap().as_ref() {
+            if snap.clock_beats < run.end_beat {
+                return Err(format!("Es läuft schon ein Übergang von Deck {} nach Deck {}.", name(run.from), name(run.to)));
+            }
+        }
+        let (out, inn) = (&snap.decks[from.index()], &snap.decks[to.index()]);
+        if !out.loaded || !out.playing {
+            return Err(format!("Deck {} läuft nicht; der Übergang geht vom laufenden Deck aus.", name(from)));
+        }
+        if !inn.loaded {
+            return Err(format!("Auf Deck {} liegt kein Track.", name(to)));
+        }
+        if inn.playing {
+            return Err(format!("Deck {} läuft schon; der Übergang startet es selbst am Einstieg.", name(to)));
+        }
+        // Nur dann laufen die Beats des Decks und die der Clock im Gleichschritt.
+        if !(out.is_master || out.sync == SyncMode::Beat) {
+            return Err(format!("Deck {} muss Master sein oder im Beat-Sync laufen.", name(from)));
+        }
+        let grid_of = |deck: DeckId| -> Result<dw_core::BeatGrid, String> {
+            let id = self.loaded.lock().unwrap()[deck.index()].ok_or_else(|| format!("Auf Deck {} liegt kein Track.", name(deck)))?;
+            let analysis = self.lib.lock().unwrap().analysis(id).map_err(|e| e.to_string())?;
+            analysis.map(|a| a.grid).ok_or_else(|| format!("Der Track auf Deck {} ist noch nicht analysiert.", name(deck)))
+        };
+        let (grid_out, grid_in) = (grid_of(from)?, grid_of(to)?);
+        let plan = plan_live(
+            transition,
+            Roles { out: from, inn: to },
+            snap.clock_beats,
+            LiveDeck { grid: &grid_out, pos: out.pos, duration: out.duration, track_bpm: out.track_bpm },
+            LiveDeck { grid: &grid_in, pos: inn.pos, duration: inn.duration, track_bpm: inn.track_bpm },
+            align_bars,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut ctl = self.ctl.lock().unwrap();
+        let sent = plan.now.iter().all(|cmd| ctl.send(*cmd)) && plan.scheduled.iter().all(|(beat, cmd)| ctl.send_at(*beat, *cmd));
+        if !sent {
+            // Halb vorgemerkt wäre schlimmer als gar nicht.
+            ctl.send(Command::CancelScheduled);
+            return Err("Die Audio-Engine nimmt keine Befehle an.".into());
+        }
+        let run = TransitionRun { from, to, name: transition.name.clone(), bars: transition.bars, t0_beat: plan.t0, end_beat: plan.end };
+        *self.transition.lock().unwrap() = Some(run.clone());
+        Ok(run)
+    }
+
+    /// Bricht den eingeplanten oder laufenden Übergang ab. Die Regler bleiben stehen, wo sie sind.
+    pub fn cancel_transition(&self) -> Result<(), String> {
+        *self.transition.lock().unwrap() = None;
+        if self.ctl.lock().unwrap().send(Command::CancelScheduled) {
+            Ok(())
+        } else {
+            Err("Die Audio-Engine nimmt keine Befehle an.".into())
         }
     }
 

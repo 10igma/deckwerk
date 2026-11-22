@@ -8,8 +8,10 @@ publish.workspace = true
 dw-core.workspace = true
 dw-engine.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 dw-analysis.workspace = true
 dw-testgen.workspace = true
 dw-dsp.workspace = true

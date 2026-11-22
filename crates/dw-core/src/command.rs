@@ -132,6 +132,9 @@ pub enum Command {
         #[serde(deserialize_with = "db_json::value")]
         db: f32,
     },
+    /// Verwirft alle vorgemerkten Befehle (einen laufenden Übergang abbrechen, TRANS-05). Die Regler
+    /// bleiben stehen, wo sie gerade sind.
+    CancelScheduled,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]

@@ -782,6 +782,7 @@ version = "0.1.0"
 dependencies = [
  "dw-analysis",
  "dw-audio",
+ "dw-automix",
  "dw-core",
  "dw-decode",
  "dw-engine",
@@ -1003,6 +1004,8 @@ dependencies = [
  "dw-dsp",
  "dw-engine",
  "dw-testgen",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 

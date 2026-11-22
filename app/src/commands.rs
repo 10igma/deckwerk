@@ -105,6 +105,29 @@ pub fn library_list(state: State<AppState>) -> Result<Vec<TrackInfo>, String> {
         .collect())
 }
 
+/// Eingebaute Vorlagen für Übergänge in der gewünschten Länge (TRANS-01).
+#[tauri::command]
+pub fn transition_templates(bars: u32) -> Vec<dw_automix::Transition> {
+    dw_automix::Transition::templates(bars.clamp(1, 256))
+}
+
+/// Vorbereiteten Übergang einplanen (TRANS-05).
+#[tauri::command]
+pub fn transition_start(
+    state: State<AppState>,
+    from: DeckId,
+    to: DeckId,
+    transition: dw_automix::Transition,
+    align_bars: u32,
+) -> Result<crate::state::TransitionRun, String> {
+    state.start_transition(from, to, &transition, align_bars)
+}
+
+#[tauri::command]
+pub fn transition_cancel(state: State<AppState>) -> Result<(), String> {
+    state.cancel_transition()
+}
+
 /// Musikordner neu durchsuchen (BIB-19).
 #[tauri::command(async)]
 pub fn library_refresh(state: State<AppState>) -> Result<crate::state::RefreshReport, String> {

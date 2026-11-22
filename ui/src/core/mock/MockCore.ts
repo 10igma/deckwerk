@@ -14,6 +14,8 @@ import {
   type AppSettings,
   type ImportResult,
   type RefreshResult,
+  type Transition,
+  type TransitionRun,
   type LibraryStatus,
   type LoadedTracks,
   type Snapshot,
@@ -237,6 +239,67 @@ export class MockCore implements CoreApi {
   }
 
   private refreshOnStart = true;
+  /** Simulierter Übergang: Start und Stopp der Decks und die Fader; EQ-Verläufe fährt nur der echte Kern. */
+  private run: TransitionRun | null = null;
+
+  /** Zwei Vorlagen wie im Kern, hier nur mit den Fader-Spuren. */
+  listTransitions(bars: number): Promise<Transition[]> {
+    const l = bars * 4;
+    const make = (name: string, open: number, close: number): Transition => ({
+      name,
+      bars,
+      start_in: 0,
+      stop_out: l,
+      reset_out: true,
+      lanes: [
+        { side: 'in', param: 'fader', points: [{ beat: -1, value: 0 }, { beat: 0, value: 0 }, { beat: open, value: 1 }] },
+        { side: 'out', param: 'fader', points: [{ beat: close, value: 1 }, { beat: l, value: 0 }] },
+      ],
+    });
+    return Promise.resolve([make('bass_swap', l / 8, l - l / 4), make('fade', l / 2, l / 2)]);
+  }
+
+  startTransition(from: DeckId, to: DeckId, transition: Transition, alignBars: number): Promise<TransitionRun> {
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    if (this.run && this.clockBeats < this.run.end_beat) return Promise.reject(`Es läuft schon ein Übergang von Deck ${this.run.from.toUpperCase()} nach Deck ${this.run.to.toUpperCase()}.`);
+    if (!out.track || !out.playing) return Promise.reject(`Deck ${from.toUpperCase()} läuft nicht; der Übergang geht vom laufenden Deck aus.`);
+    if (!inn.track) return Promise.reject(`Auf Deck ${to.toUpperCase()} liegt kein Track.`);
+    if (inn.playing) return Promise.reject(`Deck ${to.toUpperCase()} läuft schon; der Übergang startet es selbst am Einstieg.`);
+    // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
+    const span = 4 * Math.max(1, alignBars);
+    const outBeat = this.beatOf(out);
+    const boundary = Math.ceil((outBeat + 3) / span) * span;
+    const t0 = this.clockBeats + (boundary - outBeat);
+    this.run = { from, to, name: transition.name, bars: transition.bars, t0_beat: t0, end_beat: t0 + transition.bars * 4 + 1 };
+    inn.sync = 'beat';
+    inn.pos = Math.max(0, secAt(inn.track.grid, Math.round(beatAt(inn.track.grid, inn.pos) / 4) * 4));
+    return Promise.resolve({ ...this.run });
+  }
+
+  cancelTransition(): Promise<void> {
+    this.run = null;
+    return Promise.resolve();
+  }
+
+  /** Führt den simulierten Übergang mit der Clock mit. */
+  private advanceTransition(): void {
+    const run = this.run;
+    if (!run) return;
+    const out = this.decks[deckIndex(run.from)];
+    const inn = this.decks[deckIndex(run.to)];
+    const l = run.bars * 4;
+    const t = this.clockBeats - run.t0_beat;
+    if (t < 0) return;
+    if (!inn.playing && t < l) this.apply({ type: 'play', deck: run.to, on: true });
+    inn.fader = Math.min(1, Math.max(0, t / (l / 2)));
+    out.fader = Math.min(1, Math.max(0, (l - t) / (l / 2)));
+    if (t >= l) {
+      if (out.playing) this.apply({ type: 'play', deck: run.from, on: false });
+      out.fader = 1;
+      this.run = null;
+    }
+  }
 
   /** Simuliertes Aktualisieren: Der Musikordner bringt bis zu drei noch nicht vorhandene Tracks. */
   refreshLibrary(): Promise<RefreshResult> {
@@ -407,6 +470,9 @@ export class MockCore implements CoreApi {
         this.pickMaster();
         if (d.sync === 'beat' && this.master !== cmd.deck) d.pos = secAt(d.track.grid, this.beatOf(d) - this.phaseOf(d));
         break;
+      case 'cancel_scheduled':
+        this.run = null;
+        break;
       case 'seek':
         if (d && d.track) d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
         break;
@@ -544,6 +610,7 @@ export class MockCore implements CoreApi {
 
   /** Simulation um `dt` Sekunden weiterführen und einen Schnappschuss senden. */
   step(dt: number): void {
+    this.advanceTransition();
     this.time += dt;
     this.frames += Math.round(dt * MOCK_SAMPLE_RATE);
     for (const d of this.decks) if (d.playing) d.playTime += dt;
