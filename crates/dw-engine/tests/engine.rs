@@ -354,3 +354,204 @@ fn auto_master_follows_the_audible_deck() {
     run(&mut e, 1.0, &mut [&mut fr]);
     assert_eq!(e.snapshot().master, Some(A));
 }
+
+/// VIS-13: Start mit Vorlauf. Das stehende Deck springt so weit zurück, dass es seine jetzige
+/// Stelle nach der genannten Zahl Clock-Beats erreicht – auf 1 ms genau.
+#[test]
+fn play_in_reaches_the_cued_position_after_the_lead() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.0, 400, 1));
+    // B läuft mit eigenem Tempo (+2 %), ohne Sync.
+    e.apply(Command::Tempo { deck: B, offset: 0.02 });
+    e.apply(Command::Seek { deck: B, pos: 30.0 });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 2.0, &mut []);
+    assert!((e.snapshot().decks[1].pos - 30.0).abs() < 1e-9);
+
+    // 16 Beats bei 120 BPM = 8 s Echtzeit; B legt darin 8 s · 1,02 zurück.
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    let s = e.snapshot();
+    assert!(s.decks[1].playing);
+    assert!((s.decks[1].pos - (30.0 - 8.0 * 1.02)).abs() < 1e-9, "Start bei {}", s.decks[1].pos);
+    assert_eq!(s.master, Some(A), "das laufende Deck bleibt Master");
+    run(&mut e, 8.0, &mut []);
+    let pos = e.snapshot().decks[1].pos;
+    assert!((pos - 30.0).abs() <= 0.001, "nach dem Vorlauf bei {pos} s statt 30 s");
+}
+
+/// VIS-13: Liegt der Start vor dem Anfang des Tracks, läuft das Deck bis dorthin stumm.
+#[test]
+fn play_in_before_the_track_start_plays_silence_first() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(120.0, 0.0, 400, 1));
+    e.apply(Command::Seek { deck: B, pos: 2.0 });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 1.0, &mut []);
+
+    // 8 s Vorlauf ab Sekunde 2: Der Track beginnt erst nach 6 s.
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    let s = e.snapshot();
+    assert!(s.decks[1].playing);
+    assert!((s.decks[1].pos + 6.0).abs() < 1e-9, "Start bei {}", s.decks[1].pos);
+    let mut fr = ClickFinder::new(1, 0.2);
+    run(&mut e, 8.0, &mut [&mut fr]);
+    // Erster Klick von B (Beat 0 bei Sekunde 0) nach 6 s plus Laufzeit der Engine, auf 1 ms genau.
+    let expected = 6.0 * SR as f64 + e.latency() as f64;
+    let first = *fr.clicks.first().expect("B bleibt stumm") as f64;
+    assert!((first - expected).abs() <= 0.001 * SR as f64, "erster Klick bei Frame {first}, erwartet {expected}");
+    assert!((e.snapshot().decks[1].pos - 2.0).abs() <= 0.001);
+}
+
+/// VIS-13 mit DECK-08: Ein Deck im Beat-Sync rechnet den Vorlauf im Tempo der Clock und rastet
+/// beim Start ein – es erreicht seine Stelle auf höchstens einen halben Beat genau und im Takt.
+#[test]
+fn play_in_with_beat_sync_stays_in_phase() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.0, 400, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    let cued = 64.0 * 60.0 / 126.0; // Beat 64 von B
+    e.apply(Command::Seek { deck: B, pos: cued });
+    e.apply(Command::Play { deck: A, on: true });
+    run(&mut e, 2.1, &mut []);
+
+    e.apply(Command::PlayIn { deck: B, beats: 16.0 });
+    run(&mut e, 8.0, &mut []);
+    let s = e.snapshot();
+    let half_beat = 0.5 * 60.0 / 126.0;
+    assert!((s.decks[1].pos - cued).abs() <= half_beat + 0.001, "B bei {} s statt {cued} s", s.decks[1].pos);
+    assert!(s.decks[1].phase.abs() < 1e-3, "Phase {}", s.decks[1].phase);
+    assert!((s.decks[1].bpm - 120.0).abs() < 1e-3);
+}
+
+/// DECK-20: Ein Sprung im Takt erhält die Phase, auch wenn das Ziel aus einer veralteten Position
+/// berechnet wurde (die Oberfläche kennt die Position nur mit einigen Millisekunden Verzug).
+/// Geprüft am Master-Deck und an einem Deck im Beat-Sync; danach liegen die Klicks beider Decks
+/// wieder innerhalb von 1 ms übereinander.
+#[test]
+fn snapped_seek_keeps_the_phase_whatever_the_delay() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 600, 0));
+    e.load(B, click_track(126.0, 0.0, 600, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    e.apply(Command::Play { deck: A, on: true });
+    e.apply(Command::Play { deck: B, on: true });
+    run(&mut e, 4.0, &mut []);
+
+    // Ziel wie in der Oberfläche: ganze Beats ab der bekannten Position – die aber 20 ms alt ist.
+    let stale = e.snapshot().decks[0].pos;
+    run(&mut e, 0.020, &mut []);
+
+    // Der einfache Sprung hält die Phase nicht – der Master landet irgendwo zwischen den Beats.
+    // Trotzdem bleibt die Clock auf seinem Raster, und ein Deck im Beat-Sync folgt ihm dorthin:
+    // Der Master gibt den Takt vor. (Früher blieb der Bruchteil als Versatz zwischen Master und
+    // Clock stehen, und das zweite Deck lief hörbar daneben.)
+    let mut plain = Engine::new(SR);
+    plain.load(A, click_track(120.0, 0.0, 600, 0));
+    plain.load(B, click_track(126.0, 0.0, 600, 1));
+    plain.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    plain.apply(Command::Play { deck: A, on: true });
+    plain.apply(Command::Play { deck: B, on: true });
+    run(&mut plain, 4.02, &mut []);
+    plain.apply(Command::Seek { deck: A, pos: stale + 32.0 * 0.5 + 0.137 });
+    run(&mut plain, 1.0, &mut []);
+    let s = plain.snapshot();
+    println!("einfacher Sprung am Master: Phase Master {:.5}, Phase B {:.5} Beats", s.decks[0].phase, s.decks[1].phase);
+    assert!(s.decks[0].phase.abs() < 1e-3, "Master neben seiner Clock: {}", s.decks[0].phase);
+    assert!(s.decks[1].phase.abs() < 1e-3, "B neben der Clock: {}", s.decks[1].phase);
+    let (mut pl, mut pr) = (ClickFinder::new(0, 0.2), ClickFinder::new(1, 0.2));
+    run(&mut plain, 10.0, &mut [&mut pl, &mut pr]);
+    let apart = pr.clicks.iter().map(|&r| pl.clicks.iter().map(|&l| (l as i64 - r as i64).abs()).min().unwrap()).max().unwrap();
+    assert!(apart as f64 / SR as f64 * 1000.0 <= 1.0, "nach einfachem Sprung liegen die Klicks {} Samples auseinander", apart);
+
+    // Sprung im Takt am Master (A).
+    e.apply(Command::SeekSnap { deck: A, pos: stale + 32.0 * 0.5 });
+    run(&mut e, 1.0, &mut []);
+    let s = e.snapshot();
+    assert_eq!(s.master, Some(A));
+    assert!(s.decks[0].phase.abs() < 1e-3, "Master nach dem Sprung: Phase {}", s.decks[0].phase);
+    assert!(s.decks[1].phase.abs() < 1e-3, "B nach dem Sprung von A: Phase {}", s.decks[1].phase);
+    // Gelandet wird höchstens einen halben Beat neben dem Ziel (hier: 20 ms Verzug + 1 s Laufzeit danach).
+    assert!((s.decks[0].pos - (stale + 16.0 + 1.02)).abs() < 0.26, "A bei {}", s.decks[0].pos);
+
+    // Sprung im Takt am Deck im Beat-Sync (B), Ziel mitten zwischen zwei Beats.
+    e.apply(Command::SeekSnap { deck: B, pos: 100.123 });
+    run(&mut e, 1.0, &mut []);
+    let s = e.snapshot();
+    assert!(s.decks[1].phase.abs() < 1e-3, "B nach eigenem Sprung: Phase {}", s.decks[1].phase);
+    assert!((s.decks[1].pos - (100.123 + 120.0 / 126.0)).abs() < 0.26, "B bei {}", s.decks[1].pos);
+
+    // Hörbar im Takt: Jeder Klick von B liegt auf einem Klick von A.
+    let (mut fl, mut fr) = (ClickFinder::new(0, 0.2), ClickFinder::new(1, 0.2));
+    run(&mut e, 20.0, &mut [&mut fl, &mut fr]);
+    assert!(fl.clicks.len() >= 38 && fr.clicks.len() >= 38, "{} / {} Klicks", fl.clicks.len(), fr.clicks.len());
+    let worst = fr.clicks.iter().map(|&r| fl.clicks.iter().map(|&l| (l as i64 - r as i64).abs()).min().unwrap()).max().unwrap();
+    let worst_ms = worst as f64 / SR as f64 * 1000.0;
+    println!("nach zwei Sprüngen im Takt: größte Abweichung {worst_ms:.4} ms");
+    assert!(worst_ms <= 1.0, "Abweichung {worst_ms} ms");
+
+    // Ein stehendes Deck springt genau auf das Ziel.
+    e.apply(Command::Play { deck: B, on: false });
+    run(&mut e, 0.1, &mut []);
+    e.apply(Command::SeekSnap { deck: B, pos: 50.123 });
+    run(&mut e, 0.1, &mut []);
+    assert!((e.snapshot().decks[1].pos - 50.123).abs() < 1e-9);
+}
+
+/// DECK-08 im Stand: Sync an einem stehenden Deck, während nichts läuft, übernimmt sofort das Tempo
+/// des anderen Decks und rückt im Modus „Beat" um höchstens einen halben Beat in dessen Phase.
+/// Danach gestartet, liegen die Klicks beider Decks aufeinander.
+#[test]
+fn sync_on_a_stopped_deck_matches_tempo_and_phase_at_once() {
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.1, 400, 1));
+    e.apply(Command::Tempo { deck: A, offset: 0.02 }); // A läuft mit 122,4 BPM
+    e.apply(Command::Seek { deck: A, pos: 10.3 }); // Beat 20,6
+    e.apply(Command::Seek { deck: B, pos: 30.0 });
+    run(&mut e, 0.05, &mut []);
+    let before = e.snapshot();
+    assert!((before.decks[1].bpm - 126.0).abs() < 1e-9);
+
+    // Modus „Tempo": nur das Tempo, die Stelle bleibt.
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Tempo });
+    let s = e.snapshot();
+    assert!((s.decks[1].bpm - 122.4).abs() < 1e-6, "Tempo von B {}", s.decks[1].bpm);
+    assert_eq!(s.decks[1].pos, before.decks[1].pos);
+
+    // Modus „Beat": gleiche Stelle im Beat wie A, höchstens einen halben Beat gerückt.
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    let s = e.snapshot();
+    let frac = |b: f64| b - b.floor();
+    assert!((frac(s.decks[1].beat) - frac(s.decks[0].beat)).abs() < 1e-6, "A {} B {}", s.decks[0].beat, s.decks[1].beat);
+    assert!((s.decks[1].beat - before.decks[1].beat).abs() <= 0.5 + 1e-9);
+    assert_eq!(s.decks[0].pos, before.decks[0].pos, "das andere Deck bleibt stehen");
+    assert!(!s.decks[0].playing && !s.decks[1].playing);
+
+    // Beide starten: B rastet ohne weiteren Sprung ein, die Klicks decken sich auf 1 ms.
+    e.apply(Command::Play { deck: A, on: true });
+    e.apply(Command::Play { deck: B, on: true });
+    let (mut fa, mut fb) = (ClickFinder::new(0, 0.2), ClickFinder::new(1, 0.2));
+    run(&mut e, 6.0, &mut [&mut fa, &mut fb]);
+    let s = e.snapshot();
+    assert!(s.decks[1].phase.abs() < 1e-3, "Phase {}", s.decks[1].phase);
+    assert!((s.decks[1].bpm - 122.4).abs() < 1e-3);
+    assert!(fa.clicks.len() >= 10 && fb.clicks.len() >= 10);
+    for a in fa.clicks.iter().skip(1) {
+        let nearest = fb.clicks.iter().map(|b| (*b as f64 - *a as f64).abs()).fold(f64::MAX, f64::min);
+        assert!(nearest <= 0.001 * SR as f64, "Klick von A bei {a}: nächster von B {nearest} Frames entfernt");
+    }
+
+    // Startet das synchronisierte Deck allein (es wird Master), läuft es im übernommenen Tempo.
+    let mut e = Engine::new(SR);
+    e.load(A, click_track(120.0, 0.0, 400, 0));
+    e.load(B, click_track(126.0, 0.1, 400, 1));
+    e.apply(Command::Sync { deck: B, mode: SyncMode::Beat });
+    e.apply(Command::Play { deck: B, on: true });
+    run(&mut e, 1.0, &mut []);
+    let s = e.snapshot();
+    assert_eq!(s.master, Some(B));
+    assert!((s.decks[1].bpm - 120.0).abs() < 1e-6 && (s.clock_bpm - 120.0).abs() < 1e-6);
+}

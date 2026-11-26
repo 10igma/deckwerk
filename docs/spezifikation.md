@@ -1,3 +1,5 @@
+| BIB-19 | Musikordner: Als Ordner importierte Orte werden gemerkt. „Bibliothek aktualisieren" durchsucht sie erneut, nimmt neue Dateien auf, ordnet verschobene neu zu und markiert fehlende; auf Wunsch geschieht das bei jedem Start (Einstellung, Vorgabe an) | M | 1 | Eine neue Datei in einem Musikordner oder Unterordner steht nach dem Aktualisieren in der Liste und wird analysiert; bekannte Tracks behalten ihre Analyse; ein nicht erreichbarer Ordner wird gemeldet und bricht den Lauf nicht ab |
+| BIB-20 | Unvollständige Dateien: Liefert eine Datei beim Dekodieren weniger Audio, als ihre Kopfdaten ankündigen (abgebrochene Kopie oder abgebrochener Download), wird der Track in der Bibliothek als „unvollständig" markiert und beim Laden gemeldet; er bleibt spielbar. Wird die Datei am selben Ort ersetzt, beginnt der Track beim nächsten Import oder Aktualisieren von vorn | M | 1 | Eine Datei, der mehr als 2 % und mehr als 0,25 s fehlen, ist nach der Analyse markiert; vollständige Dateien aller Formate sind es nicht; nach dem Ersetzen sind Markierung und alte Analyse weg |
 # Deckwerk – Spezifikation
 
 Version 0.1 · Stand 18.11.2026 · Arbeitstitel „Deckwerk" (Annahme, frei änderbar)
@@ -178,7 +180,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | DECK-05 | Play/Pause, Cue (CDJ-Verhalten: halten = spielen, loslassen = zurück), Sprung zum Anfang | M | 1 | Start erfolgt ≤ 1 Audiopuffer nach dem Befehl bzw. quantisiert auf dem nächsten Beat |
 | DECK-06 | Tempo-Regler mit Bereich ±2/4/6/8/10/16/25/50/100 %, Auflösung 0,01 %, Doppelklick = Reset | M | 1 | angezeigtes BPM = Original-BPM × (1 + Regler) |
 | DECK-07 | Anschieben/Abbremsen (Pitch Bend) per Taste, Stärke einstellbar (Standard ±4 %), und per Ziehen in der Wellenform | M | 1 | Phase verschiebt sich stufenlos, kein Knacken |
-| DECK-08 | Tempo-Sync und Phasen-Sync zur Master-Clock; Modi „Tempo" und „Beat" | M | 1 | synchronisierte Decks: Beat-Abweichung ≤ 1 ms über 10 min (Offline-Messung) |
+| DECK-08 | Tempo-Sync und Phasen-Sync zur Master-Clock; Modi „Tempo" und „Beat". Sync an einem stehenden Deck wirkt sofort: Es übernimmt das Tempo (der Clock, oder – wenn nichts läuft – des anderen Decks) und rückt, wenn nichts läuft, im Modus „Beat" um höchstens einen halben Beat in die Phase des anderen Decks | M | 1 | synchronisierte Decks: Beat-Abweichung ≤ 1 ms über 10 min (Offline-Messung) |
 | DECK-09 | Master-Clock: automatisch (das am längsten laufende hörbare Deck) oder fest gewählt oder freie Clock mit eigenem BPM | M | 1 | Wechsel des Masters ohne Temposprung |
 | DECK-10 | Key Lock (Tonhöhe bleibt bei Tempoänderung) | M | 2 | bei +6 % Tempo weicht die Grundfrequenz eines Testtons ≤ 3 Cent ab |
 | DECK-11 | Transponieren ±12 Halbtöne in Halbtonschritten, „Tonart an Master angleichen" | M | 2 | Anzeige der resultierenden Tonart; Testton um +1 Halbton = Faktor 1,0595 ±3 Cent |
@@ -190,7 +192,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | DECK-17 | Quantisierung (Q) und Snap (S) global und je Deck schaltbar; Quantisierungsweite 1/4, 1, 4, 16 Beats | M | 2 | Aktionen starten exakt auf dem Rasterpunkt |
 | DECK-18 | Anzeige: Titel, Künstler, Cover, BPM (Original und aktuell), Tonart (aktuell), Tempo-Abweichung in %, gespielte und verbleibende Zeit, Takt-/Beat-Zähler, Beats bis zum nächsten Cue/Abschnitt | M | 1 | Werte aktualisieren sich mit ≥ 30 Hz |
 | DECK-19 | Warnung am Trackende (einstellbar, Standard 30 s) | S | 2 | Deck blinkt, sobald die Restzeit unter dem Wert liegt |
-| DECK-20 | Wiedergabe-Position per Klick in die Übersichts-Wellenform; im laufenden Deck nur mit aktivem Snap auf Beat-Raster (phasenerhaltend) | M | 1 | Sprung ohne Knacken |
+| DECK-20 | Wiedergabe-Position per Klick in die Übersichts-Wellenform; im laufenden Deck nur mit aktivem Snap auf Beat-Raster (phasenerhaltend; die Phase hält der Kern im Augenblick des Sprungs) | M | 1 | Sprung ohne Knacken; Phase zur Clock nach dem Sprung wie davor (≤ 0,001 Beats), auch wenn der Befehl 20 ms unterwegs war; synchrone Decks danach ≤ 1 ms deckungsgleich |
 | DECK-21 | Auto-Cue: nach dem Laden auf „Laden"-Cue oder ersten Beat springen | M | 2 | einstellbar |
 | DECK-22 | Deck duplizieren (Track samt Position und Tempo auf ein anderes Deck kopieren) | S | 2 | beide Decks laufen phasengleich |
 
@@ -257,6 +259,8 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | TRANS-03 | Bass-Regel: Es spielen nie zwei ungedämpfte Bässe länger als 1 Takt gleichzeitig | M | 5 | Messung je Takt: Der Pegel im Band < 120 Hz liegt im Übergang nie mehr als 3 dB über dem lautesten Takt, den A oder B allein in diesem Mix erreichen |
 | TRANS-04 | Eigene Vorlagen anlegen, ändern, speichern | S | 5 | Vorlage ist im Auto-Mix wählbar |
 | TRANS-05 | Übergänge sind im Live-Modus einzeln auslösbar („nächsten Übergang jetzt spielen") | S | 5 | Auslösen startet quantisiert an der nächsten Phrasengrenze |
+| TRANS-06 | Ein Übergang lässt sich im Editor vorhören: Er spielt auf den geladenen Decks ab einem gewählten Takt, ohne gespeichert zu sein; danach stehen Decks und Regler wie vorher | S | 5 | Beide Decks laufen im Takt (Phase < 0,01 Beat), die Regler stehen zu Beginn so, wie der Übergang sie bis dorthin gestellt hätte; nach dem Ende und nach einem Abbruch stimmen Stelle, Fader, EQ, Filter, Sync und Master-Wahl mit dem Stand davor überein |
+| TRANS-07 | Übergänge lassen sich für ein bestimmtes Paar von Tracks speichern, mit Art (Reglerverläufe) und Ort (Stellen beider Tracks am Beginn); beliebig viele je Paar und Richtung. Der Auto-Mix wählt später daraus | S | 5 | Gespeicherte Übergänge erscheinen nur, wenn beide Tracks geladen sind, überdauern einen Neustart und beginnen live an der gespeicherten Stelle (Abweichung < 0,05 Beat) |
 
 ### 4.9 Auto-Mix (AUTO)
 
@@ -289,7 +293,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | ID | Anforderung | Prio | Stufe | Abnahmekriterium |
 |---|---|---|---|---|
 | VIS-01 | Übersichts-Wellenform je Deck (ganzer Track) mit Position, Cues, Loops, Abschnitten | M | 1 | Klick springt zur Position |
-| VIS-02 | Scrollende Detail-Wellenform je Deck, nach drei Frequenzbändern eingefärbt, Zoom 1–32 Beats sichtbar | M | 1 | 60 fps mit vier Decks auf dem Referenzrechner; Position sample-genau zur Audioausgabe (Latenz kompensiert) |
+| VIS-02 | Scrollende Detail-Wellenform je Deck, nach drei Frequenzbändern eingefärbt, Zoom 1–128 Beats sichtbar | M | 1 | 60 fps mit vier Decks auf dem Referenzrechner; Position sample-genau zur Audioausgabe (Latenz kompensiert) |
 | VIS-03 | Beatgrid-Linien, Takt-Linien betont, Phrasenmarker, Abschnittsbänder, Ereignis-Marker in der Wellenform | M | 1/3 | Linien liegen deckungsgleich auf den Kick-Anschlägen |
 | VIS-04 | Parallele Wellenformen aller laufenden Decks übereinander mit gemeinsamer Zeitachse relativ zur Abspielposition | M | 1 | bei Phase 0 liegen die Beat-Linien exakt untereinander |
 | VIS-05 | Phasenanzeige je Deck (Versatz zum Master in Beats, ±0,5) | M | 1 | Anzeige 0 bei gemessener Abweichung < 1 ms |
@@ -300,6 +304,7 @@ Priorität: **M** = Muss, **S** = Soll, **K** = Kann. Die Spalte „Stufe" verwe
 | VIS-10 | Layout skaliert von 1280×720 bis 4K, HiDPI-fähig | M | 0 | keine abgeschnittenen Elemente in den Prüfauflösungen 1280×720, 1920×1080, 2560×1440, 3840×2160 |
 | VIS-11 | Dunkles Design als Standard; zusätzlich kontrastreiches Design | M/S | 0 | Text-Kontrast ≥ 4,5:1, Bedienelemente ≥ 3:1 |
 | VIS-12 | Farben für Frequenzbänder und Tonarten sind auch bei Rot-Grün-Sehschwäche unterscheidbar (zusätzlich Helligkeit/Form) | S | 0 | Prüfung mit Simulationsfilter |
+| VIS-13 | Vorausblick: Die Detail-Wellenformen der laufenden Decks lassen sich gemeinsam vor- und zurückschieben, ohne die Wiedergabe zu verändern; ein stehendes Deck bleibt dabei an seiner Stelle, solange ein anderes läuft; ein Griff führt zurück zur Abspielstelle. Wird ein stehendes Deck im Vorausblick gestartet, beginnt es um den Vorausblick früher (Start mit Vorlauf), notfalls vor dem Anfang des Tracks und bis dorthin stumm | M | 1 | Bei einem Vorausblick von n Beats zeigt die Bildmitte je laufendem Deck die Stelle, die es in n Beats (Clock-Tempo) erreicht; Beat-Linien synchroner Decks bleiben untereinander; ein stehendes Deck zeigt in der Bildmitte weiter seine Abspielstelle; nach einem Start mit Vorlauf von n Beats erreicht das Deck diese Stelle nach n Beats der Clock auf ≤ 1 ms (im Beat-Sync nach dem Einrasten auf ≤ einen halben Beat); die verschobene Ansicht ist als solche gekennzeichnet |
 
 ### 4.12 Audio-Engine (ENG)
 

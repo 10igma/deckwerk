@@ -1,0 +1,61 @@
+# Referenzwerte für Tempo und Tonart echter Tracks (ANA-02, ANA-06). Prüfen mit:
+#   deckwerk check docs/referenz-tracks.csv <Musikordner>
+# Die Musikdateien liegen nicht im Repository. Werte aus dem Netz, nicht von Hand nachgezählt oder gehört.
+# Wert ohne Zeichen: zwei unabhängige Quellen stimmen überein (Shazam liegt regelmäßig 1 BPM tiefer und zählt als Bestätigung).
+# Wert mit „?": nur eine Quelle (Mixgraph spiegelt Beatport und zählt nicht als zweite). Leer: Quellen widersprechen sich oder nichts gefunden.
+# Beatport nennt das Tempo als ganze Zahl und lag bei mehreren Tracks daneben (95 statt 126, 80/95/130 statt 137–138).
+# Tonart in Camelot: A = Moll, B = Dur.
+Datei;BPM;Tonart;Quelle
+01-boris_brejcha-engine.mp3;125?;4B?;Beatport (Seite gelesen): 125, As-Dur
+02-boris_brejcha-lily_at_the_valley_(extended_mix).mp3;125?;7B?;Beatport (Seite gelesen, dort Original Mix 7:50): 125, F-Dur
+01-boris_brejcha_and_mc_flipside-dirty_beat.mp3;125?;10B?;Beatport (Seite gelesen): 125, D-Dur
+01-boris_brejcha_ft._chemutai_sage-alicante.mp3;125?;7B?;Beatport (Seite gelesen): 125, F-Dur
+02-anyma-sacrifice.mp3;128;8A?;Beatport 128 a-Moll (Extended); Shazam 127
+05-anyma-the_light.mp3;127;8A;Beatport, SongBPM, Tunebat: 127, a-Moll
+09-anyma-pictures_of_you.mp3;128;9A;Beatport, SongBPM, Songdata, Musicstax: 128, e-Moll
+07-anyma-simulation.mp3;126;9A;Beatport, Traxsource, SongBPM, Tunebat: 126, e-Moll
+20-anyma-welcome_to_the_opera_(kobosil.mp3;152;;SongBPM 152, Shazam 151, Beatport 76 (halb); Tonart strittig: F-Dur / f-Moll / Fis-Dur
+18-anyma-syren_(amelie_lens_remix).mp3;142;;Beatport, SongBPM 142, Shazam 141; Tonart strittig: c-Moll (Beatport) / As-Dur (SongBPM)
+21-anyma-explore_your_future_(daniel_av.mp3;105;;Beatport, SongBPM 105, Shazam 104; Tonart strittig: h-Moll / fis-Moll
+01-anyma-eternity_(massano_remix).mp3;127;;Beatport, SongBPM, Tunebat 127; Tonart strittig: C-Dur / c-Moll
+01-neelix_and_sighter-piano_man.mp3;140;1A?;Beatport 70 (halb), as-Moll; Shazam 139
+01-neelix_and_blazy_and_durs-miracle.mp3;143?;2B?;Beatport 143, Ges-Dur; Setlist.ID gleich, Herkunft unklar
+01-liquid_soul-i_believe_in_dragons.mp3;138?;4A?;Volumo (Seite gelesen): 138, f-Moll
+01-victor_ruiz-the_ritual_phaxe_and_emok_remix.mp3;140?;2B?;Beatport: 140, Ges-Dur
+01-pleasurekraft_and_zimmz-sympoiesis_(original_mix).mp3;134;6A?;Beatport 134, g-Moll; Shazam 134 (Edit)
+01-ghost_rider_and_phaxe-falling_vegas_remix.mp3;140;10B?;Beatport 140, D-Dur; Shazam 139
+# Nicht gewertet: Die Datei auf dem Abnahme-Rechner ist unvollständig (1 MiB Audio = 26 s, danach nur Nullen).
+# 01-klopfgeister-beneath_the_twilight.mp3;138;9B?;Beatport 138, G-Dur (schwach); Shazam 137
+01-ikon-close_to_the_sun.mp3;137;;Volumo 137, Shazam 136; Beatport-Liste 130 widerlegt; Tonart strittig: h-Moll (Volumo) / H-Dur (Beatport)
+09-ikon-1000_different_stories.mp3;100?;9A?;Angabe vom 21.11.2026: 100 BPM, e-Moll
+01-noosfaere_-_horizon-08b13540-psycz.mp3;124?;8B?;Beatport (Suchtreffer): 124, C-Dur; Downtempo, Tempo bei Beatport mehrfach unzuverlässig
+02-noosfaere_-_mnemosyne-d3a75ac7-psycz.mp3;82?;9A?;Beatport (Suchtreffer): 82, e-Moll
+03-noosfaere_-_synchro-8b749def-psycz.mp3;90?;9B?;Beatport (Suchtreffer): 90, G-Dur
+04-noosfaere_-_beings-7da05676-psycz.mp3;84?;6A?;Beatport (Suchtreffer): 84, g-Moll
+05-noosfaere_-_demiurg-116b3a9d-psycz.mp3;74?;8B?;Beatport (Suchtreffer): 74, C-Dur
+06-noosfaere_-_remembrance-d09ea98a-psycz.mp3;100?;9B?;Beatport (Suchtreffer): 100, G-Dur
+01-klipsun-time_to_emerge_prologue.mp3;106?;6A?;Beatport (Suchtreffer): 106, g-Moll; Zwischenstück
+04-klipsun-a_universe_of_gods_and_lies_2nd_act.mp3;70?;8A?;Beatport (Suchtreffer): 70, a-Moll; 1:22 lang, schwächster Wert
+08-klipsun-now_is_the_right_time_3rd_act.mp3;104?;2A?;Beatport (Suchtreffer): 104, es-Moll; Zwischenstück
+02-galaxy_drop_-_gravitation_novation-ca331c95-psycz.mp3;110?;9B?;Beatport (Suchtreffer): 110, G-Dur
+08-anyma-welcome_to_the_opera_(adriatiq.mp3;125;;Beatport, SongBPM 125; Tonart strittig: B-Dur / f-Moll
+12-anyma-save_me_(goom_gum_and_stylo_remi.mp3;124;1A;Beatport, SongBPM, Tunebat: 124, gis-Moll
+15-anyma-save_me_(klsch_remix).mp3;128;1A;Beatport, Traxsource, SongBPM: 128, gis-Moll; Shazam 127
+14-anyma-consciousness_(eric_prydz_remi.mp3;126;9B;SongBPM, Tunebat 126, Shazam 125; Beatport 95 (falsch); G-Dur überall
+11-anyma-higher_power.mp3;126;1A;SongBPM, Tunebat, Musicstax 126; Beatport 95 (falsch); gis-Moll überall
+07-antix-moses_feat._beacon_bloom_oeona_dahl_remix.mp3;125;;Beatport, Volumo 125; Tonart strittig: G-Dur / g-Moll
+08-antix-cavalier_emok_remix.mp3;125;7A;Beatport, Volumo: 125, d-Moll
+06-antix-auxichrome_secret_cinema_remix.mp3;130;;Beatport, Volumo 130; Tonart strittig: D-Dur / d-Moll
+07-sonic_massala-dune.mp3;93?;6B?;Beatport/Mixgraph: 93, B-Dur; für Psytrance ungewöhnlich, Zuordnung unsicher
+01-jumpstreet-richtig_ballern.mp3;152;9B?;Beatport 152, G-Dur; Shazam 151
+01-anyme023_(ft_meryl)-champagne-26a61b46.mp3;103?;;Shazam 103; keine Tonart gefunden
+01-lostly_and_protonica-lucidity.mp3;140;;Beatport, dj-pool 140, Shazam 139; Tonart strittig: Fis-Dur / fis-Moll
+01-hippie_mafia-jungle_jam.mp3;143;2B?;Beatport, Shazam 143; Ges-Dur nur Beatport
+01-atmos-everglade.mp3;;;Tempo strittig: Beatport 102 / Shazam 136; As-Dur nur Beatport
+06-atmos-time_well_spent.mp3;;;Tempo strittig: Beatport 92 / Shazam 137; As-Dur nur Beatport
+04-merkaba-auras.mp3;137;;dj-pool 136/137, Shazam 136; Beatport 146 (weicht ab); Tonart strittig: F-Dur / f-Moll
+04-ikon-signal_loss.mp3;138;;Volumo 138, Shazam 137; Beatport-Liste 80; Tonart strittig: f-Moll / F-Dur
+08-ikon-a_world_between_us.mp3;138;;Volumo, Beatport 138, Shazam 137; Tonart strittig: fis-Moll / Ges-Dur
+07-liquid_soul-i_see_the_spirit_ikon_remix.mp3;138;5B;Volumo 138, Shazam 137; Beatport-Liste 95; Es-Dur bei Volumo und Beatport
+05-protonica-gravity_ikon_remix.mp3;;;Tempo strittig: Volumo 138 / Beatport 126; Tonart strittig: g-Moll / G-Dur
+01-s-range-morning_star_protonica_remix.mp3;140;;Volumo, Beatport 140; Tonart strittig: e-Moll / E-Dur

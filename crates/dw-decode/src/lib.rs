@@ -4,7 +4,7 @@
 mod mp4;
 mod wav;
 
-pub use wav::write_wav;
+pub use wav::{write_wav, WavWriter};
 
 use dw_core::AudioBuf;
 use std::fs::File;
@@ -37,6 +37,19 @@ pub struct Decoded {
     pub bits_per_sample: Option<u32>,
     /// Pakete, die wegen Fehlern übersprungen wurden.
     pub skipped_packets: usize,
+    /// Länge in Frames, die die Datei selbst ankündigt (Kopfdaten); `None`, wenn sie keine nennt.
+    pub announced_frames: Option<u64>,
+}
+
+impl Decoded {
+    /// Fehlt gegenüber der angekündigten Länge hörbar Audio? Das ist das Zeichen einer abgebrochenen
+    /// Kopie oder eines abgebrochenen Downloads. Gewertet wird erst ab 2 % und einer Viertelsekunde,
+    /// damit Encoder-Vor- und Nachlauf nicht als Lücke zählen.
+    pub fn is_incomplete(&self) -> bool {
+        let Some(announced) = self.announced_frames else { return false };
+        let missing = announced.saturating_sub(self.audio.frames() as u64);
+        missing * 50 > announced && missing * 4 > self.audio.sample_rate as u64
+    }
 }
 
 fn codecs() -> &'static CodecRegistry {
@@ -72,7 +85,8 @@ pub fn decode_file(path: &Path) -> Result<Decoded, DecodeError> {
     let bits_per_sample = track.codec_params.bits_per_sample;
     // AAC in MP4: Der Demuxer meldet den Encoder-Vorlauf nicht; er steht in der Schnittliste der Datei.
     let needs_edit_list = track.codec_params.codec == CODEC_TYPE_AAC && track.codec_params.delay.is_none();
-    let expected_frames = track.codec_params.n_frames.unwrap_or(0) as usize;
+    let announced_frames = track.codec_params.n_frames;
+    let expected_frames = announced_frames.unwrap_or(0) as usize;
     let mut decoder = codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| DecodeError::Unsupported(e.to_string()))?;
@@ -145,7 +159,7 @@ pub fn decode_file(path: &Path) -> Result<Decoded, DecodeError> {
     if data.is_empty() || sample_rate == 0 {
         return Err(DecodeError::Corrupt("keine Audiodaten dekodiert".into()));
     }
-    Ok(Decoded { audio: AudioBuf::new(sample_rate, data), source_channels: channels, bits_per_sample, skipped_packets: skipped })
+    Ok(Decoded { audio: AudioBuf::new(sample_rate, data), source_channels: channels, bits_per_sample, skipped_packets: skipped, announced_frames })
 }
 
 /// Wandelt einen Puffer in die Ziel-Abtastrate (unverändert, wenn sie schon passt).

@@ -1,6 +1,7 @@
 //! T1 – Langer Blend mit Bass-Tausch, als Folge zeitgenauer Engine-Befehle.
 
-use dw_core::{AudioBuf, Band, Command, DeckId, SyncMode, TrackAnalysis};
+use crate::transition::{Roles, Transition};
+use dw_core::{AudioBuf, Command, DeckId, SyncMode, TrackAnalysis};
 use dw_engine::{Engine, Track};
 use std::sync::Arc;
 
@@ -8,8 +9,6 @@ use std::sync::Arc;
 const PHRASE_BARS: i64 = 8;
 /// Größte Tempoänderung je Takt beim Angleichen (T10).
 const MAX_TEMPO_CHANGE_PER_BAR: f64 = 0.0025;
-/// Schritte je Beat, in denen Reglerverläufe gesendet werden (die Engine glättet dazwischen).
-const STEPS_PER_BEAT: u32 = 4;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum PlanError {
@@ -113,24 +112,6 @@ pub fn plan_blend(a: &TrackAnalysis, b: &TrackAnalysis, bars: u32, lead_bars: u3
     })
 }
 
-/// Sendet einen linearen Verlauf als Folge vorgemerkter Befehle.
-fn ramp(engine: &mut Engine, from_beat: f64, to_beat: f64, from: f32, to: f32, make: impl Fn(f32) -> Command) {
-    let steps = (((to_beat - from_beat) * STEPS_PER_BEAT as f64).round() as u32).max(1);
-    for i in 0..=steps {
-        let t = i as f64 / steps as f64;
-        engine.schedule(from_beat + (to_beat - from_beat) * t, make(from + (to - from) * t as f32));
-    }
-}
-
-/// Wert in dB für einen linearen Faktor, 0 = Kill.
-fn db(lin: f32) -> f32 {
-    if lin <= 0.0 {
-        f32::NEG_INFINITY
-    } else {
-        20.0 * lin.log10()
-    }
-}
-
 /// Messwerte eines gerenderten Übergangs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlendReport {
@@ -170,27 +151,10 @@ pub fn render_blend(a: Arc<Track>, b: Arc<Track>, plan: &BlendPlan) -> (AudioBuf
 
     e.schedule(start, Command::Play { deck: A, on: true });
 
-    // --- Vorlage T1 (5.10), Zeiten in Beats ab T0 ---
-    // B: Bass aus, Mitten −6 dB, Höhen −3 dB, Fader zu; dann Start.
-    e.schedule(t0 - 1.0, Command::Fader { deck: B, value: 0.0 });
-    e.schedule(t0 - 1.0, Command::Eq { deck: B, band: Band::Low, db: f32::NEG_INFINITY });
-    e.schedule(t0 - 1.0, Command::Eq { deck: B, band: Band::Mid, db: -6.0 });
-    e.schedule(t0 - 1.0, Command::Eq { deck: B, band: Band::High, db: -3.0 });
-    e.schedule(t0, Command::Play { deck: B, on: true });
-    // B Fader 0 → 1 von 0 bis L/8
-    ramp(&mut e, t0, t0 + l / 8.0, 0.0, 1.0, |v| Command::Fader { deck: B, value: v });
-    // B Mitte −6 → 0 dB bis S; B Hoch −3 → 0 dB bis S/2
-    ramp(&mut e, t0, t0 + s, -6.0, 0.0, |v| Command::Eq { deck: B, band: Band::Mid, db: v });
-    ramp(&mut e, t0, t0 + s / 2.0, -3.0, 0.0, |v| Command::Eq { deck: B, band: Band::High, db: v });
-    // Bass-Tausch im letzten Beat vor S
-    ramp(&mut e, t0 + s - 1.0, t0 + s, 1.0, 0.0, |v| Command::Eq { deck: A, band: Band::Low, db: db(v) });
-    ramp(&mut e, t0 + s - 1.0, t0 + s, 0.0, 1.0, |v| Command::Eq { deck: B, band: Band::Low, db: db(v) });
-    // A Mitte 0 → −9 dB, A Hoch 0 → −12 dB von S bis L − L/8
-    ramp(&mut e, t0 + s, t0 + l - l / 8.0, 0.0, -9.0, |v| Command::Eq { deck: A, band: Band::Mid, db: v });
-    ramp(&mut e, t0 + s, t0 + l - l / 8.0, 0.0, -12.0, |v| Command::Eq { deck: A, band: Band::High, db: v });
-    // A Fader 1 → 0 von L − L/4 bis L, danach Stopp
-    ramp(&mut e, t0 + l - l / 4.0, t0 + l, 1.0, 0.0, |v| Command::Fader { deck: A, value: v });
-    e.schedule(t0 + l, Command::Play { deck: A, on: false });
+    // --- Vorlage T1 (5.10) als Automation: dieselbe Beschreibung, die auch live abgespielt wird ---
+    for (beat, cmd) in Transition::bass_swap(plan.bars).commands(t0, Roles { out: A, inn: B }) {
+        e.schedule(beat, cmd);
+    }
 
     // --- T10: Tempo-Verlauf ---
     let (r0, r1) = (t0 + plan.tempo_ramp.0 * 4.0, t0 + plan.tempo_ramp.1 * 4.0);

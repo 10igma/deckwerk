@@ -48,7 +48,7 @@ export class Canvas2DWaveRenderer implements WaveRenderer {
       );
       for (let x = 0; x < lane.w; x++) {
         sampleColumn(data, lane.points, lane.idxCenter + (x + 0.5 - center) * lane.idxPerPx, lane.idxPerPx, this.col);
-        const side = x < center ? 0 : 1;
+        const side = x < lane.headX ? 0 : 1;
         let from = 0;
         for (let b = 0; b < 3; b++) {
           const hgt = this.col[b] * BAND_SHARE[b] * lane.h * 0.97;

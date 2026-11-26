@@ -115,6 +115,7 @@ function build(): MockTrack[] {
       duration,
       analyzed: true,
       missing: false,
+      incomplete: false,
       seed,
       firstBeat,
       grid,
@@ -128,7 +129,7 @@ function build(): MockTrack[] {
 export const MOCK_TRACKS: MockTrack[] = build();
 
 export function trackInfo(t: MockTrack): TrackInfo {
-  return { id: t.id, title: t.title, artist: t.artist, bpm: t.bpm, key: t.key, duration: t.duration, analyzed: true, missing: false };
+  return { id: t.id, title: t.title, artist: t.artist, bpm: t.bpm, key: t.key, duration: t.duration, analyzed: true, missing: false, incomplete: false };
 }
 
 export function trackAnalysis(t: MockTrack): TrackAnalysis {

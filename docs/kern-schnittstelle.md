@@ -8,11 +8,29 @@ Die Oberfläche spricht den Kern nur über `CoreApi` (`ui/src/core/api.ts`) an. 
 | `core_poll` | – | `Poll` | Schnappschuss, Engine-Kennzahlen, Stand der Bibliothek; je Bild einmal aufrufen |
 | `library_list` | – | `TrackInfo[]` | alle Tracks, nach Titel sortiert |
 | `library_import` | `paths: string[]` | `ImportResult` | Dateien und Ordner importieren (rekursiv) |
+| `library_refresh` (zählt eine am selben Ort ersetzte Datei unter `added`; `TrackInfo.incomplete` meldet unvollständige Dateien, BIB-20) | – | `RefreshResult` | Musikordner erneut durchsuchen (BIB-19): neue Dateien aufnehmen, verschobene neu zuordnen, fehlende markieren. Musikordner sind die als Ordner importierten Orte; kennt die Hülle noch keine, übernimmt sie einmalig die Ordner der vorhandenen Tracks |
+| `settings_get` | – | `AppSettings` (`refresh_on_start`, `music_folders`) | Einstellungen der Hülle |
+| `settings_refresh_on_start` | `on: boolean` | – | Beim Start die Musikordner durchsuchen (Vorgabe an) |
+| `transition_templates` | `bars: number` | `Transition[]` | eingebaute Vorlagen für Übergänge in dieser Länge (`bass_swap`, `fade`; TRANS-01) |
+| `transition_start` | `from: DeckId`, `to: DeckId`, `transition: Transition`, `when: TransitionWhen` | `TransitionRun` | Übergang vom laufenden Deck `from` zum Deck `to` einplanen (TRANS-05). `when` = `{ type: "next", align_bars }`: Beginn an der nächsten Taktgrenze des laufenden Tracks in diesem Raster; ein stehendes `to` steigt an seiner Stelle ein. `when` = `{ type: "end_in", beats }`: Ende in so vielen Clock-Beats (auf den nächsten Taktanfang gerückt), der Beginn wird um die Länge zurückgerechnet; ein stehendes `to` erreicht seine Stelle genau am Ende und startet entsprechend früher, notfalls vor seinem Anfang und bis dorthin stumm. Ein stehendes `to` rückt auf den Taktanfang neben seiner Position, bekommt Beat-Sync und wird von der Engine gestartet; läuft `to` schon im Takt mit, werden nur die Regler gefahren. Der erste Befehl liegt mindestens zwei Beats nach dem Aufruf. Abgelehnt mit Klartext, wenn ein laufendes Deck weder Master noch im Beat-Sync ist, der Tempo-Abstand über 8 % liegt, ein Track zu kurz ist, das gewählte Ende zu nah liegt oder schon ein Übergang läuft |
+| `transition_saved` | – | `Transition[]` | selbst gebaute Übergänge (TRANS-04), aus `transitions.json` im Datenordner |
+| `transition_save` | `transition: Transition` | `Transition[]` | speichern oder gleichnamigen ersetzen; liefert die neue Liste. Abgelehnt: leerer oder zu langer Name, Name einer eingebauten Vorlage, Werte außerhalb der Regler |
+| `transition_delete` | `name: string` | `Transition[]` | löschen; liefert die neue Liste |
+| `transition_cancel` | – | – | verwirft alle vorgemerkten Befehle; die Regler bleiben stehen |
+| `pair_list` | `a: DeckId`, `b: DeckId` | `PairTransition[]` | für das Paar der Tracks auf diesen Decks gespeicherte Übergänge, beide Richtungen (TRANS-07); leer, wenn ein Deck leer ist. Datei `pair_transitions.json` im Datenordner |
+| `pair_save` | `from: DeckId`, `to: DeckId`, `transition: Transition`, `when: TransitionWhen` | `PairTransition[]` | Kurven und Ort für das Paar speichern. `when` muss `start_here` oder `end_here` sein: Die Stellen der stehenden Decks (während des Vorhörens: die von davor) sind Beginn oder Ende; gespeichert wird immer der Beginn. Gleicher Name für dasselbe Paar in derselben Richtung ersetzt, sonst kommt ein Eintrag dazu. Abgelehnt, wenn ein Deck läuft, leer ist oder der Name fehlt |
+| `pair_delete` | `id: number` | – | Eintrag löschen |
+| `transition_preview` | `from: DeckId`, `to: DeckId`, `transition: Transition`, `when: TransitionWhen`, `fromBeat: number` | `TransitionRun` | Übergang vorhören (TRANS-06). Beide Decks halten an und werden so gestellt, dass der Übergang dort liegt, wo `transition_start` ihn mit `when` hinlegen würde. Nur hier gibt es zusätzlich `when` = `{ type: "start_here" }` und `{ type: "end_here" }` für stehende Decks: Die Stellen beider Decks (jeweils der nächstgelegene Taktanfang) sind Beginn bzw. Ende des Übergangs – die Oberfläche nimmt das, wenn kein Deck läuft; gespielt wird ab dem Takt, in dem `fromBeat` (Beats ab T0) liegt, mit vier Beats Vorlauf und acht Beats Nachlauf. `from` wird für die Dauer Master, `to` läuft im Beat-Sync; die Regler stehen zu Beginn so, wie der Übergang sie bis dorthin gestellt hätte. `end_beat` ist das Ende des Nachlaufs; danach stellt die Hülle bei der nächsten Abfrage (`core_poll`) Stelle, Fader, EQ, Filter und Sync beider Decks und die Master-Wahl wieder her. Die Decks bleiben danach stehen, auch wenn sie vorher liefen. Ein erneuter Aufruf während des Vorhörens beginnt neu und behält den zuerst gemerkten Stand. Abgelehnt wie `transition_start` (Tempo-Abstand, Track zu kurz, Ende zu nah) und wenn ein Übergang läuft; solange vorgehört wird, lehnt `transition_start` ab |
+| `transition_preview_stop` | – | – | Vorhören beenden und den Stand von vorher wiederherstellen; ohne laufendes Vorhören geschieht nichts |
+| `record_start` | `stamp: string | null` | `RecordingInfo` | Mitschnitt des Master-Signals nach dem Limiter beginnen (REC-01): WAV, 24 bit, Abtastrate der Engine, Datei `Deckwerk <stamp>.wav` im Ordner der Mitschnitte. `stamp` ist der Zeitstempel in Ortszeit; übernommen werden nur Ziffern, Leerzeichen und Bindestriche. Vorhandene Dateien werden nie überschrieben |
+| `record_stop` | – | `RecordingInfo` | Mitschnitt beenden und Datei abschließen |
+| `record_status` | – | `RecordingInfo | null` | laufender Mitschnitt (Stand höchstens eine Sekunde alt) oder der zuletzt von selbst abgebrochene mit `error` |
 | `deck_load` | `deck: DeckId`, `trackId: string` | – | Track laden; erfüllt, wenn das Deck spielbereit ist |
 | `deck_loaded` | – | `{ a, b, c, d: string \| null }` | Tracks auf den Decks |
 | `track_waveform` | `trackId: string` | `ArrayBuffer` | Wellenform im Binärformat „DWWF" |
 | `track_analysis` | `trackId: string` | `TrackAnalysis` | Analyseergebnis |
-| `audio_devices` | – | `DeviceEntry[]` | Ausgabegeräte |
+| `audio_devices` | – | `AudioDevice[]` | Ausgabegeräte aller Schnittstellen des Systems |
+| `audio_select` | `device: string \| null` | – | Ausgabegerät wechseln (`null` = Standardgerät des Systems); wirkt sofort, geladene Decks bleiben erhalten. Lässt sich das Gerät nicht öffnen, wird abgelehnt und das bisherige läuft weiter |
 
 Fehler kommen als abgelehntes Promise mit einem deutschen Klartext (`string`).
 
@@ -28,9 +46,18 @@ interface Poll {
     buffer_size: number;         // 0 = Vorgabe des Geräts
     has_device: boolean;         // false: kein Audiogerät, Engine läuft stumm
     device_error: string | null;
+    device: string | null;       // gewähltes Ausgabegerät; null = Standardgerät des Systems
   };
   library_rev: number;           // ändert sich → library_list neu abrufen
   pending_analysis: number;      // Tracks in der Analyse-Warteschlange
+}
+
+interface AudioDevice {
+  host: string;                  // Schnittstelle, z. B. "WASAPI", "CoreAudio", "ALSA"
+  name: string;
+  is_default: boolean;           // Standardgerät des Systems
+  max_channels: number;
+  sample_rates: number[];
 }
 
 interface TrackInfo {
@@ -66,9 +93,35 @@ Bei der Übersicht ist „Samples je Punkt" abgerundet; die genaue Zuordnung erg
 
 Dateien und Ordner, die auf das Fenster gezogen werden, importiert die Hülle selbst. Die Oberfläche bemerkt das über `library_rev`.
 
+## Einstellungen
+
+Das gewählte Ausgabegerät steht in `settings.json` im Datenordner (`{ "audio_device": string | null }`) und wird beim Start wieder geöffnet. Fehlt das Gerät dann, nimmt die Anwendung das Standardgerät des Systems. Die Engine behält über einen Gerätewechsel hinweg die Abtastrate, mit der sie gestartet ist.
+
 ## Umgebungsvariablen
 
 | Variable | Wirkung |
 |---|---|
 | `DECKWERK_DATA` | Ordner für Bibliothek und Cache statt des Benutzerdaten-Ordners |
 | `DECKWERK_MUSIC` | Ordner, der beim Start importiert wird |
+| `DECKWERK_RECORDINGS` | Ordner für Mitschnitte statt „Deckwerk" im Musik-Ordner des Benutzers |
+
+## Übergang als Datenobjekt
+
+`Transition` beschreibt einen Übergang unabhängig davon, ob er offline gerendert oder live gefahren wird (Format wie der Abschnitt „Automation" des Mix-Plans, Spezifikation 6.3):
+
+| Feld | Bedeutung |
+|---|---|
+| `name` | Kennung der Vorlage oder frei gewählter Name |
+| `bars` | Länge in Takten (1 … 256) |
+| `start_in` | Start des kommenden Decks in Beats relativ zu T0; `null` = es läuft schon |
+| `stop_out` | Stopp des gehenden Decks in Beats relativ zu T0; `null` = es läuft weiter |
+| `reset_out` | nach dem Stopp die gefahrenen Regler des gehenden Decks in Ruhestellung bringen |
+| `lanes` | Automationsspuren: `side` (`out` = gehendes, `in` = kommendes Deck), `param` (`fader` 0 … 1, `eq_low` / `eq_mid` / `eq_high` in dB mit `null` = Kill, `filter` −1 … +1), `points` |
+
+Ein Stützpunkt hat `beat` (Master-Beats relativ zu T0, negativ = davor), `value` und `curve` (`linear`, `smooth`, `step`) für den Weg vom vorigen Punkt. Vor dem ersten Stützpunkt fasst die Spur den Regler nicht an. EQ-Wege von oder zu Kill laufen linear im Pegelfaktor, alle anderen linear im Wert. Gesendet wird in Schritten von einem Viertel-Beat; die Engine glättet dazwischen.
+
+`PairTransition`: `id`, `out_track`, `in_track` (Kennungen der Bibliothek), `out_pos`, `in_pos` (Sekunden: Stellen beider Tracks am Beginn T0), `transition`. Gespielt wird er mit `transition_start` und `when` = `{ type: "at", out_pos, in_pos }`: Beginn, wenn der laufende Track `out_pos` erreicht (auf den Taktanfang gerückt), das stehende neue Deck steigt bei `in_pos` ein; abgelehnt, wenn die Stelle schon vorbei oder näher als der Vorlauf ist oder das neue Deck schon läuft.
+
+`TransitionRun`: `from`, `to`, `name`, `bars`, `t0_beat`, `end_beat` (Clock-Beats). Den Stand liest die Oberfläche aus `Snapshot.clock_beats`.
+
+`RecordingInfo`: `path`, `active`, `seconds` (bisher geschriebene Länge), `dropped_frames` (verlorene Frames, 0 = lückenlos), `error` (Grund, falls die Aufnahme von selbst abbrach). Während der Aufnahme stehen die Längen einmal je Sekunde im Dateikopf; die Datei ist dann auch nach einem Absturz lesbar.

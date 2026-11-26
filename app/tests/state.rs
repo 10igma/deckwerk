@@ -1,9 +1,9 @@
 //! Der Weg durch die Anwendung ohne Fenster: Import → Hintergrund-Analyse → Laden → Abspielen.
 //! In dieser Umgebung gibt es kein Audiogerät; die Engine läuft dann stumm im Zeittakt.
 
-use deckwerk_app::state::AppState;
+use deckwerk_app::state::{add_folder, AppState, Settings};
 use deckwerk_app::worker;
-use dw_core::{Command, DeckId, Key, Waveform, ANALYSIS_VERSION};
+use dw_core::{Command, DeckId, Key, Waveform, XfAssign, ANALYSIS_VERSION};
 use dw_library::{SortColumn, TrackQuery};
 use dw_testgen::{techno_track, SectionKind, SectionSpec, TrackSpec};
 use std::time::{Duration, Instant};
@@ -72,5 +72,580 @@ fn import_analyse_load_and_play() {
     assert!((snap.decks[1].bpm - 128.0).abs() < 0.05, "B läuft mit {}", snap.decks[1].bpm);
     assert!(snap.decks[1].phase.abs() < 0.01, "Phase {}", snap.decks[1].phase);
     assert!((snap.decks[0].duration - rows[0].duration).abs() < 0.01);
-    println!("Audiogerät: {:?}", state.audio);
+    println!("Audiogerät: {:?}", state.audio.lock().unwrap());
+}
+
+/// Spitzenpegel von Deck A (vor dem Fader) und Master über ein Zeitfenster.
+fn peaks_over(state: &AppState, window: Duration) -> (f32, f32) {
+    // Erst einschwingen lassen und Altes verwerfen, dann messen.
+    std::thread::sleep(Duration::from_millis(300));
+    state.ctl.lock().unwrap().snapshot();
+    std::thread::sleep(window);
+    let mut ctl = state.ctl.lock().unwrap();
+    let s = ctl.snapshot();
+    (s.decks[0].peak[0].max(s.decks[0].peak[1]), s.mixer.master_peak[0].max(s.mixer.master_peak[1]))
+}
+
+/// MIX-06: Die Anwendung startet mit A/C links und B/D rechts am Crossfader. Ohne diese
+/// Zuweisung bleibt der Regler wirkungslos (Befund der Abnahme am Gerät unter macOS).
+#[test]
+fn crossfader_fades_deck_a_out() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+
+    wait_for("Zuweisung", || state.ctl.lock().unwrap().snapshot().decks[0].loaded);
+    let snap = state.ctl.lock().unwrap().snapshot().clone();
+    let assign: Vec<_> = snap.decks.iter().map(|d| d.xf_assign).collect();
+    assert_eq!(assign, [XfAssign::Left, XfAssign::Right, XfAssign::Left, XfAssign::Right]);
+
+    // Im Hauptteil des Tracks starten, damit durchgehend Pegel anliegt.
+    {
+        let mut ctl = state.ctl.lock().unwrap();
+        ctl.send(Command::Seek { deck: DeckId::A, pos: 20.0 });
+        ctl.send(Command::Play { deck: DeckId::A, on: true });
+        ctl.send(Command::Crossfader { pos: -1.0 });
+    }
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].playing);
+    let (deck, master) = peaks_over(&state, Duration::from_millis(600));
+    assert!(deck > 0.05 && master > 0.05, "Crossfader bei A: Deck {deck}, Master {master}");
+
+    // Ganz zur anderen Seite: A liegt weiter am Kanal an, der Master ist still (unter −80 dB).
+    state.ctl.lock().unwrap().send(Command::Crossfader { pos: 1.0 });
+    let (deck, master) = peaks_over(&state, Duration::from_millis(600));
+    assert!(deck > 0.05, "Deck A läuft nicht mehr: {deck}");
+    assert!(master < 1e-4, "Crossfader bei B, A noch auf dem Master: {master}");
+}
+
+/// ENG-01: Ein Gerätewechsel behält die Engine. Das geladene Deck läuft danach weiter, die
+/// Wahl steht in den Einstellungen; ein unbekanntes Gerät wird abgelehnt, ohne den Stand der
+/// Ausgabe oder die gespeicherte Wahl zu ändern. Läuft mit und ohne Audiogerät.
+#[test]
+fn switching_the_output_device_keeps_the_engine_running() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let data = tmp.path().join("daten");
+    let settings_file = data.join("settings.json");
+
+    let state = AppState::start(&data).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: true });
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].pos > 0.2);
+    let before = state.audio.lock().unwrap().clone();
+    assert_eq!(before.device, None);
+
+    // Unbekanntes Gerät: Fehler mit dem Namen, Ausgabe wie zuvor, nichts gespeichert.
+    let error = state.select_device(Some("Gerät, das es nicht gibt".into())).unwrap_err();
+    assert!(error.contains("Gerät, das es nicht gibt"), "{error}");
+    let after = state.audio.lock().unwrap().clone();
+    assert_eq!((after.has_device, after.device.clone(), after.sample_rate), (before.has_device, None, before.sample_rate));
+    assert_eq!(Settings::load(&settings_file).audio_device, None);
+
+    // Wechsel auf das Standardgerät: Gelingt er (es gibt ein Gerät), wird die Wahl gespeichert.
+    let chosen = state.select_device(None);
+    if before.has_device {
+        assert_eq!(chosen.unwrap().device, None);
+        assert_eq!(Settings::load(&settings_file).audio_device, None);
+        assert!(settings_file.exists());
+    }
+
+    // Das Deck ist nach zwei Wechseln noch geladen und läuft weiter.
+    let pos = state.ctl.lock().unwrap().snapshot().decks[0].pos;
+    wait_for("Wiedergabe nach dem Wechsel", || {
+        let mut ctl = state.ctl.lock().unwrap();
+        let s = ctl.snapshot();
+        s.decks[0].loaded && s.decks[0].playing && s.decks[0].pos > pos + 0.3
+    });
+    assert_eq!(state.engine_rate, before.sample_rate);
+}
+
+/// Die Einstellungen überstehen Schreiben und Lesen; eine fehlende oder kaputte Datei ergibt
+/// die Vorgaben statt eines Fehlers.
+#[test]
+fn settings_roundtrip_and_fallback() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("settings.json");
+    assert_eq!(Settings::load(&file), Settings::default());
+    let chosen = Settings { audio_device: Some("Kopfhörer (Beispiel)".into()), music_folders: vec![tmp.path().join("musik")], refresh_on_start: false };
+    chosen.save(&file).unwrap();
+    assert_eq!(Settings::load(&file), chosen);
+    // Eine Datei aus der Zeit vor den neuen Feldern: Die fehlenden bekommen ihre Vorgaben.
+    std::fs::write(&file, br#"{ "audio_device": "Alt" }"#).unwrap();
+    assert_eq!(Settings::load(&file), Settings { audio_device: Some("Alt".into()), ..Settings::default() });
+    assert!(Settings::default().refresh_on_start);
+    std::fs::write(&file, b"{ kaputt").unwrap();
+    assert_eq!(Settings::load(&file), Settings::default());
+}
+/// BIB-19: „Bibliothek aktualisieren" findet neue Dateien in den gemerkten Ordnern, lässt bekannte
+/// Tracks unberührt, ordnet verschobene neu zu und markiert fehlende.
+#[test]
+fn refresh_finds_new_files_in_the_remembered_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(music.join("neu")).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let data = tmp.path().join("daten");
+
+    let state = AppState::start(&data).unwrap();
+    assert_eq!(state.import(&[music.clone()]).unwrap().added, 2);
+    // Der Ordner ist gemerkt und steht in der Datei.
+    assert_eq!(Settings::load(&data.join("settings.json")).music_folders, vec![music.clone()]);
+
+    // Nichts Neues: nichts kommt dazu.
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.added, r.relinked, r.missing), (1, 0, 0, 0));
+
+    // Eine neue Datei im Unterordner, eine verschoben, eine gelöscht.
+    write_track(&music.join("neu"), "Dritter.wav", 132.0, Key::from_camelot(10, 'A').unwrap(), 3);
+    std::fs::rename(music.join("Erster.wav"), music.join("neu").join("Erster.wav")).unwrap();
+    std::fs::remove_file(music.join("Zweiter.wav")).unwrap();
+    let rev = state.library_rev.load(std::sync::atomic::Ordering::Relaxed);
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.unreachable, r.added, r.relinked, r.missing), (1, 0, 1, 1, 1));
+    assert!(r.failed.is_empty());
+    assert!(state.library_rev.load(std::sync::atomic::Ordering::Relaxed) > rev);
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.iter().filter(|t| t.missing).count(), 1);
+
+    // Ein nicht erreichbarer Musikordner wird gemeldet, statt den Lauf scheitern zu lassen.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    std::fs::rename(&music, tmp.path().join("weg")).unwrap();
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.unreachable, r.added, r.missing), (0, 1, 0, 3));
+}
+
+/// Eine Bibliothek ohne gemerkte Ordner (vor dieser Funktion angelegt) übernimmt beim ersten
+/// Aktualisieren die Ordner ihrer Tracks.
+#[test]
+fn refresh_adopts_the_folders_of_an_older_library() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    // Einzelne Datei importiert: kein Ordner gemerkt.
+    assert_eq!(state.import(&[music.join("Erster.wav")]).unwrap().added, 1);
+    assert!(state.settings.lock().unwrap().music_folders.is_empty());
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let r = state.refresh().unwrap();
+    assert_eq!((r.folders, r.added), (1, 1));
+    assert_eq!(state.settings.lock().unwrap().music_folders, vec![music]);
+}
+
+/// Die Liste der Musikordner bleibt frei von Verschachtelung.
+#[test]
+fn music_folders_do_not_nest() {
+    let mut folders = Vec::new();
+    let p = std::path::Path::new;
+    assert!(add_folder(&mut folders, p("/musik/techno")));
+    assert!(!add_folder(&mut folders, p("/musik/techno/2026")));
+    assert!(!add_folder(&mut folders, p("/musik/techno")));
+    assert!(add_folder(&mut folders, p("/musik")));
+    assert_eq!(folders, vec![p("/musik").to_path_buf()]);
+}
+
+/// BIB-20: Eine abgebrochene Kopie (hinten fehlt Audio) wird bei der Analyse als unvollständig
+/// markiert, eine vollständige Datei nicht; nach dem Ersetzen verschwindet die Markierung.
+#[test]
+fn incomplete_files_are_marked_in_the_library() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Ganz.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Halb.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let whole = std::fs::read(music.join("Halb.wav")).unwrap();
+    std::fs::write(music.join("Halb.wav"), &whole[..whole.len() * 2 / 5]).unwrap();
+
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    assert_eq!(state.import(&[music.clone()]).unwrap().added, 2);
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    for row in &rows {
+        state.analyze_track(row.id).unwrap();
+    }
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    assert_eq!(rows.iter().map(|r| (r.title.as_str(), r.incomplete)).collect::<Vec<_>>(), vec![("Ganz", false), ("Halb", true)]);
+
+    // Vollständige Datei an denselben Ort: Aktualisieren setzt den Track zurück, die neue Analyse ist sauber.
+    std::fs::write(music.join("Halb.wav"), &whole).unwrap();
+    let r = state.refresh().unwrap();
+    assert_eq!(r.added, 1);
+    let row = state.lib.lock().unwrap().track(rows[1].id).unwrap();
+    assert!(!row.analyzed && !row.incomplete);
+    state.analyze_track(row.id).unwrap();
+    let row = state.lib.lock().unwrap().track(row.id).unwrap();
+    assert!(row.analyzed && !row.incomplete);
+    assert!((row.bpm.unwrap() - 130.0).abs() < 0.05);
+}
+
+/// TRANS-05, AUTO-08: Ein vorbereiteter Übergang lässt sich im laufenden Betrieb einplanen. Die
+/// Anwendung prüft die Voraussetzungen in Klartext, die Engine startet das neue Deck an der
+/// Taktgrenze und fährt die Regler; danach läuft nur noch das neue Deck, offen und als Master.
+#[test]
+fn a_prepared_transition_plays_live() {
+    use dw_automix::{Transition, When};
+    let next = When::Next { align_bars: 1 };
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    let fade = Transition::fade(4);
+
+    // Ohne geladene Decks, ohne laufendes Deck, mit laufendem Ziel: jeweils eine klare Absage.
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Deck A läuft nicht"));
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: true });
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].pos > 0.3);
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Auf Deck B liegt kein Track"));
+    state.load_deck(DeckId::B, rows[1].id).unwrap();
+    wait_for("Deck B geladen", || state.ctl.lock().unwrap().snapshot().decks[1].loaded);
+    assert!(state.start_transition(DeckId::A, DeckId::A, &fade, next).is_err());
+
+    // Einplanen: T0 liegt mindestens den Vorlauf und höchstens gut einen Takt voraus.
+    let before = state.ctl.lock().unwrap().snapshot().clock_beats;
+    let run = state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap();
+    assert_eq!((run.from, run.to, run.bars, run.name.as_str()), (DeckId::A, DeckId::B, 4, "fade"));
+    assert!(run.t0_beat - before >= dw_automix::LEAD_BEATS && run.t0_beat - before < 9.0, "T0 in {} Beats", run.t0_beat - before);
+    assert!((run.end_beat - (run.t0_beat + 17.0)).abs() < 1e-9);
+    assert!(state.start_transition(DeckId::A, DeckId::B, &fade, next).unwrap_err().contains("Es läuft schon ein Übergang"));
+
+    // Kurz nach T0 läuft B im Takt und A noch mit.
+    wait_for("Start von B", || state.ctl.lock().unwrap().snapshot().clock_beats > run.t0_beat + 2.0);
+    let s = state.ctl.lock().unwrap().snapshot().clone();
+    assert!(s.decks[0].playing && s.decks[1].playing);
+    assert_eq!(s.decks[1].sync, dw_core::SyncMode::Beat);
+    assert!(s.decks[1].phase.abs() < 0.01, "Phase von B {}", s.decks[1].phase);
+    assert!(s.decks[1].fader > 0.0 && s.decks[1].fader < 1.0, "Fader von B unterwegs bei {}", s.decks[1].fader);
+
+    // Nach dem Ende: A steht mit Reglern in Ruhestellung, B läuft offen und ist Master.
+    wait_for("Ende des Übergangs", || state.ctl.lock().unwrap().snapshot().clock_beats > run.end_beat + 1.0);
+    let s = state.ctl.lock().unwrap().snapshot().clone();
+    assert!(!s.decks[0].playing && s.decks[1].playing);
+    assert_eq!((s.decks[0].fader, s.decks[0].eq_db), (1.0, [0.0; 3]));
+    assert_eq!((s.decks[1].fader, s.decks[1].eq_db), (1.0, [0.0; 3]));
+    assert_eq!(s.master, Some(DeckId::B));
+
+    // Abbrechen: Die Regler bleiben stehen. Von B zurück nach A, nach dem ersten Stück abgebrochen.
+    state.ctl.lock().unwrap().send(Command::Seek { deck: DeckId::A, pos: 10.0 });
+    let run = state.start_transition(DeckId::B, DeckId::A, &Transition::bass_swap(8), next).unwrap();
+    wait_for("zweiter Übergang", || state.ctl.lock().unwrap().snapshot().clock_beats > run.t0_beat + 6.0);
+    state.cancel_transition().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let at_cancel = state.ctl.lock().unwrap().snapshot().clone();
+    assert_eq!(at_cancel.decks[0].eq_db[0], f32::NEG_INFINITY, "Bass von A ist vor dem Tausch noch aus");
+    std::thread::sleep(Duration::from_millis(1500));
+    let later = state.ctl.lock().unwrap().snapshot().clone();
+    assert!(later.decks[0].playing && later.decks[1].playing);
+    assert_eq!((later.decks[0].eq_db, later.decks[0].fader), (at_cancel.decks[0].eq_db, at_cancel.decks[0].fader));
+    // Beide Decks laufen im Takt (A im Beat-Sync): Jetzt lässt sich ein Übergang mit vorgegebenem
+    // Ende einplanen. Liegt das Ende zu nah, kommt die Absage mit den fehlenden Beats.
+    let err = state.start_transition(DeckId::B, DeckId::A, &fade, When::EndIn { beats: 8.0 }).unwrap_err();
+    assert!(err.contains("Bis zum gewählten Ende"), "{err}");
+    let before = state.ctl.lock().unwrap().snapshot().clock_beats;
+    let run = state.start_transition(DeckId::B, DeckId::A, &fade, When::EndIn { beats: 30.0 }).unwrap();
+    let end = run.t0_beat + 16.0;
+    assert!((end - before - 30.0).abs() <= 2.0 + 1e-6, "Ende in {} Beats statt rund 30", end - before);
+    wait_for("Ende des dritten Übergangs", || state.ctl.lock().unwrap().snapshot().clock_beats > run.end_beat + 1.0);
+    let s = state.ctl.lock().unwrap().snapshot().clone();
+    assert!(s.decks[0].playing && !s.decks[1].playing, "A läuft weiter, B ist gestoppt");
+    // Fader und Bass von A hat dieser Übergang geöffnet; Mitten und Höhen stehen noch dort, wo der
+    // abgebrochene sie gelassen hat – das Überblenden fasst sie nicht an.
+    assert_eq!((s.decks[0].fader, s.decks[0].eq_db[0]), (1.0, 0.0));
+}
+
+/// REC-01: Der Mitschnitt schreibt das Master-Signal lückenlos als WAV. Die Datei ist schon
+/// während der Aufnahme lesbar, enthält nach dem Stoppen so viel Ton, wie Zeit vergangen ist,
+/// und bestehende Dateien werden nicht überschrieben.
+#[test]
+fn recording_writes_the_master_signal_to_a_wav_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    let recordings = tmp.path().join("aufnahmen");
+    state.set_recordings_dir(recordings.clone());
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery::default()).unwrap();
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    {
+        let mut ctl = state.ctl.lock().unwrap();
+        ctl.send(Command::Seek { deck: DeckId::A, pos: 20.0 });
+        ctl.send(Command::Play { deck: DeckId::A, on: true });
+    }
+    wait_for("Wiedergabe", || state.ctl.lock().unwrap().snapshot().decks[0].playing);
+
+    assert!(state.stop_recording().unwrap_err().contains("keine Aufnahme"));
+    assert_eq!(state.recording_status(), None);
+    let started = Instant::now();
+    let info = state.start_recording(Some("2026-11-22 13-05-09")).unwrap();
+    assert!(info.active && info.path.ends_with("Deckwerk 2026-11-22 13-05-09.wav"), "{}", info.path);
+    assert!(state.start_recording(None).unwrap_err().contains("läuft schon"));
+
+    // Nach gut zwei Sekunden: Die Datei ist lesbar, obwohl die Aufnahme noch läuft.
+    std::thread::sleep(Duration::from_millis(2300));
+    let partial = dw_decode::decode_file(std::path::Path::new(&info.path)).unwrap();
+    let secs = partial.audio.frames() as f64 / partial.audio.sample_rate as f64;
+    assert!(secs >= 0.9 && secs <= 2.4, "lesbar während der Aufnahme: {secs} s");
+    let status = state.recording_status().unwrap();
+    assert!(status.active && status.seconds >= 0.9, "{status:?}");
+
+    let done = state.stop_recording().unwrap();
+    let elapsed = started.elapsed().as_secs_f64();
+    assert!(!done.active && done.error.is_none());
+    assert_eq!(done.dropped_frames, 0, "Aufnahme mit Lücken");
+    assert!((done.seconds - elapsed).abs() < 0.3, "Länge {} s, vergangen {elapsed} s", done.seconds);
+    assert_eq!(state.recording_status(), None);
+
+    // Inhalt: Abtastrate der Engine, so lang wie gemeldet, und es ist Ton darauf.
+    let file = dw_decode::decode_file(std::path::Path::new(&done.path)).unwrap();
+    assert_eq!(file.audio.sample_rate, state.engine_rate);
+    assert_eq!(file.bits_per_sample, Some(24));
+    assert!((file.audio.frames() as f64 / state.engine_rate as f64 - done.seconds).abs() < 1e-6);
+    let peak = file.audio.data.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(peak > 0.05, "Aufnahme ist still (Spitze {peak})");
+
+    // Gleicher Zeitstempel noch einmal: neue Datei daneben, die alte bleibt.
+    let again = state.start_recording(Some("2026-11-22 13-05-09")).unwrap();
+    assert!(again.path.ends_with("Deckwerk 2026-11-22 13-05-09 (2).wav"), "{}", again.path);
+    state.stop_recording().unwrap();
+    // Ein Name von außen kann den Ordner nicht verlassen.
+    let odd = state.start_recording(Some("../../böse")).unwrap();
+    assert!(std::path::Path::new(&odd.path).parent() == Some(recordings.as_path()), "{}", odd.path);
+    state.stop_recording().unwrap();
+    assert_eq!(std::fs::read_dir(&recordings).unwrap().count(), 3);
+}
+
+/// TRANS-04: Eigene Übergänge werden gespeichert, ersetzt, gelöscht und überdauern einen Neustart;
+/// Unsinn und die Namen der eingebauten Vorlagen werden abgelehnt.
+#[test]
+fn own_transitions_are_saved_and_survive_a_restart() {
+    use dw_automix::{Curve, Param, Side, Transition};
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("daten");
+    let state = AppState::start(&data).unwrap();
+    assert!(state.saved_transitions().is_empty());
+
+    let mut mine = Transition::bass_swap(16);
+    mine.name = "  Langer Tausch ".into();
+    // Bass-Tausch über zwei Takte statt eines Beats, weich.
+    let low_out = mine.lanes.iter_mut().find(|l| l.side == Side::Out && l.param == Param::EqLow).unwrap();
+    low_out.points[0].beat = 24.0;
+    low_out.points[1].curve = Curve::Smooth;
+    let list = state.save_transition(&mine).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "Langer Tausch");
+
+    let mut second = Transition::fade(8);
+    second.name = "Kurz".into();
+    assert_eq!(state.save_transition(&second).unwrap().len(), 2);
+    // Gleicher Name ersetzt.
+    mine.bars = 32;
+    let list = state.save_transition(&mine).unwrap();
+    assert_eq!((list.len(), list[0].bars), (2, 32));
+
+    // Abgelehnt: eingebauter Name, leerer Name, Werte außerhalb des Reglers.
+    assert!(state.save_transition(&Transition::fade(8)).unwrap_err().contains("eingebauten Vorlage"));
+    let mut nameless = Transition::fade(8);
+    nameless.name = "   ".into();
+    assert!(state.save_transition(&nameless).is_err());
+    let mut broken = second.clone();
+    broken.lanes[0].points[0].value = 3.0;
+    assert!(state.save_transition(&broken).is_err());
+    assert_eq!(state.saved_transitions().len(), 2);
+
+    // Neustart: beide sind da, mit Kill als Kill und der Kurvenform.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    let list = state.saved_transitions();
+    assert_eq!(list.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["Langer Tausch", "Kurz"]);
+    let low_out = list[0].lanes.iter().find(|l| l.side == Side::Out && l.param == Param::EqLow).unwrap();
+    assert_eq!((low_out.points[0].beat, low_out.points[1].value, low_out.points[1].curve), (24.0, f32::NEG_INFINITY, Curve::Smooth));
+
+    assert_eq!(state.delete_transition("Kurz").unwrap().len(), 1);
+    assert_eq!(state.delete_transition("gibt es nicht").unwrap().len(), 1);
+    // Eine kaputte Datei macht die Liste leer statt die Anwendung zu stoppen.
+    std::fs::write(data.join("transitions.json"), b"{ kaputt").unwrap();
+    assert!(state.saved_transitions().is_empty());
+}
+
+/// TRANS-06: Vorhören stellt beide Decks kurz vor die gewählte Stelle, spielt den Übergang von
+/// dort im Takt und stellt danach Stellen, Regler, Sync und Master wieder her.
+#[test]
+fn a_transition_can_be_previewed_and_everything_is_put_back() {
+    use dw_automix::{Transition, When, PREVIEW_LEAD, PREVIEW_TAIL};
+    use dw_core::{Band, SyncMode};
+    let next = When::Next { align_bars: 1 };
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    let state = AppState::start(&tmp.path().join("daten")).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    let swap = Transition::bass_swap(4);
+    let snap = || state.ctl.lock().unwrap().snapshot().clone();
+
+    state.load_deck(DeckId::A, rows[0].id).unwrap();
+    wait_for("Deck A geladen", || snap().decks[0].loaded);
+    assert!(state.preview_transition(DeckId::A, DeckId::B, &swap, next, 0.0).unwrap_err().contains("Auf Deck B liegt kein Track"));
+    state.load_deck(DeckId::B, rows[1].id).unwrap();
+    wait_for("Decks geladen", || snap().decks[0].loaded && snap().decks[1].loaded);
+    // Ausgangslage: beide stehen, B mit eigenen Reglerstellungen, die der Übergang überfährt.
+    for cmd in [
+        Command::Seek { deck: DeckId::A, pos: 8.0 },
+        Command::Seek { deck: DeckId::B, pos: 12.0 },
+        Command::Fader { deck: DeckId::B, value: 0.6 },
+        Command::Eq { deck: DeckId::B, band: Band::Mid, db: -2.0 },
+        Command::Filter { deck: DeckId::A, pos: 0.25 },
+    ] {
+        state.ctl.lock().unwrap().send(cmd);
+    }
+    wait_for("Ausgangslage", || (snap().decks[0].pos - 8.0).abs() < 1e-6 && snap().decks[1].fader == 0.6 && snap().decks[0].filter == 0.25);
+    let before = snap();
+    assert!(before.master_auto);
+
+    // Ab Takt 3 (Beat 8): Beginn bei Beat 4, beide Decks starten zusammen.
+    let run = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 8.0).unwrap();
+    let begin = run.t0_beat + 8.0 - PREVIEW_LEAD;
+    assert!(begin - before.clock_beats >= 1.5 && begin - before.clock_beats <= 2.5, "Beginn in {} Beats", begin - before.clock_beats);
+    assert!((run.end_beat - (run.t0_beat + 16.0 + PREVIEW_TAIL)).abs() < 1e-9);
+    assert_eq!(state.preview_run(), Some(run.clone()));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &swap, next).unwrap_err().contains("Vorhören"));
+    assert!(state.start_transition(DeckId::A, DeckId::B, &swap, When::StartHere).is_err());
+    wait_for("beide Decks laufen", || snap().clock_beats > begin + 1.0);
+    let s = snap();
+    assert!(s.decks[0].playing && s.decks[1].playing);
+    assert_eq!((s.master, s.decks[1].sync), (Some(DeckId::A), SyncMode::Beat));
+    assert!(s.decks[1].phase.abs() < 0.01, "Phase von B {}", s.decks[1].phase);
+    // Im Bass-Tausch über 4 Takte steht der Fader von B nach einem Takt schon offen, der Bass ist noch zu.
+    assert_eq!((s.decks[1].fader, s.decks[1].eq_db[0]), (1.0, f32::NEG_INFINITY));
+    // Nach dem Tausch (Beat 8) hat B den Bass und A nicht mehr.
+    wait_for("Bass-Tausch", || snap().clock_beats > run.t0_beat + 9.0);
+    let s = snap();
+    assert_eq!((s.decks[0].eq_db[0], s.decks[1].eq_db[0]), (f32::NEG_INFINITY, 0.0));
+
+    // Zu Ende gespielt: Mit der nächsten Abfrage steht alles wie vorher.
+    assert!(!state.finish_preview_if_over(snap().clock_beats));
+    wait_for("Ende des Vorhörens", || snap().clock_beats > run.end_beat + 0.5);
+    assert!(state.finish_preview_if_over(snap().clock_beats));
+    assert_eq!(state.preview_run(), None);
+    let same = |what: &str| {
+        wait_for(what, || {
+            let s = snap();
+            (0..2).all(|i| {
+                let (now, old) = (&s.decks[i], &before.decks[i]);
+                !now.playing && (now.pos - old.pos).abs() < 1e-6 && now.fader == old.fader && now.eq_db == old.eq_db && now.filter == old.filter && now.sync == old.sync
+            }) && s.master_auto
+        })
+    };
+    same("Stand wie vorher");
+
+    // Mitten im Vorhören noch einmal von vorn (nach einer Änderung im Editor), dann von Hand
+    // beendet: Wiederhergestellt wird der Stand vor dem ersten, nicht der mittendrin.
+    let first = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 8.0).unwrap();
+    wait_for("erstes Vorhören läuft", || snap().clock_beats > first.t0_beat + 6.0 && snap().decks[1].playing);
+    let run = state.preview_transition(DeckId::A, DeckId::B, &swap, next, 0.0).unwrap();
+    assert!(run.t0_beat > first.t0_beat);
+    wait_for("zweites Vorhören", || snap().clock_beats > run.t0_beat + 2.0);
+    assert!(snap().decks[1].playing);
+    state.stop_preview().unwrap();
+    same("Stand wie vorher nach Abbruch");
+    // Ohne laufendes Vorhören ist Beenden kein Fehler.
+    state.stop_preview().unwrap();
+}
+
+/// TRANS-07: Für ein Paar lassen sich beliebig viele Übergänge mit Ort speichern; sie überdauern
+/// einen Neustart, gelten nur für dieses Paar und spielen live am gespeicherten Ort.
+#[test]
+fn transitions_are_saved_per_pair_with_their_place() {
+    use dw_automix::{Transition, When};
+    let tmp = tempfile::tempdir().unwrap();
+    let music = tmp.path().join("musik");
+    std::fs::create_dir_all(&music).unwrap();
+    write_track(&music, "Erster.wav", 128.0, Key::from_camelot(8, 'A').unwrap(), 1);
+    write_track(&music, "Zweiter.wav", 130.0, Key::from_camelot(9, 'A').unwrap(), 2);
+    write_track(&music, "Dritter.wav", 129.0, Key::from_camelot(9, 'A').unwrap(), 3);
+    let data = tmp.path().join("daten");
+    let state = AppState::start(&data).unwrap();
+    state.import(&[music]).unwrap();
+    let rows = state.lib.lock().unwrap().tracks(&TrackQuery { sort: SortColumn::Title, ..Default::default() }).unwrap();
+    let id = |title: &str| rows.iter().find(|r| r.title.starts_with(title)).unwrap().id;
+    let snap = |state: &AppState| state.ctl.lock().unwrap().snapshot().clone();
+    let load = |state: &AppState, a: &str, b: &str| {
+        state.load_deck(DeckId::A, id(a)).unwrap();
+        state.load_deck(DeckId::B, id(b)).unwrap();
+        wait_for("Decks geladen", || snap(state).decks[0].loaded && snap(state).decks[1].loaded);
+    };
+    load(&state, "Erster", "Zweiter");
+    assert!(state.pair_transitions(DeckId::A, DeckId::B).is_empty());
+    for cmd in [Command::Seek { deck: DeckId::A, pos: 9.0 }, Command::Seek { deck: DeckId::B, pos: 14.0 }] {
+        state.ctl.lock().unwrap().send(cmd);
+    }
+    wait_for("Stellen", || (snap(&state).decks[0].pos - 9.0).abs() < 1e-6 && (snap(&state).decks[1].pos - 14.0).abs() < 1e-6);
+
+    // Zwei Arten für dasselbe Paar: Beginn hier, und eine zweite mit Ende hier.
+    let mut swap = Transition::bass_swap(4);
+    swap.name = "Früh".into();
+    let list = state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::StartHere).unwrap();
+    assert_eq!(list.len(), 1);
+    // Der Ort liegt auf dem Taktanfang neben den Stellen (128 BPM: ein Takt = 1,875 s).
+    assert!((list[0].out_pos - 9.0).abs() < 1.0 && (list[0].in_pos - 14.0).abs() < 1.0, "{:?}", (list[0].out_pos, list[0].in_pos));
+    let mut fade = Transition::fade(4);
+    fade.name = "Spät".into();
+    let list = state.save_pair_transition(DeckId::A, DeckId::B, &fade, When::EndHere).unwrap();
+    assert_eq!(list.len(), 2);
+    let beats_back = (list[0].out_pos - list[1].out_pos) * 128.0 / 60.0;
+    assert!((beats_back - 16.0).abs() < 0.01, "Ende hier liegt {beats_back} Beats früher");
+    // Gleicher Name ersetzt, statt zu verdoppeln; die Gegenrichtung ist ein eigener Eintrag.
+    assert_eq!(state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::StartHere).unwrap().len(), 2);
+    assert_eq!(state.save_pair_transition(DeckId::B, DeckId::A, &swap, When::StartHere).unwrap().len(), 3);
+    assert!(state.save_pair_transition(DeckId::A, DeckId::B, &swap, When::Next { align_bars: 4 }).is_err());
+    let early = list[0].clone();
+
+    // Neustart; ein anderes Paar hat keine, dieses seine drei.
+    drop(state);
+    let state = AppState::start(&data).unwrap();
+    load(&state, "Erster", "Dritter");
+    assert!(state.pair_transitions(DeckId::A, DeckId::B).is_empty());
+    load(&state, "Zweiter", "Erster");
+    wait_for("Paar zurück", || state.pair_transitions(DeckId::A, DeckId::B).len() == 3);
+    let found = state.pair_transitions(DeckId::B, DeckId::A).into_iter().find(|p| p.id == early.id).unwrap();
+    assert_eq!(found, early);
+
+    // Live am gespeicherten Ort: „Erster" liegt jetzt auf B und geht; „Zweiter" steht irgendwo.
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::B, on: true });
+    wait_for("Wiedergabe", || snap(&state).decks[1].pos > 0.3);
+    let at = When::At { out_pos: early.out_pos, in_pos: early.in_pos };
+    let run = state.start_transition(DeckId::B, DeckId::A, &early.transition, at).unwrap();
+    wait_for("Beginn", || snap(&state).clock_beats > run.t0_beat + 1.0);
+    let s = snap(&state);
+    let beat = 60.0 / 128.0;
+    assert!(((s.decks[1].pos - early.out_pos) / beat - (s.clock_beats - run.t0_beat)).abs() < 0.05, "B bei {} s", s.decks[1].pos);
+    assert!(s.decks[0].playing && ((s.decks[0].pos - early.in_pos) / (60.0 / 130.0) - (s.clock_beats - run.t0_beat)).abs() < 0.6, "A bei {} s", s.decks[0].pos);
+    state.cancel_transition().unwrap();
+    // Daran vorbei: klare Absage.
+    state.ctl.lock().unwrap().send(Command::Play { deck: DeckId::A, on: false });
+    wait_for("A steht", || !snap(&state).decks[0].playing);
+    assert!(state.start_transition(DeckId::B, DeckId::A, &early.transition, at).unwrap_err().contains("schon vorbei"));
+
+    state.delete_pair_transition(early.id).unwrap();
+    assert_eq!(state.pair_transitions(DeckId::A, DeckId::B).len(), 2);
 }

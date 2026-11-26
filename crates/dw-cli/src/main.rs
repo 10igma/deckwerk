@@ -26,6 +26,28 @@ const HELP: &str = "Deckwerk – Kommandozeile
       --lead  Takte von A vor dem Übergang (Standard 16)
       --tail  Takte von B nach dem Übergang (Standard 16)
 
+  deckwerk transition <A> <B> -o <Ausgabe.wav> --a-pos <s> --end-in <Beats> --b-mark <s>
+                      [--template bass_swap|fade] [--bars 32] [--lead 16] [--tail 16]
+                      [--b-grid-shift-ms 0]
+      Übergang rendern, wie die Anwendung ihn live fährt: A läuft und steht bei --a-pos; der
+      Übergang endet --end-in Beats später (auf den nächsten Taktanfang gerückt), und B hat
+      dann die Stelle --b-mark erreicht. --lead/--tail: Takte von A davor und von B danach.
+      --b-grid-shift-ms verschiebt das Beat-Raster von B (negativ = früher), um ein falsch
+      sitzendes Raster zum Probehören auszugleichen.
+
+  deckwerk raster [--profil <s>] <Datei>...
+      Beat-Raster gegen den Ton messen (ANA-03): je Minute, wo der Pegel um die Raster-Beats
+      ansteigt – gesamt, im Tief- und im Hochband. --profil zeigt für die Minute um diese
+      Stelle den gemittelten Pegelverlauf von −90 bis +40 ms.
+
+  deckwerk check <Referenz.csv> <Musikordner> [--tol 0.05]
+      Analyse gegen Referenzwerte prüfen (ANA-02, ANA-06): analysiert jede Datei der Referenz
+      neu und meldet die Trefferquote bei Tempo und Tonart.
+      Referenz: Zeilen „Datei;BPM;Tonart;Quelle“, Tonart in Camelot (z. B. 9A). Ein „?“ hinter
+      einem Wert heißt: nur eine Quelle; solche Werte werden getrennt ausgewiesen. Leere Felder
+      werden nicht gewertet, Zeilen mit # sind Kommentare.
+      --tol  erlaubte Tempo-Abweichung in BPM (Standard 0,05)
+
   deckwerk testtrack <Ausgabe.wav> [--bpm 132] [--key 8A] [--seed 1]
       Synthetischen Techno-Track mit bekanntem Tempo und bekannter Tonart erzeugen.
 ";
@@ -91,6 +113,9 @@ fn run() -> Result<()> {
     match args.remove(0).as_str() {
         "analyze" => cmd_analyze(args),
         "mix" => cmd_mix(args),
+        "check" => cmd_check(args),
+        "raster" => cmd_raster(args),
+        "transition" => cmd_transition(args),
         "testtrack" => cmd_testtrack(args),
         other => bail!("unbekannter Befehl „{other}“ (Hilfe: deckwerk --help)"),
     }
@@ -219,4 +244,432 @@ fn cmd_testtrack(mut args: Vec<String>) -> Result<()> {
         audio.duration()
     );
     Ok(())
+}
+
+/// Eine Zeile der Referenzdatei: Dateiname und, soweit bekannt, Tempo und Tonart.
+#[derive(Debug, PartialEq)]
+struct Reference {
+    file: String,
+    bpm: Option<f64>,
+    /// Tempo durch zwei unabhängige Quellen belegt (kein „?“ in der Datei).
+    bpm_sure: bool,
+    key: Option<Key>,
+    key_sure: bool,
+}
+
+/// Liest die Referenz: „Datei;BPM;Tonart;Quelle". Ein „?" hinter einem Wert kennzeichnet ihn als
+/// nur einfach belegt. Leere Felder bleiben ungewertet; Zeilen mit `#` und die Kopfzeile werden
+/// übergangen.
+fn parse_reference(text: &str) -> Result<Vec<Reference>> {
+    let mut rows = Vec::new();
+    for (nr, line) in text.lines().enumerate() {
+        let line = line.trim().trim_start_matches('\u{feff}');
+        if line.is_empty() || line.starts_with('#') || line.to_lowercase().starts_with("datei;") {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(';').map(str::trim).collect();
+        let file = fields[0].to_string();
+        // „?" am Ende: Wert aus nur einer Quelle.
+        let field = |i: usize| {
+            let raw = fields.get(i).copied().unwrap_or("");
+            (raw.trim_end_matches('?').trim(), !raw.ends_with('?'))
+        };
+        let ((bpm_text, bpm_sure), (key_text, key_sure)) = (field(1), field(2));
+        let bpm = match bpm_text {
+            "" => None,
+            v => Some(v.replace(',', ".").parse::<f64>().map_err(|_| anyhow!("Zeile {}: „{v}“ ist kein Tempo", nr + 1))?),
+        };
+        let key = match key_text {
+            "" => None,
+            v => Some(parse_camelot(v).ok_or_else(|| anyhow!("Zeile {}: „{v}“ ist keine Camelot-Tonart", nr + 1))?),
+        };
+        rows.push(Reference { file, bpm, bpm_sure, key, key_sure });
+    }
+    Ok(rows)
+}
+
+fn parse_camelot(text: &str) -> Option<Key> {
+    let letter = text.chars().last()?;
+    let number: u8 = text[..text.len() - letter.len_utf8()].parse().ok()?;
+    Key::from_camelot(number, letter)
+}
+
+/// Einordnung eines gemessenen Tempos gegen die Referenz.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum TempoVerdict {
+    Match,
+    /// Doppeltes oder halbes Tempo (ANA-02 zählt diese Fehler eigens).
+    Octave,
+    Off,
+}
+
+fn tempo_verdict(found: f64, expected: f64, tol: f64) -> TempoVerdict {
+    if (found - expected).abs() <= tol {
+        TempoVerdict::Match
+    } else if (found - expected * 2.0).abs() <= tol * 2.0 || (found - expected / 2.0).abs() <= tol / 2.0 {
+        TempoVerdict::Octave
+    } else {
+        TempoVerdict::Off
+    }
+}
+
+/// Gewichtete Wertung einer Tonart nach Spezifikation 5.3: exakt 1,0; Quinte daneben 0,5;
+/// Paralleltonart 0,3; gleichnamige Tonart (Dur/Moll) 0,2; sonst 0.
+fn key_score(found: Key, expected: Key) -> f64 {
+    let (found_nr, found_letter) = found.camelot();
+    let (expected_nr, expected_letter) = expected.camelot();
+    let step = (found_nr as i32 - expected_nr as i32).rem_euclid(12);
+    if found == expected {
+        1.0
+    } else if found_letter == expected_letter && (step == 1 || step == 11) {
+        0.5
+    } else if found_nr == expected_nr {
+        0.3
+    } else if found.pitch_class() == expected.pitch_class() {
+        0.2
+    } else {
+        0.0
+    }
+}
+
+fn cmd_check(mut args: Vec<String>) -> Result<()> {
+    let tol: f64 = number(option(&mut args, "--tol")?, 0.05, "--tol")?;
+    let [reference, folder] = args.as_slice() else { bail!("erwartet: deckwerk check <Referenz.csv> <Musikordner>") };
+    let text = std::fs::read_to_string(reference).with_context(|| reference.clone())?;
+    let rows = parse_reference(&text)?;
+    // Je Kennzahl zwei Zählungen: [nur doppelt belegte Referenzwerte, alle Referenzwerte].
+    let (mut tempo_n, mut tempo_ok, mut tempo_octave) = ([0usize; 2], [0usize; 2], [0usize; 2]);
+    let (mut key_n, mut key_exact, mut key_weighted) = ([0usize; 2], [0usize; 2], [0.0f64; 2]);
+    let add = |counter: &mut [usize; 2], sure: bool| {
+        counter[1] += 1;
+        counter[0] += sure as usize;
+    };
+    let mut absent = 0usize;
+    for row in &rows {
+        let path = Path::new(folder).join(&row.file);
+        if !path.is_file() {
+            println!("fehlt     {}", row.file);
+            absent += 1;
+            continue;
+        }
+        let (_, a) = match load(&path) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                println!("unlesbar  {} ({e:#})", row.file);
+                absent += 1;
+                continue;
+            }
+        };
+        let tempo = match row.bpm {
+            Some(expected) => {
+                let weak = if row.bpm_sure { "" } else { "?" };
+                add(&mut tempo_n, row.bpm_sure);
+                match tempo_verdict(a.bpm, expected, tol) {
+                    TempoVerdict::Match => {
+                        add(&mut tempo_ok, row.bpm_sure);
+                        format!("Tempo ok {:.2}", a.bpm)
+                    }
+                    TempoVerdict::Octave => {
+                        add(&mut tempo_octave, row.bpm_sure);
+                        format!("Tempo HALB/DOPPELT {:.2} statt {expected}{weak}", a.bpm)
+                    }
+                    TempoVerdict::Off => format!("Tempo FALSCH {:.2} statt {expected}{weak}", a.bpm),
+                }
+            }
+            None => format!("Tempo – {:.2}", a.bpm),
+        };
+        let key = match (row.key, a.key) {
+            (Some(expected), Some(found)) => {
+                add(&mut key_n, row.key_sure);
+                let score = key_score(found, expected);
+                key_weighted[1] += score;
+                key_weighted[0] += if row.key_sure { score } else { 0.0 };
+                if score == 1.0 {
+                    add(&mut key_exact, row.key_sure);
+                    format!("Tonart ok {}", found.camelot_string())
+                } else {
+                    let weak = if row.key_sure { "" } else { "?" };
+                    format!("Tonart FALSCH {} statt {}{weak} ({score:.1})", found.camelot_string(), expected.camelot_string())
+                }
+            }
+            (Some(expected), None) => {
+                add(&mut key_n, row.key_sure);
+                format!("Tonart FALSCH – statt {}", expected.camelot_string())
+            }
+            (None, found) => format!("Tonart – {}", found.map_or("–".into(), |k| k.camelot_string())),
+        };
+        println!("{tempo:<38} {key:<34} {}", row.file);
+    }
+    let pct = |n: usize, of: usize| if of == 0 { 0.0 } else { 100.0 * n as f64 / of as f64 };
+    println!();
+    println!("Ziele: Tempo ≥ 97 % innerhalb ±{tol} BPM, halb/doppelt ≤ 2 % (ANA-02); Tonart exakt ≥ 70 %, gewichtet ≥ 0,80 (ANA-06)");
+    for (i, label) in ["Doppelt belegte Referenz", "Alle Referenzwerte (auch einfach belegte)"].into_iter().enumerate() {
+        println!(
+            "{label}: Tempo {} von {} = {:.0} %, halb/doppelt {} = {:.1} %; Tonart exakt {} von {} = {:.0} %, gewichtet {:.2}",
+            tempo_ok[i],
+            tempo_n[i],
+            pct(tempo_ok[i], tempo_n[i]),
+            tempo_octave[i],
+            pct(tempo_octave[i], tempo_n[i]),
+            key_exact[i],
+            key_n[i],
+            pct(key_exact[i], key_n[i]),
+            if key_n[i] == 0 { 0.0 } else { key_weighted[i] / key_n[i] as f64 }
+        );
+    }
+    if absent > 0 {
+        println!("{absent} Dateien der Referenz fehlen im Ordner oder sind unlesbar und wurden nicht gewertet.");
+    }
+    Ok(())
+}
+
+/// Rendert einen Übergang so, wie die Anwendung ihn live fahren würde: A läuft, das Ende wird
+/// vorgegeben, B erreicht dort seine Marke. Derselbe Weg wie in der Anwendung (`plan_live`).
+fn cmd_transition(mut args: Vec<String>) -> Result<()> {
+    use dw_automix::{plan_live, LiveDeck, Roles, Transition, When};
+    use dw_core::{Command, DeckId};
+    use dw_engine::Engine;
+
+    let out_file = option(&mut args, "-o")?.ok_or_else(|| anyhow!("Ausgabedatei fehlt (-o <Datei.wav>)"))?;
+    let bars: u32 = number(option(&mut args, "--bars")?, 32, "--bars")?;
+    let lead: u32 = number(option(&mut args, "--lead")?, 16, "--lead")?;
+    let tail: u32 = number(option(&mut args, "--tail")?, 16, "--tail")?;
+    let template = option(&mut args, "--template")?.unwrap_or_else(|| "bass_swap".into());
+    let need = |args: &mut Vec<String>, name: &str| -> Result<f64> {
+        let value = option(args, name)?.ok_or_else(|| anyhow!("{name} fehlt"))?;
+        value.replace(',', ".").parse().map_err(|_| anyhow!("{name}: „{value}“ ist keine Zahl"))
+    };
+    let a_pos = need(&mut args, "--a-pos")?;
+    let end_in = need(&mut args, "--end-in")?;
+    let b_mark = need(&mut args, "--b-mark")?;
+    let b_shift_ms: f64 = number(option(&mut args, "--b-grid-shift-ms")?, 0.0, "--b-grid-shift-ms")?;
+    let [a_path, b_path] = args.as_slice() else { bail!("transition braucht genau zwei Dateien") };
+
+    let (a_audio, a) = load(Path::new(a_path))?;
+    let (b_audio, mut b) = load(Path::new(b_path))?;
+    if b_shift_ms != 0.0 {
+        // Raster mit festem Tempo (alles, was die Analyse bisher liefert): Beat 0 verschieben.
+        b.grid = dw_core::BeatGrid::constant(b.grid.bpm_at(0.0), b.grid.sec_at(0.0) + b_shift_ms / 1000.0, b.grid.bar_offset);
+    }
+    println!("A: {:.2} BPM, {} · B: {:.2} BPM, {}", a.bpm, key_text(&a), b.bpm, key_text(&b));
+    let transition = Transition::templates(bars).into_iter().find(|t| t.name == template).ok_or_else(|| anyhow!("unbekannte Vorlage „{template}“ (bass_swap, fade)"))?;
+    let track = |audio, an: &TrackAnalysis| Arc::new(Track { audio, grid: an.grid.clone(), gain_db: an.auto_gain_db(REFERENCE_LUFS) });
+
+    let mut e = Engine::new(ENGINE_RATE);
+    e.load(DeckId::A, track(a_audio, &a));
+    e.load(DeckId::B, track(b_audio, &b));
+    // A läuft so weit vor der genannten Stelle an, dass der Vorlauf zu hören ist.
+    let start = (a_pos - lead as f64 * 4.0 * 60.0 / a.bpm).max(0.0);
+    e.apply(Command::Seek { deck: DeckId::A, pos: start });
+    e.apply(Command::Seek { deck: DeckId::B, pos: b_mark });
+    // Die Sprünge führt die Engine im nächsten Block aus; erst danach starten.
+    let mut cue = vec![0.0f32; 256 * 2];
+    e.process(&mut [0.0f32; 512], &mut cue);
+    e.apply(Command::Play { deck: DeckId::A, on: true });
+
+    let mut out: Vec<f32> = Vec::new();
+    let mut block = |e: &mut Engine, out: &mut Vec<f32>| {
+        let at = out.len();
+        out.resize(at + 256 * 2, 0.0);
+        e.process(&mut out[at..], &mut cue);
+    };
+    while e.snapshot().decks[0].pos < a_pos {
+        block(&mut e, &mut out);
+    }
+
+    // „Jetzt": A steht an der genannten Stelle. Von hier aus wird geplant wie in der Anwendung.
+    let s = e.snapshot();
+    let plan = plan_live(
+        &transition,
+        Roles { out: DeckId::A, inn: DeckId::B },
+        s.clock_beats,
+        LiveDeck { grid: &a.grid, playing: true, pos: s.decks[0].pos, duration: s.decks[0].duration, track_bpm: s.decks[0].track_bpm },
+        LiveDeck { grid: &b.grid, playing: false, pos: b_mark, duration: s.decks[1].duration, track_bpm: s.decks[1].track_bpm },
+        When::EndIn { beats: end_in },
+    )?;
+    let l = transition.beats();
+    let (t0, end) = (plan.t0, plan.t0 + l);
+    let a_end = a.grid.sec_at(a.grid.beat_at(s.decks[0].pos) + (end - s.clock_beats));
+    let b_end = b.grid.sec_at(b.grid.beat_at(plan.in_pos) + l);
+    println!(
+        "Übergang „{}“ über {} Takte: Ende bei {:.2} s in A und {:.2} s in B; B startet bei {:.2} s",
+        transition.name, transition.bars, a_end, b_end, plan.in_pos
+    );
+    for cmd in &plan.now {
+        e.apply(*cmd);
+    }
+    for (beat, cmd) in &plan.scheduled {
+        if !e.schedule(*beat, *cmd) {
+            bail!("Vormerk-Speicher der Engine voll");
+        }
+    }
+
+    let stop = end + tail as f64 * 4.0;
+    let mut marks = [(t0, 0usize), (t0 + l / 2.0, 0usize), (end, 0usize)];
+    let mut worst = 0.0f64;
+    while e.clock_beats() < stop {
+        let before = e.clock_beats();
+        let frame = out.len() / 2;
+        block(&mut e, &mut out);
+        for (beat, at) in marks.iter_mut() {
+            if before < *beat && e.clock_beats() >= *beat {
+                *at = frame;
+            }
+        }
+        let s = e.snapshot();
+        if s.decks[0].playing && s.decks[1].playing {
+            // Beide Decks gegen die Clock: Ein Master neben seiner Clock fiele sonst nicht auf.
+            worst = worst.max(s.decks[1].phase.abs()).max(s.decks[0].phase.abs());
+        }
+        if !s.decks[0].playing && !s.decks[1].playing {
+            break;
+        }
+    }
+    let mix = AudioBuf::new(ENGINE_RATE, out);
+    let secs = |frame: usize| frame as f64 / ENGINE_RATE as f64;
+    println!(
+        "Gerendert: {:.1} s · Übergang von {:.1} s bis {:.1} s, Mitte bei {:.1} s · größter Beat-Versatz {:.4} Beats",
+        mix.duration(),
+        secs(marks[0].1),
+        secs(marks[2].1),
+        secs(marks[1].1),
+        worst
+    );
+    write_wav(&PathBuf::from(&out_file), &mix, 24).with_context(|| out_file.clone())?;
+    println!("Geschrieben: {out_file}");
+    Ok(())
+}
+/// Mittlerer Pegelverlauf um die Raster-Beats eines Abschnitts, je 2 ms von −90 bis +40 ms:
+/// (gesamt, tief unter ~100 Hz, hoch über ~2 kHz).
+fn beat_profile(audio: &AudioBuf, grid: &dw_core::BeatGrid, from_sec: f64, to_sec: f64) -> Option<Vec<[f64; 3]>> {
+    const BIN_MS: f64 = 2.0;
+    const BACK_MS: f64 = 90.0;
+    const BINS: usize = 65;
+    let sr = audio.sample_rate as f64;
+    let frames = audio.frames();
+    let (a_lo, a_hi) = ((-std::f64::consts::TAU * 100.0 / sr).exp(), (-std::f64::consts::TAU * 2000.0 / sr).exp());
+    let mut acc = vec![[0.0f64; 3]; BINS];
+    let mut beats = 0usize;
+    let mut k = grid.beat_at(from_sec).ceil();
+    while grid.sec_at(k) < to_sec {
+        let start = ((grid.sec_at(k) - BACK_MS / 1000.0) * sr).round() as i64;
+        k += 1.0;
+        // 50 ms Einschwingzeit für die Filter.
+        let warm = (0.05 * sr) as i64;
+        if start - warm < 0 || start as usize + (BINS as f64 * BIN_MS / 1000.0 * sr) as usize >= frames {
+            continue;
+        }
+        let (mut l1, mut l2, mut h1) = (0.0f64, 0.0f64, 0.0f64);
+        for i in (start - warm)..(start + (BINS as f64 * BIN_MS / 1000.0 * sr) as i64) {
+            let j = i as usize * 2;
+            let v = 0.5 * (audio.data[j] + audio.data[j + 1]) as f64;
+            l1 = a_lo * l1 + (1.0 - a_lo) * v;
+            l2 = a_lo * l2 + (1.0 - a_lo) * l1;
+            h1 = a_hi * h1 + (1.0 - a_hi) * v;
+            if i >= start {
+                let b = (((i - start) as f64 / sr * 1000.0) / BIN_MS) as usize;
+                if b < BINS {
+                    acc[b][0] += v * v;
+                    acc[b][1] += l2 * l2;
+                    acc[b][2] += (v - h1) * (v - h1);
+                }
+            }
+        }
+        beats += 1;
+    }
+    if beats < 8 {
+        return None;
+    }
+    Some(acc.iter().map(|p| [p[0].sqrt(), p[1].sqrt(), p[2].sqrt()]).collect())
+}
+
+/// Stelle in ms relativ zum Raster, an der die Kurve 30 % ihres steilsten Anstiegs erreicht.
+fn rise_ms(curve: &[f64]) -> Option<f64> {
+    let n = curve.len();
+    let span = 3; // 6 ms
+    let at = (0..n - span).max_by(|&a, &b| (curve[a + span] - curve[a]).total_cmp(&(curve[b + span] - curve[b])))?;
+    let peak_at = (at..(at + span + 5).min(n)).max_by(|&a, &b| curve[a].total_cmp(&curve[b]))?;
+    let base = curve[at.saturating_sub(6)..=at].iter().cloned().fold(f64::MAX, f64::min);
+    let threshold = base + 0.3 * (curve[peak_at] - base);
+    let mut below = peak_at;
+    while below > 0 && curve[below] >= threshold {
+        below -= 1;
+    }
+    let frac = ((threshold - curve[below]) / (curve[below + 1] - curve[below]).max(1e-12)).clamp(0.0, 1.0);
+    Some((below as f64 + frac + 0.5) * 2.0 - 90.0)
+}
+
+/// Messwerkzeug für ANA-03 an echter Musik: Wo liegen die Anschläge gegenüber dem Raster?
+fn cmd_raster(mut args: Vec<String>) -> Result<()> {
+    let profile_at = option(&mut args, "--profil")?.map(|v| v.parse::<f64>()).transpose().map_err(|_| anyhow!("--profil braucht eine Zeit in Sekunden"))?;
+    if args.is_empty() {
+        bail!("keine Datei angegeben");
+    }
+    for file in &args {
+        let (audio, a) = load(Path::new(file))?;
+        println!("{file}\n  {:.2} BPM, Raster-Beat 0 bei {:.1} ms", a.bpm, a.grid.sec_at(0.0) * 1000.0);
+        println!("  Abschnitt      Anstieg gesamt   tief    hoch   (ms relativ zum Raster; negativ = vor dem Raster)");
+        let mut t = 0.0;
+        while t < a.duration {
+            let to = (t + 60.0).min(a.duration);
+            if let Some(p) = beat_profile(&audio, &a.grid, t, to) {
+                let col = |c: usize| rise_ms(&p.iter().map(|v| v[c]).collect::<Vec<_>>()).map_or("    –".into(), |v| format!("{v:+6.1}"));
+                println!("  {:4.0}–{:4.0} s   {}          {}  {}", t, to, col(0), col(1), col(2));
+                if profile_at.is_some_and(|at| at >= t && at < to) {
+                    let max: [f64; 3] = std::array::from_fn(|c| p.iter().map(|v| v[c]).fold(1e-12, f64::max));
+                    for (i, v) in p.iter().enumerate() {
+                        let bar = |c: usize| "#".repeat((v[c] / max[c] * 24.0).round() as usize);
+                        println!("    {:+4} ms  {:<24} | {:<24} | {}", i as i64 * 2 - 90, bar(0), bar(1), bar(2));
+                    }
+                }
+            } else {
+                println!("  {:4.0}–{:4.0} s   (zu wenige Beats)", t, to);
+            }
+            t = to;
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reference_file_is_parsed_with_gaps_and_comments() {
+        let text = "# Kommentar\nDatei;BPM;Tonart;Quelle\na.mp3;128;9A;Beatport\nb.mp3;;8B?;nur Tonart\nc.mp3;100,5?;;Tempo mit Komma\n\nd.mp3\n";
+        let rows = parse_reference(text).unwrap();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0], Reference { file: "a.mp3".into(), bpm: Some(128.0), bpm_sure: true, key: Key::from_camelot(9, 'A'), key_sure: true });
+        // „?" = nur eine Quelle.
+        assert_eq!((rows[1].bpm, rows[1].key, rows[1].key_sure), (None, Key::from_camelot(8, 'B'), false));
+        assert_eq!((rows[2].bpm, rows[2].bpm_sure, rows[2].key), (Some(100.5), false, None));
+        assert_eq!((rows[3].bpm, rows[3].key), (None, None));
+        assert!(parse_reference("a.mp3;schnell;9A").is_err());
+        assert!(parse_reference("a.mp3;128;13A").is_err());
+    }
+
+    #[test]
+    fn tempo_is_classified_as_match_octave_or_off() {
+        assert_eq!(tempo_verdict(128.04, 128.0, 0.05), TempoVerdict::Match);
+        assert_eq!(tempo_verdict(128.06, 128.0, 0.05), TempoVerdict::Off);
+        assert_eq!(tempo_verdict(200.0, 100.0, 0.05), TempoVerdict::Octave);
+        assert_eq!(tempo_verdict(70.0, 140.0, 0.05), TempoVerdict::Octave);
+        assert_eq!(tempo_verdict(137.0, 130.0, 0.05), TempoVerdict::Off);
+    }
+
+    /// Gewichtung nach Spezifikation 5.3.
+    #[test]
+    fn key_score_follows_the_specified_weights() {
+        let k = |n, l| Key::from_camelot(n, l).unwrap();
+        assert_eq!(key_score(k(9, 'A'), k(9, 'A')), 1.0);
+        // Quinte daneben: e-Moll (9A) gegen a-Moll (8A) und h-Moll (10A), auch über die 12 hinweg.
+        assert_eq!(key_score(k(8, 'A'), k(9, 'A')), 0.5);
+        assert_eq!(key_score(k(10, 'A'), k(9, 'A')), 0.5);
+        assert_eq!(key_score(k(1, 'B'), k(12, 'B')), 0.5);
+        // Paralleltonart: e-Moll (9A) gegen G-Dur (9B).
+        assert_eq!(key_score(k(9, 'B'), k(9, 'A')), 0.3);
+        // Gleichnamig: E-Dur (12B) gegen e-Moll (9A).
+        assert_eq!(key_score(k(12, 'B'), k(9, 'A')), 0.2);
+        assert_eq!(key_score(k(3, 'A'), k(9, 'A')), 0.0);
+    }
 }

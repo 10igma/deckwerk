@@ -75,8 +75,16 @@ pub enum XfCurve {
 pub enum Command {
     /// Wiedergabe starten oder anhalten.
     Play { deck: DeckId, on: bool },
+    /// Starten mit Vorlauf (VIS-13): Das Deck springt so weit zurück, dass es seine jetzige Stelle
+    /// in `beats` Beats der Clock erreicht, und läuft los. Liegt der Start vor dem Anfang des
+    /// Tracks, läuft es bis dorthin stumm. Negative Werte starten entsprechend weiter hinten.
+    PlayIn { deck: DeckId, beats: f64 },
     /// Auf eine Position springen (Sekunden im Track).
     Seek { deck: DeckId, pos: f64 },
+    /// Sprung im Takt (DECK-20): Ein laufendes Deck landet auf dem Beat-Bruchteil, auf dem es ohne
+    /// Sprung gerade wäre – höchstens einen halben Beat neben `pos`. Seine Phase zur Clock bleibt damit
+    /// erhalten, gleich wie lange der Befehl unterwegs war. Ein stehendes Deck springt genau auf `pos`.
+    SeekSnap { deck: DeckId, pos: f64 },
     /// Tempo-Regler: Abweichung als Faktor, z. B. 0.02 = +2 %.
     Tempo { deck: DeckId, offset: f64 },
     /// Anschieben/Abbremsen: zusätzliche Abweichung, solange gehalten (0 = losgelassen).
@@ -124,6 +132,9 @@ pub enum Command {
         #[serde(deserialize_with = "db_json::value")]
         db: f32,
     },
+    /// Verwirft alle vorgemerkten Befehle (einen laufenden Übergang abbrechen, TRANS-05). Die Regler
+    /// bleiben stehen, wo sie gerade sind.
+    CancelScheduled,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]

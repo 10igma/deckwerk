@@ -18,8 +18,14 @@ export type Db = number | null;
 /** Bedienbefehl (Rust: `Command`, `#[serde(tag = "type", rename_all = "snake_case")]`). */
 export type Command =
   | { type: 'play'; deck: DeckId; on: boolean }
+  /** Start mit Vorlauf (VIS-13): Das Deck erreicht seine jetzige Stelle in `beats` Beats der Clock. */
+  | { type: 'play_in'; deck: DeckId; beats: number }
   /** Position in Sekunden. */
   | { type: 'seek'; deck: DeckId; pos: number }
+  /** Verwirft alle vorgemerkten Befehle (laufenden Übergang abbrechen). */
+  | { type: 'cancel_scheduled' }
+  /** Sprung im Takt (DECK-20): Der Kern verschiebt das Ziel im laufenden Deck um höchstens einen halben Beat, sodass die Phase bleibt. */
+  | { type: 'seek_snap'; deck: DeckId; pos: number }
   /** Tempo-Regler als Faktor, 0.02 = +2 %. */
   | { type: 'tempo'; deck: DeckId; offset: number }
   /** Anschieben/Abbremsen, 0 = losgelassen. */
@@ -169,6 +175,8 @@ export interface TrackInfo {
   analyzed: boolean;
   /** Datei liegt nicht mehr am gespeicherten Ort. */
   missing: boolean;
+  /** Die Datei enthält weniger Audio, als sie ankündigt (abgebrochene Kopie, BIB-20). */
+  incomplete: boolean;
 }
 
 /** Engine-Kennzahlen (`Poll.status`, ENG-09). */
@@ -182,6 +190,19 @@ export interface EngineStatus {
   /** false: kein Audiogerät, die Engine läuft stumm. */
   has_device: boolean;
   device_error: string | null;
+  /** Gewähltes Ausgabegerät; null = Standardgerät des Systems. */
+  device: string | null;
+}
+
+/** Ausgabegerät für die Einstellungen (`audio_devices`, ENG-01). */
+export interface AudioDevice {
+  /** Schnittstelle, z. B. „WASAPI", „CoreAudio", „ALSA". */
+  host: string;
+  name: string;
+  /** Standardgerät des Systems. */
+  is_default: boolean;
+  max_channels: number;
+  sample_rates: number[];
 }
 
 /** Antwort von `core_poll`. */
@@ -208,6 +229,93 @@ export interface ImportResult {
   failed: [path: string, reason: string][];
 }
 
+/** Stützpunkt einer Automationsspur: Master-Beat relativ zu T0, Wert (EQ in dB, null = Kill), Kurvenform. */
+export interface TransitionPoint {
+  beat: number;
+  value: number | null;
+  curve?: 'linear' | 'smooth' | 'step';
+}
+
+/** Automationsspur eines Reglers am gehenden (`out`) oder kommenden (`in`) Deck. */
+export interface TransitionLane {
+  side: 'out' | 'in';
+  param: 'fader' | 'eq_low' | 'eq_mid' | 'eq_high' | 'filter';
+  points: TransitionPoint[];
+}
+
+/** Ein Übergang als Datenobjekt (TRANS-01, Format wie der Abschnitt „Automation" des Mix-Plans, 6.3). */
+export interface Transition {
+  name: string;
+  /** Länge in Takten. */
+  bars: number;
+  /** Start des kommenden Decks in Beats relativ zu T0; null = es läuft schon. */
+  start_in: number | null;
+  /** Stopp des gehenden Decks in Beats relativ zu T0; null = es läuft weiter. */
+  stop_out: number | null;
+  reset_out?: boolean;
+  lanes: TransitionLane[];
+}
+
+/**
+ * Wann der Übergang liegt: Beginn an der nächsten Taktgrenze im Raster, oder Ende in so vielen Clock-Beats
+ * (auf den nächsten Taktanfang gerückt), wobei der Kern den Beginn zurückrechnet.
+ */
+export type TransitionWhen = { type: 'next'; align_bars: number } | { type: 'end_in'; beats: number } | { type: 'at'; out_pos: number; in_pos: number } | { type: 'start_here' } | { type: 'end_here' };
+
+/** Für ein bestimmtes Paar gespeicherter Übergang (TRANS-07): Kurven und Ort. */
+export interface PairTransition {
+  id: number;
+  /** Track, der geht, und Track, der kommt. */
+  out_track: TrackId;
+  in_track: TrackId;
+  /** Stellen beider Tracks am Beginn des Übergangs in Sekunden. */
+  out_pos: number;
+  in_pos: number;
+  transition: Transition;
+}
+
+/** Ein eingeplanter oder laufender Übergang (`transition_start`). */
+export interface TransitionRun {
+  from: DeckId;
+  to: DeckId;
+  name: string;
+  bars: number;
+  /** Beginn T0 und Ende in Clock-Beats. */
+  t0_beat: number;
+  end_beat: number;
+}
+
+/** Stand eines Mitschnitts (`record_start`, `record_stop`, `record_status`; REC-01). */
+export interface RecordingInfo {
+  path: string;
+  active: boolean;
+  /** Bisher geschriebene Länge in Sekunden. */
+  seconds: number;
+  /** Frames, die verloren gingen, weil das Schreiben nicht nachkam (0 = lückenlos). */
+  dropped_frames: number;
+  /** Grund, falls die Aufnahme von selbst abgebrochen ist. */
+  error: string | null;
+}
+
+/** Ergebnis von `library_refresh`. */
+export interface RefreshResult {
+  /** Durchsuchte Musikordner. */
+  folders: number;
+  /** Musikordner, die gerade nicht erreichbar sind. */
+  unreachable: number;
+  added: number;
+  relinked: number;
+  /** Tracks der Bibliothek, deren Datei fehlt. */
+  missing: number;
+  failed: [path: string, reason: string][];
+}
+
+/** Einstellungen der Hülle (`settings_get`). */
+export interface AppSettings {
+  refresh_on_start: boolean;
+  music_folders: string[];
+}
+
 export type LoadedTracks = Record<DeckId, TrackId | null>;
 
 export const emptyEngineStatus = (): EngineStatus => ({
@@ -217,6 +325,7 @@ export const emptyEngineStatus = (): EngineStatus => ({
   buffer_size: 0,
   has_device: true,
   device_error: null,
+  device: null,
 });
 
 export function emptyDeckState(): DeckState {

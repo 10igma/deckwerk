@@ -1,7 +1,7 @@
 // Zustand der Oberfläche (alles, was nicht aus dem Kern kommt). Kleiner eigener Speicher
 // auf Basis von useSyncExternalStore.
 import { useSyncExternalStore } from 'react';
-import type { DeckId, TrackId, TrackInfo } from '../core/types';
+import type { DeckId, PairTransition, RecordingInfo, TrackId, TrackInfo, Transition, TransitionRun } from '../core/types';
 import type { Lang } from '../lib/format';
 
 export type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'duration';
@@ -18,8 +18,14 @@ export interface Notice {
 export interface UiState {
   lang: Lang;
   theme: Theme;
-  /** Sichtbare Beats in den parallelen Wellenformen (1–32). */
+  /** Sichtbare Beats in den parallelen Wellenformen (1–128). */
   zoomBeats: number;
+  /**
+   * Vorausblick (VIS-13): Die Wellenformen aller Decks zeigen die Stelle, die in so vielen Beats
+   * (bei Clock-Tempo) an der Abspielmarke liegt. 0 = Ansicht an der Abspielstelle. Die Wiedergabe
+   * bleibt unberührt.
+   */
+  peekBeats: number;
   /** Snap: Sprünge im laufenden Deck rasten auf Beats (DECK-20). */
   snap: boolean;
   tracks: TrackInfo[];
@@ -48,6 +54,28 @@ export interface UiState {
   loading: PerDeck<TrackInfo | null>;
   /** Bibliothek aufgezogen: Decks schrumpfen auf eine Zeile (8.2). */
   libraryBig: boolean;
+  /** Liste zeigt nur, was zum Bezugs-Deck passt (BIB-11). */
+  matchFilter: boolean;
+  /** Laufender Mitschnitt und der Zeitpunkt (Uhr des Rechners, ms), zu dem er begann (REC-01). */
+  recording: { info: RecordingInfo; since: number } | null;
+  /** Eingeplanter oder laufender Übergang (TRANS-05). */
+  transition: TransitionRun | null;
+  /** Selbst gebaute Übergänge (TRANS-04). */
+  savedTransitions: Transition[];
+  /** Übergang im Editor: der Entwurf und der Name, unter dem er gespeichert ist (null = neu). */
+  editor: { draft: Transition; original: string | null } | null;
+  /** Für das Paar auf den Decks A und B gespeicherte Übergänge (TRANS-07) und der gewählte davon. */
+  pairTransitions: PairTransition[];
+  pairChoice: number | null;
+  /** Laufendes Vorhören im Editor (TRANS-06). */
+  preview: TransitionRun | null;
+  /** Ab hier wird vorgehört: Beats ab T0, immer ein Taktanfang. */
+  previewFrom: number;
+  /** Stehen beide Decks: Ihre Stellen sind Beginn oder Ende des Übergangs. */
+  previewAnchor: 'start' | 'end';
+  /** Gewählte Vorlage und Länge für den nächsten Übergang. */
+  transitionName: string;
+  transitionBars: number;
   /** Tracks in der Analyse-Warteschlange. */
   pendingAnalysis: number;
   /** Die Liste wurde mindestens einmal vom Kern geholt. */
@@ -83,6 +111,7 @@ let state: UiState = {
   lang: 'de',
   theme: 'dark',
   zoomBeats: 8,
+  peekBeats: 0,
   snap: true,
   tracks: [],
   deckTracks: perDeck(() => null),
@@ -102,6 +131,18 @@ let state: UiState = {
   armedId: null,
   loading: perDeck(() => null),
   libraryBig: false,
+  matchFilter: false,
+  recording: null,
+  transition: null,
+  savedTransitions: [],
+  editor: null,
+  pairTransitions: [],
+  pairChoice: null,
+  preview: null,
+  previewFrom: 0,
+  previewAnchor: 'start',
+  transitionName: 'bass_swap',
+  transitionBars: 16,
   pendingAnalysis: 0,
   tracksReady: false,
   rendererInfo: '',

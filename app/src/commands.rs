@@ -29,6 +29,8 @@ pub struct EngineStatus {
     buffer_size: u32,
     has_device: bool,
     device_error: Option<String>,
+    /// Gewähltes Ausgabegerät; `None` = Standardgerät des Systems.
+    device: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -47,16 +49,20 @@ pub fn core_poll(state: State<AppState>) -> Poll {
         let mut ctl = state.ctl.lock().unwrap();
         (ctl.snapshot().clone(), ctl.take_dsp_load_peak(), ctl.xruns())
     };
+    // Zu Ende gespieltes Vorhören aufräumen (TRANS-06).
+    state.finish_preview_if_over(snapshot.clock_beats);
     let pending_analysis = state.lib.lock().unwrap().pending_analysis(ANALYSIS_VERSION).map_or(0, |p| p.len());
+    let audio = state.audio.lock().unwrap().clone();
     Poll {
         snapshot,
         status: EngineStatus {
             dsp_load,
             xruns,
-            sample_rate: state.audio.sample_rate,
-            buffer_size: state.audio.buffer_size,
-            has_device: state.audio.has_device,
-            device_error: state.audio.error.clone(),
+            sample_rate: audio.sample_rate,
+            buffer_size: audio.buffer_size,
+            has_device: audio.has_device,
+            device_error: audio.error,
+            device: audio.device,
         },
         library_rev: state.library_rev.load(Ordering::Relaxed),
         pending_analysis,
@@ -74,6 +80,7 @@ pub struct TrackInfo {
     duration: f64,
     analyzed: bool,
     missing: bool,
+    incomplete: bool,
 }
 
 #[tauri::command(async)]
@@ -95,8 +102,124 @@ pub fn library_list(state: State<AppState>) -> Result<Vec<TrackInfo>, String> {
             duration: t.duration,
             analyzed: t.analyzed,
             missing: t.missing,
+            incomplete: t.incomplete,
         })
         .collect())
+}
+
+/// Eingebaute Vorlagen für Übergänge in der gewünschten Länge (TRANS-01).
+#[tauri::command]
+pub fn transition_templates(bars: u32) -> Vec<dw_automix::Transition> {
+    dw_automix::Transition::templates(bars.clamp(1, 256))
+}
+
+/// Selbst gebaute Übergänge (TRANS-04).
+#[tauri::command]
+pub fn transition_saved(state: State<AppState>) -> Vec<dw_automix::Transition> {
+    state.saved_transitions()
+}
+
+/// Übergang speichern oder ersetzen; liefert die neue Liste.
+#[tauri::command]
+pub fn transition_save(state: State<AppState>, transition: dw_automix::Transition) -> Result<Vec<dw_automix::Transition>, String> {
+    state.save_transition(&transition)
+}
+
+#[tauri::command]
+pub fn transition_delete(state: State<AppState>, name: String) -> Result<Vec<dw_automix::Transition>, String> {
+    state.delete_transition(&name)
+}
+
+/// Übergang zum Vorhören spielen (TRANS-06); `from_beat` in Beats ab T0.
+#[tauri::command]
+pub fn transition_preview(
+    state: State<AppState>,
+    from: DeckId,
+    to: DeckId,
+    transition: dw_automix::Transition,
+    when: dw_automix::When,
+    from_beat: f64,
+) -> Result<crate::state::TransitionRun, String> {
+    state.preview_transition(from, to, &transition, when, from_beat)
+}
+
+/// Vorhören beenden und den Stand von vorher wiederherstellen.
+#[tauri::command]
+pub fn transition_preview_stop(state: State<AppState>) -> Result<(), String> {
+    state.stop_preview()
+}
+
+/// Für das Paar auf zwei Decks gespeicherte Übergänge, beide Richtungen (TRANS-07).
+#[tauri::command]
+pub fn pair_list(state: State<AppState>, a: DeckId, b: DeckId) -> Vec<crate::state::PairTransition> {
+    state.pair_transitions(a, b)
+}
+
+/// Übergang mit Ort für das Paar speichern; `when` ist `start_here` oder `end_here`.
+#[tauri::command]
+pub fn pair_save(state: State<AppState>, from: DeckId, to: DeckId, transition: dw_automix::Transition, when: dw_automix::When) -> Result<Vec<crate::state::PairTransition>, String> {
+    state.save_pair_transition(from, to, &transition, when)
+}
+
+#[tauri::command]
+pub fn pair_delete(state: State<AppState>, id: u64) -> Result<(), String> {
+    state.delete_pair_transition(id)
+}
+
+/// Vorbereiteten Übergang einplanen (TRANS-05).
+#[tauri::command]
+pub fn transition_start(
+    state: State<AppState>,
+    from: DeckId,
+    to: DeckId,
+    transition: dw_automix::Transition,
+    when: dw_automix::When,
+) -> Result<crate::state::TransitionRun, String> {
+    state.start_transition(from, to, &transition, when)
+}
+
+#[tauri::command]
+pub fn transition_cancel(state: State<AppState>) -> Result<(), String> {
+    state.cancel_transition()
+}
+
+/// Mitschnitt des Master-Signals beginnen (REC-01). `stamp`: Zeitstempel für den Dateinamen.
+#[tauri::command]
+pub fn record_start(state: State<AppState>, stamp: Option<String>) -> Result<crate::recorder::RecordingInfo, String> {
+    state.start_recording(stamp.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn record_stop(state: State<AppState>) -> Result<crate::recorder::RecordingInfo, String> {
+    state.stop_recording()
+}
+
+#[tauri::command]
+pub fn record_status(state: State<AppState>) -> Option<crate::recorder::RecordingInfo> {
+    state.recording_status()
+}
+
+/// Musikordner neu durchsuchen (BIB-19).
+#[tauri::command(async)]
+pub fn library_refresh(state: State<AppState>) -> Result<crate::state::RefreshReport, String> {
+    state.refresh()
+}
+
+#[derive(Serialize)]
+pub struct AppSettings {
+    refresh_on_start: bool,
+    music_folders: Vec<String>,
+}
+
+#[tauri::command]
+pub fn settings_get(state: State<AppState>) -> AppSettings {
+    let s = state.settings.lock().unwrap();
+    AppSettings { refresh_on_start: s.refresh_on_start, music_folders: s.music_folders.iter().map(|p| p.to_string_lossy().to_string()).collect() }
+}
+
+#[tauri::command]
+pub fn settings_refresh_on_start(state: State<AppState>, on: bool) -> Result<(), String> {
+    state.set_refresh_on_start(on)
 }
 
 #[derive(Serialize)]
@@ -158,4 +281,10 @@ pub fn audio_devices() -> Vec<DeviceEntry> {
         .into_iter()
         .map(|d| DeviceEntry { host: d.host, name: d.name, is_default: d.is_default, max_channels: d.max_channels, sample_rates: d.sample_rates })
         .collect()
+}
+
+/// Wechselt das Ausgabegerät; `device: null` = Standardgerät des Systems (ENG-01).
+#[tauri::command(async)]
+pub fn audio_select(state: State<AppState>, device: Option<String>) -> Result<(), String> {
+    state.select_device(device).map(|_| ())
 }

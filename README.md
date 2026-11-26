@@ -37,7 +37,7 @@ Bis auf das Bild der echten Anwendung stammen die Bilder aus der Oberfläche mit
 
 ## Schnellstart
 
-Voraussetzungen: Rust (stabil, ab 1.80), Node 22 mit pnpm 10, ein C-Compiler und CMake. Unter Linux zusätzlich:
+Voraussetzungen: Rust (stabil, ab 1.85), Node 22 mit pnpm 10, ein C-Compiler und CMake. Unter Linux zusätzlich:
 
 ```bash
 sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libasound2-dev

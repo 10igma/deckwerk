@@ -43,9 +43,11 @@ export interface LaneScene {
   /** Gewählte Stufe der Pyramide. */
   level: number;
   points: number;
-  /** Punktindex an der Abspielmarke und Punkte je Pixel. */
+  /** Punktindex in der Bildmitte und Punkte je Pixel. */
   idxCenter: number;
   idxPerPx: number;
+  /** Abspielstelle in Pixeln ab dem linken Rand der Bahn; links davon ist „gespielt". Ohne Vorausblick und bei einem stehenden Deck die Bildmitte. */
+  headX: number;
   /** Sichtbarkeit je Band 0 … 1; 0 = Kill (schraffiert). */
   bandGain: [number, number, number];
 }
@@ -65,6 +67,8 @@ export interface StageScene {
   lanes: LaneScene[];
   /** Linien und Flächen über den Wellenformen, in Zeichenreihenfolge. */
   rects: Rect[];
+  /** Abspielstelle der laufenden Decks in Pixeln; mit Vorausblick neben der Bildmitte, auch außerhalb des Bilds. */
+  headX: number;
 }
 
 export interface StageInput {
@@ -77,9 +81,21 @@ export interface StageInput {
   unit?: number;
   /** Sichtbare Beats bei Clock-Tempo. */
   zoomBeats: number;
+  /**
+   * Vorausblick in Beats bei Clock-Tempo (VIS-13): Die Bildmitte zeigt, was dann an der Abspielmarke
+   * liegt. Gilt für alle laufenden Decks gemeinsam, damit sichtbar bleibt, was zusammen erklingt. Ein
+   * stehendes Deck bleibt an seiner Stelle, solange ein anderes läuft: So lässt sich darin die Stelle
+   * suchen, die zu dem passt, was das laufende Deck dann spielt. Läuft keines, wandern alle. 0 = aus.
+   */
+  peekBeats?: number;
   clockBpm: number;
   lanes: [LaneInput, LaneInput];
   colors: StageColors;
+  /**
+   * Zone eines Übergangs (TRANS-05): Beginn und Ende in Clock-Beats ab jetzt (negativ = vorbei).
+   * `preview`: noch nicht eingeplant, nur Vorschau, wo er läge.
+   */
+  zone?: { startBeats: number; endBeats: number; preview: boolean } | null;
 }
 
 /** Anteil der Bahnhöhe je Band bei Vollausschlag (gestapelt: Tief unten, darüber Mitte, Hoch). */
@@ -121,6 +137,10 @@ export function buildScene(input: StageInput): StageScene {
   const refBpm =
     input.clockBpm > 0 ? input.clockBpm : input.lanes.find((l) => l.state.loaded)?.state.bpm || FALLBACK_BPM;
   const secPerPx = secondsPerPx(width, input.zoomBeats, refBpm);
+  // Vorausblick als Echtzeit; die Abspielstelle wandert um diese Strecke aus der Bildmitte.
+  const peekSec = ((input.peekBeats ?? 0) * 60) / refBpm;
+  const headX = center - peekSec / secPerPx;
+  const anyPlaying = input.lanes.some((l) => l.state.loaded && l.state.playing);
   const px = Math.max(1, Math.round(input.unit ?? dpr));
   // Breite der Marken in der Schiene: Beat 0,2 rem, Takt 0,4 rem, Phrase 0,7 rem.
   const rem = (input.unit ?? dpr) * 14;
@@ -142,6 +162,10 @@ export function buildScene(input: StageInput): StageScene {
     const loaded = s.loaded && lane.waveform !== null;
     const rate = 1 + s.tempo_offset;
     const trackSecPerPx = secPerPx * rate;
+    // Ein stehendes Deck bleibt stehen, solange ein anderes läuft; seine Abspielstelle ist die Bildmitte.
+    const lanePeek = !s.loaded || s.playing || !anyPlaying ? peekSec : 0;
+    // Stelle des Tracks in der Bildmitte: In `lanePeek` Echtzeit legt das Deck `lanePeek · rate` zurück.
+    const viewPos = s.pos + lanePeek * rate;
     let level = 0;
     let points = 0;
     let idxCenter = 0;
@@ -151,7 +175,7 @@ export function buildScene(input: StageInput): StageScene {
       const lv = lane.waveform.levels[level];
       points = Math.floor(lv.data.length / VALUES_PER_POINT);
       const perSec = lane.waveform.sample_rate / lv.samples_per_point;
-      idxCenter = s.pos * perSec;
+      idxCenter = viewPos * perSec;
       idxPerPx = trackSecPerPx * perSec;
     }
     lanes.push({
@@ -166,6 +190,7 @@ export function buildScene(input: StageInput): StageScene {
       points,
       idxCenter,
       idxPerPx,
+      headX: lanePeek === 0 ? center : headX,
       bandGain: [bandVisibility(fromWire(s.eq_db[0])), bandVisibility(fromWire(s.eq_db[1])), bandVisibility(fromWire(s.eq_db[2]))],
     });
 
@@ -176,8 +201,8 @@ export function buildScene(input: StageInput): StageScene {
 
     // Beat- und Taktlinien in der Bahn; in der Schiene füllt jede Marke ihre Hälfte in der Deck-Farbe.
     const grid = lane.grid;
-    const tLeft = s.pos - center * trackSecPerPx;
-    const tRight = s.pos + (width - center) * trackSecPerPx;
+    const tLeft = viewPos - center * trackSecPerPx;
+    const tRight = viewPos + (width - center) * trackSecPerPx;
     const first = Math.ceil(beatAt(grid, Math.max(tLeft, -1)));
     const last = Math.floor(beatAt(grid, Math.min(tRight, s.duration)));
     const pxPerBeat = 60 / (s.track_bpm || FALLBACK_BPM) / trackSecPerPx;
@@ -188,7 +213,7 @@ export function buildScene(input: StageInput): StageScene {
       if (!down && !showBeats) continue;
       const bar = Math.floor((b - grid.bar_offset) / 4);
       const phrase = down && bar % PHRASE_BARS === 0;
-      const x = center + (secAt(grid, b) - s.pos) / trackSecPerPx;
+      const x = center + (secAt(grid, b) - viewPos) / trackSecPerPx;
       if (showBeats) beatXs[i].push(x);
       const lw = phrase ? 3 * px : down ? 2 * px : px;
       lines.push({
@@ -228,20 +253,55 @@ export function buildScene(input: StageInput): StageScene {
   }
   rects.push(...marks);
 
+  // Zone eines Übergangs: Balken am oberen Rand von Beginn bis Ende, Linien an Beginn, Mitte
+  // (Tauschpunkt) und Ende. Die Zeitachse ist die der laufenden Decks, im Vorausblick mitverschoben.
+  if (input.zone) {
+    const pxPerBeat = 60 / refBpm / secPerPx;
+    const xAt = (beats: number) => center + (beats - (input.peekBeats ?? 0)) * pxPerBeat;
+    const strong = input.zone.preview ? 0.45 : 0.9;
+    const [x0, x1] = [xAt(input.zone.startBeats), xAt(input.zone.endBeats)];
+    const bar = Math.max(3 * px, Math.round(rem * 0.3));
+    const from = Math.max(0, Math.round(x0));
+    const to = Math.min(width, Math.round(x1));
+    if (to > from) rects.push({ x: from, y: 0, w: to - from, h: bar, color: [...colors.warn, strong] });
+    for (const [x, alpha, w] of [[x0, strong, 2 * px], [(x0 + x1) / 2, strong * 0.5, px], [x1, strong, 2 * px]] as const) {
+      if (x >= 0 && x <= width) rects.push({ x: Math.round(x - w / 2), y: 0, w, h: height, color: [...colors.warn, alpha] });
+    }
+  }
+
   // Abspielmarke über alles, mit Kappen oben und unten; ohne geladenes Deck nur als graue Linie.
   const anyLoaded = lanes.some((l) => l.loaded);
   const head: Rgba = anyLoaded ? [...colors.text, 1] : [...colors.line, 1];
   const pw = 2 * px;
-  rects.push({ x: center - pw / 2 - px, y: 0, w: pw + 2 * px, h: height, color: [...colors.bg, 0.55] });
-  rects.push({ x: center - pw / 2, y: 0, w: pw, h: height, color: head });
-  if (anyLoaded) {
-    const cap = Math.round(5 * (input.unit ?? dpr));
-    const capH = Math.round(3 * (input.unit ?? dpr));
-    rects.push({ x: center - cap, y: 0, w: cap * 2, h: capH, color: head });
-    rects.push({ x: center - cap, y: height - capH, w: cap * 2, h: capH, color: head });
+  const peeking = peekSec !== 0;
+  const unit = input.unit ?? dpr;
+  const cap = Math.round(5 * unit);
+  const capH = Math.round(3 * unit);
+  if (!peeking) {
+    rects.push({ x: center - pw / 2 - px, y: 0, w: pw + 2 * px, h: height, color: [...colors.bg, 0.55] });
+    rects.push({ x: center - pw / 2, y: 0, w: pw, h: height, color: head });
+    if (anyLoaded) {
+      rects.push({ x: center - cap, y: 0, w: cap * 2, h: capH, color: head });
+      rects.push({ x: center - cap, y: height - capH, w: cap * 2, h: capH, color: head });
+    }
+  } else {
+    // Vorausblick: Die Bildmitte ist nicht die Abspielstelle. Sie bekommt eine gestrichelte Linie in
+    // der Warnfarbe. Die Abspielmarke steht je Bahn an ihrer wirklichen Stelle, solange sie im Bild
+    // liegt: bei einem laufenden Deck verschoben, bei einem stehenden weiter in der Mitte.
+    const dash = Math.round(6 * unit);
+    for (let y0 = 0; y0 < height; y0 += dash * 2) {
+      rects.push({ x: center - pw / 2, y: y0, w: pw, h: Math.min(dash, height - y0), color: [...colors.warn, 1] });
+    }
+    for (const lane of lanes) {
+      const hx = Math.round(lane.headX);
+      if (!lane.loaded || hx < 0 || hx > width) continue;
+      rects.push({ x: hx - pw / 2 - px, y: lane.y, w: pw + 2 * px, h: lane.h, color: [...colors.bg, hx === center ? 1 : 0.55] });
+      rects.push({ x: hx - pw / 2, y: lane.y, w: pw, h: lane.h, color: head });
+      rects.push({ x: hx - cap, y: lane.dir === 1 ? lane.y : lane.y + lane.h - capH, w: cap * 2, h: capH, color: head });
+    }
   }
 
-  return { width, height, dpr, lanes, rects };
+  return { width, height, dpr, lanes, rects, headX };
 }
 
 /** Amplituden (Tief, Mitte, Hoch; 0 … 1) einer Pixelspalte – wie im Shader. */

@@ -2,10 +2,11 @@
 // an den Kern machen (7.4). Zusammengesetzte Abläufe (Cue-Taste, Kill, Laden) und der
 // Live-Schutz (9.3) liegen hier.
 import { errorText, type CoreApi } from '../core/api';
-import { DECK_IDS, bandIndex, deckIndex, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo } from '../core/types';
+import { DECK_IDS, bandIndex, deckIndex, type AppSettings, type AudioDevice, type Band, type Command, type DeckId, type DeckState, type Snapshot, type TrackId, type TrackInfo, type PairTransition, type Transition, type TransitionWhen } from '../core/types';
 import { clamp, nextTempoRange, TEMPO_RANGES, TEMPO_RESOLUTION, tempoRangeFor } from '../lib/curves';
 import { fromWire, toWire } from '../lib/db';
 import { beatAt, secAt, snapSeek } from '../lib/grid';
+import { freeName } from '../lib/transition';
 import { translate, type MsgKey, type Params } from '../i18n';
 import { clearDeckAssets, getDeckAssets, loadDeckAssets } from './assets';
 import { latestSnapshot } from './frame';
@@ -105,6 +106,11 @@ function guardedUp(id: string): void {
 
 // --- Transport ---------------------------------------------------------------
 
+/** Läuft ein anderes geladenes Deck? Dann bleibt ein stehendes Deck im Vorausblick an seiner Stelle. */
+function otherDeckPlaying(deck: DeckId): boolean {
+  return DECK_IDS.some((id) => id !== deck && deckState(id).loaded && deckState(id).playing);
+}
+
 /** Play-Taste gedrückt. Ein hörbar laufendes Deck stoppt nur geschützt. */
 export function playDown(deck: DeckId): void {
   const d = deckState(deck);
@@ -116,7 +122,11 @@ export function playDown(deck: DeckId): void {
     return;
   }
   if (!d.playing) {
-    send({ type: 'play', deck, on: true });
+    // Vorausblick (VIS-13): Läuft ein anderes Deck, steht dieses im Bild an der Stelle, die es dann
+    // spielen soll. Der Start rechnet den Vorlauf zurück, damit das Bild so eintrifft.
+    const peek = getUi().peekBeats;
+    if (peek !== 0 && otherDeckPlaying(deck)) send({ type: 'play_in', deck, beats: peek });
+    else send({ type: 'play', deck, on: true });
     return;
   }
   const stop = () => send({ type: 'play', deck, on: false });
@@ -266,7 +276,9 @@ export function seek(deck: DeckId, pos: number, shift = false): boolean {
   let target = clamp(pos, 0, d.duration);
   const assets = getDeckAssets(deck);
   if (d.playing && assets) target = clamp(snapSeek(assets.analysis.grid, d.pos, target), 0, d.duration);
-  send({ type: 'seek', deck, pos: target });
+  // Laufendes Deck: Die Phase hält der Kern im Augenblick des Sprungs. Das hier berechnete Ziel
+  // stammt aus einer Position, die schon einige Millisekunden alt ist, und wäre allein nicht im Takt.
+  send({ type: d.playing ? 'seek_snap' : 'seek', deck, pos: target });
   return true;
 }
 
@@ -377,6 +389,8 @@ function loadable(trackId: TrackId): TrackInfo | null {
     showNotice(say('notice.missing', { title: track.title }), 'error');
     return null;
   }
+  // Unvollständige Datei: spielbar, aber kürzer als angegeben – beim Laden darauf hinweisen (BIB-20).
+  if (track.incomplete) showNotice(say('notice.incomplete', { title: track.title }), 'error');
   return track;
 }
 
@@ -482,6 +496,370 @@ export async function importPaths(paths: string[]): Promise<void> {
   }
 }
 
+/** Bibliothek aktualisieren: Musikordner nach neuen Dateien durchsuchen (BIB-19). */
+export async function refreshLibrary(): Promise<void> {
+  if (!core) return;
+  try {
+    const r = await core.refreshLibrary();
+    if (r.folders === 0 && r.unreachable === 0) showNotice(say('notice.refreshNoFolder'));
+    else if (r.unreachable > 0) showNotice(say('notice.refreshUnreachable', { added: r.added, n: r.unreachable }), 'error');
+    else if (r.added === 0 && r.relinked === 0) showNotice(say('notice.refreshNothing', { missing: r.missing }));
+    else showNotice(say('notice.refreshed', { added: r.added, relinked: r.relinked, missing: r.missing }));
+  } catch (err) {
+    showNotice(say('notice.refreshFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Einstellungen der Hülle; ohne Kern oder bei einem Fehler null. */
+export async function getAppSettings(): Promise<AppSettings | null> {
+  if (!core) return null;
+  try {
+    return await core.getSettings();
+  } catch {
+    return null;
+  }
+}
+
+/** Ergebnis: Fehlertext oder null. */
+export async function setRefreshOnStart(on: boolean): Promise<string | null> {
+  if (!core) return null;
+  try {
+    await core.setRefreshOnStart(on);
+    return null;
+  } catch (err) {
+    return errorText(err);
+  }
+}
+
+// --- Mitschnitt ----------------------------------------------------------------------
+
+/** Zeitstempel für den Dateinamen in Ortszeit: „2026-11-22 13-05-09". */
+export function recordingStamp(now: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}-${p(now.getMinutes())}-${p(now.getSeconds())}`;
+}
+
+/** Mitschnitt des Master-Signals starten oder beenden (REC-01). */
+export async function toggleRecording(): Promise<void> {
+  if (!core) return;
+  const running = getUi().recording;
+  try {
+    if (running) {
+      setUi({ recording: null });
+      const done = await core.stopRecording();
+      const length = `${Math.floor(done.seconds / 60)}:${String(Math.floor(done.seconds % 60)).padStart(2, '0')}`;
+      if (done.error) showNotice(say('rec.failed', { reason: done.error }), 'error');
+      else if (done.dropped_frames > 0) showNotice(say('rec.savedGaps', { path: done.path, length }), 'error', 12000);
+      else showNotice(say('rec.saved', { path: done.path, length }), 'warn', 12000);
+    } else {
+      const info = await core.startRecording(recordingStamp(new Date()));
+      setUi({ recording: { info, since: Date.now() } });
+    }
+  } catch (err) {
+    showNotice(say('rec.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Nach dem Laden der Oberfläche: Läuft im Kern noch eine Aufnahme? */
+export async function syncRecording(): Promise<void> {
+  if (!core) return;
+  try {
+    const info = await core.recordingStatus();
+    if (info && info.active) setUi({ recording: { info, since: Date.now() - info.seconds * 1000 } });
+    else if (info && info.error) showNotice(say('rec.failed', { reason: info.error }), 'error');
+  } catch {
+    // Ohne Auskunft bleibt die Taste im Ruhezustand.
+  }
+}
+
+// --- Übergänge ---------------------------------------------------------------------
+
+/** Länge und Raster, die zur Wahl stehen (Takte). */
+export const TRANSITION_BARS = [4, 8, 16, 32] as const;
+/** Der Übergang beginnt an der nächsten Grenze dieses Rasters (Takte). */
+export const TRANSITION_ALIGN = 4;
+
+/** Kleinster Abstand in Beats zwischen „jetzt" und dem Beginn eines Übergangs (Vorlauf des Kerns plus der Beat davor). */
+export const TRANSITION_LEAD = 4;
+
+/**
+ * Welches Deck geht und welches kommt (Ansicht mit zwei Decks). Läuft genau eines, geht dieses und
+ * das stehende kommt. Laufen beide, geht der Master und das andere kommt. Sonst null.
+ */
+export function transitionRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>, master: DeckId | null = null): { from: DeckId; to: DeckId } | null {
+  if (!a.loaded || !b.loaded) return null;
+  if (a.playing && b.playing) return master === 'a' ? { from: 'a', to: 'b' } : master === 'b' ? { from: 'b', to: 'a' } : null;
+  if (!a.playing && !b.playing) return null;
+  return a.playing ? { from: 'a', to: 'b' } : { from: 'b', to: 'a' };
+}
+
+/**
+ * Wann der Übergang liegt: Ist der Vorausblick nach vorn verschoben, endet er an der Linie in der
+ * Bildmitte (der Kern rechnet den Beginn zurück); sonst beginnt er an der nächsten Vier-Takt-Grenze.
+ */
+export function transitionWhen(peekBeats: number): TransitionWhen {
+  return peekBeats > 0 ? { type: 'end_in', beats: peekBeats } : { type: 'next', align_bars: TRANSITION_ALIGN };
+}
+
+/**
+ * Plant den gewählten Übergang ein (TRANS-05). Ohne `when` entscheidet der Vorausblick: verschoben =
+ * Ende an der Linie in der Bildmitte, sonst Beginn an der nächsten Vier-Takt-Grenze.
+ */
+export async function startTransition(when?: TransitionWhen): Promise<void> {
+  if (!core) return;
+  const snap = latestSnapshot();
+  const ui = getUi();
+  // Ein für das Paar gespeicherter Übergang bringt Richtung und Ort mit.
+  const pair = chosenPair();
+  const pairDecks = pair ? pairRoles(pair) : null;
+  if (pair && (!pairDecks || !snap.decks[deckIndex(pairDecks.from)].playing)) {
+    showNotice(say('pair.needOut', { deck: pairDecks ? pairDecks.from.toUpperCase() : '?' }));
+    return;
+  }
+  const roles = pairDecks ?? transitionRoles(snap.decks[0], snap.decks[1], snap.master);
+  if (!roles) {
+    showNotice(say('trans.needDecks'));
+    return;
+  }
+  try {
+    const transition = await selectedTransition();
+    if (!transition) return;
+    const place: TransitionWhen | null = pair ? { type: 'at', out_pos: pair.out_pos, in_pos: pair.in_pos } : null;
+    const run = await core.startTransition(roles.from, roles.to, transition, place ?? when ?? transitionWhen(ui.peekBeats));
+    // Der Vorausblick hat seinen Dienst getan: zurück zur Abspielstelle, die Zone bleibt eingezeichnet.
+    setUi({ transition: run, peekBeats: 0 });
+  } catch (err) {
+    showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Der gewählte Übergang: ein selbst gebauter mit seiner eigenen Länge, sonst die eingebaute Vorlage in der gewählten Länge. */
+export async function selectedTransition(): Promise<Transition | null> {
+  if (!core) return null;
+  const ui = getUi();
+  const pair = chosenPair();
+  if (pair) return pair.transition;
+  const own = ui.savedTransitions.find((t) => t.name === ui.transitionName);
+  if (own) return own;
+  const templates = await core.listTransitions(ui.transitionBars);
+  return templates.find((t) => t.name === ui.transitionName) ?? templates[0] ?? null;
+}
+
+/** Wählt eine Vorlage oder einen eigenen Übergang; ein eigener bringt seine Länge mit. */
+export function chooseTransition(name: string): void {
+  const own = getUi().savedTransitions.find((t) => t.name === name);
+  setUi(own ? { transitionName: name, transitionBars: own.bars, pairChoice: null } : { transitionName: name, pairChoice: null });
+}
+
+/** Der gewählte Paar-Übergang, falls einer gewählt ist und zu den geladenen Tracks gehört. */
+export function chosenPair(): PairTransition | null {
+  const ui = getUi();
+  return ui.pairChoice === null ? null : (ui.pairTransitions.find((p) => p.id === ui.pairChoice) ?? null);
+}
+
+/** Welches Deck für einen Paar-Übergang geht und welches kommt – nach den geladenen Tracks. */
+export function pairRoles(pair: Pick<PairTransition, 'out_track' | 'in_track'>, tracks: Record<'a' | 'b', { id: TrackId } | null> = getUi().deckTracks): { from: DeckId; to: DeckId } | null {
+  if (tracks.a?.id === pair.out_track && tracks.b?.id === pair.in_track) return { from: 'a', to: 'b' };
+  if (tracks.b?.id === pair.out_track && tracks.a?.id === pair.in_track) return { from: 'b', to: 'a' };
+  return null;
+}
+
+/** Lädt die für das Paar auf A und B gespeicherten Übergänge; nach jedem Laden eines Decks. */
+export async function loadPairTransitions(): Promise<void> {
+  if (!core) return;
+  try {
+    const list = await core.listPairTransitions('a', 'b');
+    setUi({ pairTransitions: list, pairChoice: list.some((p) => p.id === getUi().pairChoice) ? getUi().pairChoice : null });
+  } catch {
+    setUi({ pairTransitions: [], pairChoice: null });
+  }
+}
+
+/**
+ * Wählt einen Paar-Übergang. Stehen beide Decks, werden sie an den gespeicherten Ort gestellt
+ * (Beginn des Übergangs) – von dort lässt er sich vorhören oder verschieben und neu speichern.
+ */
+export function choosePair(id: number): void {
+  const pair = getUi().pairTransitions.find((p) => p.id === id);
+  if (!pair) return;
+  setUi({ pairChoice: id, transitionBars: pair.transition.bars, previewAnchor: 'start' });
+  const roles = pairRoles(pair);
+  const snap = latestSnapshot();
+  if (roles && !snap.decks[0].playing && !snap.decks[1].playing) {
+    send({ type: 'seek', deck: roles.from, pos: pair.out_pos });
+    send({ type: 'seek', deck: roles.to, pos: pair.in_pos });
+    showNotice(say('pair.placed'));
+  }
+}
+
+/** Speichert den Entwurf im Editor mit seinem Ort für das Paar auf den Decks (TRANS-07). */
+export async function saveEditorForPair(): Promise<void> {
+  const ui = getUi();
+  if (!core || !ui.editor) return;
+  const snap = latestSnapshot();
+  const pair = chosenPair();
+  const roles = (pair ? pairRoles(pair) : null) ?? previewRoles(snap.decks[0], snap.decks[1], snap.master);
+  if (!roles) {
+    showNotice(say('ed.previewNeedDecks'));
+    return;
+  }
+  try {
+    const name = ui.editor.draft.name.trim();
+    const list = await core.savePairTransition(roles.from, roles.to, { ...ui.editor.draft, name }, { type: ui.previewAnchor === 'end' ? 'end_here' : 'start_here' });
+    const out = ui.deckTracks[roles.from]?.id;
+    const saved = list.find((p) => p.transition.name === name && p.out_track === out);
+    setUi({ pairTransitions: list, pairChoice: saved?.id ?? null, ...(saved ? { transitionBars: saved.transition.bars } : {}) });
+    showNotice(say('pair.saved', { name, from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }));
+  } catch (err) {
+    showNotice(say('pair.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Löscht den gewählten Paar-Übergang. */
+export async function deleteChosenPair(): Promise<void> {
+  const pair = chosenPair();
+  if (!core || !pair) return;
+  try {
+    await core.deletePairTransition(pair.id);
+    await loadPairTransitions();
+  } catch (err) {
+    showNotice(errorText(err), 'error');
+  }
+}
+
+/** Lädt die selbst gebauten Übergänge (beim Start der Oberfläche). */
+export async function loadSavedTransitions(): Promise<void> {
+  if (!core) return;
+  try {
+    setUi({ savedTransitions: await core.listSavedTransitions() });
+  } catch {
+    // Ohne Liste bleiben die eingebauten Vorlagen.
+  }
+}
+
+/** Öffnet den Editor mit dem gewählten Übergang; eine eingebaute Vorlage wird dabei zur Kopie mit eigenem Namen. */
+export async function openEditor(): Promise<void> {
+  const ui = getUi();
+  const current = await selectedTransition();
+  if (!current) return;
+  const own = ui.pairChoice !== null || ui.savedTransitions.some((t) => t.name === current.name);
+  const draft: Transition = own ? current : { ...current, name: freeName(say('ed.newName'), ui.savedTransitions.map((t) => t.name)) };
+  setUi({ editor: { draft: JSON.parse(JSON.stringify(draft)) as Transition, original: own && ui.pairChoice === null ? current.name : null } });
+}
+
+export function closeEditor(): void {
+  if (getUi().preview) void stopPreview();
+  setUi({ editor: null });
+}
+
+/** Rollen fürs Vorhören: wie live; stehen beide Decks, geht der Master, sonst Deck A. */
+export function previewRoles(a: Pick<DeckState, 'loaded' | 'playing'>, b: Pick<DeckState, 'loaded' | 'playing'>, master: DeckId | null = null): { from: DeckId; to: DeckId } | null {
+  const live = transitionRoles(a, b, master);
+  if (live) return live;
+  if (!a.loaded || !b.loaded) return null;
+  return master === 'b' ? { from: 'b', to: 'a' } : { from: 'a', to: 'b' };
+}
+
+/**
+ * Spielt den Entwurf im Editor zum Vorhören (TRANS-06), ab dem gewählten Takt. Stehen beide Decks,
+ * sind ihre Stellen Beginn oder Ende des Übergangs (`previewAnchor`). Läuft eines, liegt er dort, wo
+ * ihn die Taste in der Bühne jetzt hinlegen würde (Vorausblick wie dort).
+ */
+export async function previewEditor(): Promise<void> {
+  const ui = getUi();
+  if (!core || !ui.editor) return;
+  const snap = latestSnapshot();
+  const roles = previewRoles(snap.decks[0], snap.decks[1], snap.master);
+  if (!roles) {
+    showNotice(say('ed.previewNeedDecks'));
+    return;
+  }
+  const draft = ui.editor.draft;
+  try {
+    const from = Math.min(ui.previewFrom, (draft.bars - 1) * 4);
+    const standing = !snap.decks[0].playing && !snap.decks[1].playing;
+    const when: TransitionWhen = standing ? { type: ui.previewAnchor === 'end' ? 'end_here' : 'start_here' } : transitionWhen(ui.peekBeats);
+    const run = await core.previewTransition(roles.from, roles.to, { ...draft, name: draft.name.trim() || say('ed.newName') }, when, from);
+    setUi({ preview: run });
+  } catch (err) {
+    setUi({ preview: null });
+    showNotice(say('ed.previewFailed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Beendet das Vorhören; Decks und Regler stehen danach wieder wie vorher. */
+export async function stopPreview(): Promise<void> {
+  if (!core) return;
+  setUi({ preview: null });
+  try {
+    await core.stopPreview();
+  } catch (err) {
+    showNotice(errorText(err), 'error');
+  }
+}
+
+/** Speichert den Entwurf und wählt ihn aus. Der Editor bleibt offen. */
+export async function saveEditor(): Promise<void> {
+  const editor = getUi().editor;
+  if (!core || !editor) return;
+  try {
+    const name = editor.draft.name.trim();
+    let list = await core.saveTransition({ ...editor.draft, name });
+    // Umbenannt: Der alte Eintrag verschwindet.
+    if (editor.original !== null && editor.original !== name) list = await core.deleteTransition(editor.original);
+    setUi({ savedTransitions: list, editor: { draft: { ...editor.draft, name }, original: name }, transitionName: name, transitionBars: editor.draft.bars });
+    showNotice(say('ed.saved', { name }));
+  } catch (err) {
+    showNotice(say('ed.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+export async function deleteSavedTransition(name: string): Promise<void> {
+  if (!core) return;
+  try {
+    const list = await core.deleteTransition(name);
+    const ui = getUi();
+    setUi({ savedTransitions: list, editor: null, ...(ui.transitionName === name ? { transitionName: 'bass_swap' } : {}) });
+  } catch (err) {
+    showNotice(say('ed.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+/** Bricht den Übergang ab; die Regler bleiben stehen, wo sie sind. */
+export async function cancelTransition(): Promise<void> {
+  if (!core) return;
+  setUi({ transition: null });
+  try {
+    await core.cancelTransition();
+    showNotice(say('trans.cancelled'));
+  } catch (err) {
+    showNotice(say('trans.failed', { reason: errorText(err) }), 'error');
+  }
+}
+
+// --- Audio-Ausgabe ---------------------------------------------------------------
+
+/** Ausgabegeräte für die Einstellungen; ohne Kern oder bei einem Fehler eine leere Liste. */
+export async function listAudioDevices(): Promise<AudioDevice[]> {
+  if (!core) return [];
+  try {
+    return await core.listAudioDevices();
+  } catch {
+    return [];
+  }
+}
+
+/** Wechselt das Ausgabegerät (null = Standardgerät des Systems). Ergebnis: Fehlertext oder null. */
+export async function selectAudioDevice(name: string | null): Promise<string | null> {
+  if (!core) return null;
+  try {
+    await core.selectAudioDevice(name);
+    return null;
+  } catch (err) {
+    return errorText(err);
+  }
+}
+
 // --- Liste -----------------------------------------------------------------------
 
 let visibleIds: TrackId[] = [];
@@ -497,6 +875,35 @@ export function moveSelection(dir: -1 | 1): void {
   const i = cur ? visibleIds.indexOf(cur) : -1;
   const next = i < 0 ? (dir > 0 ? 0 : visibleIds.length - 1) : clamp(i + dir, 0, visibleIds.length - 1);
   setUi({ selectedId: visibleIds[next] });
+}
+
+// --- Vorausblick (VIS-13) --------------------------------------------------------
+
+/** Grenzen des Vorausblicks in Beats: ein Stück zurück, weit nach vorn. */
+export const PEEK_MIN = -64;
+export const PEEK_MAX = 4096;
+/** Schritt der Tasten in Beats: vier Takte, mit Shift ein Takt. */
+export const PEEK_STEP = 16;
+export const PEEK_STEP_FINE = 4;
+
+/** Neuer Vorausblick nach einem Schritt: ganze Beats, auf die Grenzen beschränkt. */
+export function peekAfter(current: number, beats: number): number {
+  return clamp(Math.round(current + beats), PEEK_MIN, PEEK_MAX);
+}
+
+/** Ansicht der Wellenformen um `beats` verschieben; die Wiedergabe läuft unverändert weiter. */
+export function peekBy(beats: number): void {
+  setUi((s) => ({ peekBeats: peekAfter(s.peekBeats, beats) }));
+}
+
+/** Schritt der Tasten: vier Takte vor oder zurück, fein ein Takt. */
+export function peekStep(dir: -1 | 1, fine: boolean): void {
+  peekBy(dir * (fine ? PEEK_STEP_FINE : PEEK_STEP));
+}
+
+/** Zurück zur Abspielstelle. */
+export function peekReset(): void {
+  if (getUi().peekBeats !== 0) setUi({ peekBeats: 0 });
 }
 
 export function toggleSnap(): void {

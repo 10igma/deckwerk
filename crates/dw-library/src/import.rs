@@ -1,6 +1,8 @@
 //! Import von Dateien und Ordnern (BIB-01, BIB-03, BIB-05).
 
 use crate::{now, search_text, Library, Result};
+use lofty::config::{ParseOptions, ParsingMode};
+use lofty::file::TaggedFile;
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use rusqlite::{params, OptionalExtension};
@@ -19,6 +21,8 @@ pub struct ImportReport {
     pub duplicates: usize,
     /// Bekannter Inhalt an neuem Ort: Der Pfad wurde aktualisiert, die Analyse bleibt.
     pub relinked: usize,
+    /// Bekannter Ort, neuer Inhalt (Datei ersetzt, z. B. neu kopiert): Die Analyse beginnt von vorn.
+    pub updated: usize,
     /// Dateien, die sich nicht lesen ließen, mit Grund.
     pub failed: Vec<(PathBuf, String)>,
 }
@@ -75,8 +79,22 @@ struct Meta {
     channels: u8,
 }
 
+/// Liest Eigenschaften und Tags. Fehlerhafte Angaben (etwa ein Datum im Jahres-Feld) sollen den
+/// Track nicht aus der Bibliothek halten: erst nachsichtig lesen, zur Not ganz ohne Tags.
+fn read_tagged(path: &Path) -> std::result::Result<TaggedFile, String> {
+    let attempts = [ParseOptions::new().parsing_mode(ParsingMode::Relaxed), ParseOptions::new().read_tags(false)];
+    let mut first_error = None;
+    for options in attempts {
+        match Probe::open(path).map_err(|e| e.to_string())?.options(options).read() {
+            Ok(tagged) => return Ok(tagged),
+            Err(e) => first_error = first_error.or(Some(e.to_string())),
+        }
+    }
+    Err(first_error.unwrap_or_default())
+}
+
 fn read_meta(path: &Path) -> std::result::Result<Meta, String> {
-    let tagged = Probe::open(path).map_err(|e| e.to_string())?.read().map_err(|e| e.to_string())?;
+    let tagged = read_tagged(path)?;
     let props = tagged.properties();
     let mut m = Meta {
         duration: props.duration().as_secs_f64(),
@@ -128,8 +146,33 @@ impl Library {
         let tx = self.conn.transaction()?;
         for file in files {
             let path_str = file.to_string_lossy().to_string();
-            let known: Option<i64> = tx.query_row("SELECT id FROM track WHERE path = ?1", params![path_str], |r| r.get(0)).optional()?;
-            if known.is_some() {
+            let known: Option<(i64, i64, i64, String)> = tx
+                .query_row("SELECT id, size, mtime, hash FROM track WHERE path = ?1", params![path_str], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .optional()?;
+            if let Some((id, size, mtime, old_hash)) = known {
+                // Bekannter Ort. Wurde die Datei ersetzt (andere Größe oder Zeit und anderer Inhalt), ist die
+                // alte Analyse hinfällig: Der Track beginnt von vorn und wird neu analysiert.
+                let now_on_disk = std::fs::metadata(&file).ok().map(|md| {
+                    let t = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64);
+                    (md.len() as i64, t)
+                });
+                if let Some((new_size, new_mtime)) = now_on_disk.filter(|&(s, m)| s != size || m != mtime) {
+                    if let Ok(hash) = fingerprint(&file) {
+                        if hash != old_hash {
+                            tx.execute("DELETE FROM grid_anchor WHERE track_id = ?1", params![id])?;
+                            tx.execute("DELETE FROM analysis WHERE track_id = ?1", params![id])?;
+                            tx.execute(
+                                "UPDATE track SET hash = ?2, size = ?3, mtime = ?4, missing = 0, incomplete = 0 WHERE id = ?1",
+                                params![id, hash, new_size, new_mtime],
+                            )?;
+                            if let Ok(meta) = read_meta(&file) {
+                                tx.execute("UPDATE track SET duration = ?2 WHERE id = ?1", params![id, meta.duration])?;
+                            }
+                            report.updated += 1;
+                            continue;
+                        }
+                    }
+                }
                 report.duplicates += 1;
                 continue;
             }
@@ -180,6 +223,19 @@ impl Library {
         }
         tx.commit()?;
         Ok(report)
+    }
+
+    /// Ordner, in denen Tracks der Bibliothek liegen (jeder einmal, sortiert).
+    pub fn track_folders(&self) -> Result<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM track")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut folders = std::collections::BTreeSet::new();
+        for path in rows {
+            if let Some(parent) = Path::new(&path?).parent() {
+                folders.insert(parent.to_path_buf());
+            }
+        }
+        Ok(folders.into_iter().collect())
     }
 
     /// Markiert Tracks, deren Datei nicht mehr am gespeicherten Ort liegt. Gibt deren Anzahl zurück.

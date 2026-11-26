@@ -12,6 +12,8 @@ use std::sync::Arc;
 pub(crate) enum Jump {
     /// Auf eine Frame-Position.
     To(f64),
+    /// Auf eine Frame-Position, im laufenden Deck verschoben auf die Phase, die es ohne Sprung hätte.
+    ToInPhase(f64),
     /// Auf die Position, die die Master-Clock vorgibt (Beat-Sync).
     Relock,
 }
@@ -127,6 +129,16 @@ impl Deck {
             self.fade = 1.0;
             self.playing = true;
             self.started_at = now;
+        }
+    }
+
+    /// Beendet ein laufendes Ausblenden vom letzten Stopp: Das stehende Deck steht danach an seiner Stelle.
+    pub fn settle(&mut self) {
+        if !self.playing {
+            if let Some(p) = self.stop_pos.take() {
+                self.pos = p;
+            }
+            self.fade = 0.0;
         }
     }
 

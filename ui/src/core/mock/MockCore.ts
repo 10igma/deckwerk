@@ -6,11 +6,19 @@ import {
   VALUES_PER_POINT,
   bandIndex,
   deckIndex,
+  type AudioDevice,
   type Command,
   type DeckId,
   type DeckState,
   type EngineStatus,
+  type AppSettings,
   type ImportResult,
+  type RecordingInfo,
+  type RefreshResult,
+  type PairTransition,
+  type Transition,
+  type TransitionRun,
+  type TransitionWhen,
   type LibraryStatus,
   type LoadedTracks,
   type Snapshot,
@@ -82,6 +90,13 @@ const WAVE_CACHE_SIZE = 6;
 const ANALYSIS_SECONDS = 0.8;
 const NO_DEVICE_TEXT = 'Kein Ausgabegerät gefunden (ALSA: Standardgerät nicht verfügbar).';
 
+/** Geräte des simulierten Kerns: Lautsprecher, ein Interface mit vier Ausgängen, ein Gerät, das sich nicht öffnen lässt. */
+export const MOCK_DEVICES: AudioDevice[] = [
+  { host: 'Mock', name: 'Lautsprecher (eingebaut)', is_default: true, max_channels: 2, sample_rates: [44100, 48000] },
+  { host: 'Mock', name: 'Interface 4 Ausgänge', is_default: false, max_channels: 4, sample_rates: [44100, 48000, 96000] },
+  { host: 'Mock', name: 'Gerät belegt', is_default: false, max_channels: 2, sample_rates: [48000] },
+];
+
 function newDeck(id: DeckId): MockDeck {
   return {
     track: null,
@@ -130,6 +145,8 @@ export class MockCore implements CoreApi {
   private libraryRev = 1;
   private analysisClock = 0;
   private readonly noDevice: boolean;
+  /** Gewähltes Ausgabegerät; null = Standardgerät des Systems. */
+  private device: string | null = null;
   private readonly loadDelayMs: number;
   private waves = new Map<TrackId, Waveform>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -224,6 +241,223 @@ export class MockCore implements CoreApi {
     return Promise.resolve({ added, duplicates: 0, relinked: 0, failed: [] });
   }
 
+  private refreshOnStart = true;
+  /** Simulierter Mitschnitt: Es wird nichts geschrieben, nur die Zeit gezählt. */
+  private recording: { path: string; from: number } | null = null;
+
+  startRecording(stamp: string): Promise<RecordingInfo> {
+    if (this.recording) return Promise.reject('Es läuft schon eine Aufnahme.');
+    this.recording = { path: `/musik/Deckwerk/Deckwerk ${stamp}.wav`, from: this.time };
+    return Promise.resolve({ path: this.recording.path, active: true, seconds: 0, dropped_frames: 0, error: null });
+  }
+
+  stopRecording(): Promise<RecordingInfo> {
+    if (!this.recording) return Promise.reject('Es läuft keine Aufnahme.');
+    const done = { path: this.recording.path, active: false, seconds: this.time - this.recording.from, dropped_frames: 0, error: null };
+    this.recording = null;
+    return Promise.resolve(done);
+  }
+
+  recordingStatus(): Promise<RecordingInfo | null> {
+    const r = this.recording;
+    return Promise.resolve(r ? { path: r.path, active: true, seconds: this.time - r.from, dropped_frames: 0, error: null } : null);
+  }
+  /** Simulierter Übergang: Start und Stopp der Decks und die Fader; EQ-Verläufe fährt nur der echte Kern. */
+  private run: TransitionRun | null = null;
+
+  /** Zwei Vorlagen wie im Kern, hier nur mit den Fader-Spuren. */
+  listTransitions(bars: number): Promise<Transition[]> {
+    const l = bars * 4;
+    const make = (name: string, open: number, close: number): Transition => ({
+      name,
+      bars,
+      start_in: 0,
+      stop_out: l,
+      reset_out: true,
+      lanes: [
+        { side: 'in', param: 'fader', points: [{ beat: -1, value: 0 }, { beat: 0, value: 0 }, { beat: open, value: 1 }] },
+        { side: 'out', param: 'fader', points: [{ beat: close, value: 1 }, { beat: l, value: 0 }] },
+      ],
+    });
+    return Promise.resolve([make('bass_swap', l / 8, l - l / 4), make('fade', l / 2, l / 2)]);
+  }
+
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun> {
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    if (this.run && this.clockBeats < this.run.end_beat) return Promise.reject(`Es läuft schon ein Übergang von Deck ${this.run.from.toUpperCase()} nach Deck ${this.run.to.toUpperCase()}.`);
+    if (!out.track || !out.playing) return Promise.reject(`Deck ${from.toUpperCase()} läuft nicht; der Übergang geht vom laufenden Deck aus.`);
+    if (!inn.track) return Promise.reject(`Auf Deck ${to.toUpperCase()} liegt kein Track.`);
+    const l = transition.bars * 4;
+    const outBeat = this.beatOf(out);
+    let boundary: number;
+    if (when.type === 'start_here' || when.type === 'end_here') return Promise.reject('Diese Lage gibt es nur beim Vorhören mit stehenden Decks.');
+    if (when.type === 'at') {
+      // Fester Ort: Beginn, wenn der laufende Track die gespeicherte Stelle erreicht.
+      boundary = Math.round(beatAt(out.track.grid, when.out_pos) / 4) * 4;
+      if (boundary < outBeat + 3) return Promise.reject('Die gespeicherte Stelle des Übergangs ist schon vorbei oder zu nah; das laufende Deck weiter vorn starten');
+    } else if (when.type === 'next') {
+      // Nächste Taktgrenze im gewünschten Raster, mindestens drei Beats voraus.
+      const span = 4 * Math.max(1, when.align_bars);
+      boundary = Math.ceil((outBeat + 3) / span) * span;
+    } else {
+      // Ende vorgegeben: auf den nächsten Taktanfang gerückt, der Beginn um die Länge davor.
+      const end = Math.round((outBeat + when.beats) / 4) * 4;
+      boundary = end - l;
+      if (boundary < outBeat + 3) return Promise.reject(`Bis zum gewählten Ende sind es ${Math.round(end - outBeat)} Beats; der Übergang über ${transition.bars} Takte braucht ${l + 3}.`);
+    }
+    const t0 = this.clockBeats + (boundary - outBeat);
+    this.run = { from, to, name: transition.name, bars: transition.bars, t0_beat: t0, end_beat: t0 + l + 1 };
+    if (!inn.playing) {
+      inn.sync = 'beat';
+      const mark = Math.round(beatAt(inn.track.grid, when.type === 'at' ? when.in_pos : inn.pos) / 4) * 4;
+      // Mit vorgegebenem Ende erreicht das Deck seine jetzige Stelle erst dort: Es startet um die Länge früher.
+      inn.pos = when.type === 'at' ? secAt(inn.track.grid, mark) : when.type === 'next' ? Math.max(0, secAt(inn.track.grid, mark)) : secAt(inn.track.grid, mark - l);
+    }
+    return Promise.resolve({ ...this.run });
+  }
+
+  private preview: { run: TransitionRun; start: number; pos: [number, number] } | null = null;
+
+  /** Vorhören, vereinfacht: Das alte Deck startet sofort, das neue an seiner Stelle im Übergang; Regler fährt der Mock nicht. */
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, _when: TransitionWhen, fromBeat: number): Promise<TransitionRun> {
+    void this.stopPreview();
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    for (const [deck, d] of [[from, out], [to, inn]] as const) if (!d.track) return Promise.reject(`Auf Deck ${deck.toUpperCase()} liegt kein Track.`);
+    const l = transition.bars * 4;
+    const start = Math.floor(Math.min(Math.max(0, fromBeat), Math.max(0, l - 4)) / 4) * 4 - 4;
+    const pos: [number, number] = [out.pos, inn.pos];
+    for (const deck of [from, to]) this.apply({ type: 'play', deck, on: false });
+    this.apply({ type: 'play', deck: from, on: true });
+    const run: TransitionRun = { from, to, name: transition.name, bars: transition.bars, t0_beat: this.clockBeats - start, end_beat: this.clockBeats - start + l + 8 };
+    this.preview = { run, start, pos };
+    return Promise.resolve({ ...run });
+  }
+
+  stopPreview(): Promise<void> {
+    const p = this.preview;
+    if (!p) return Promise.resolve();
+    this.preview = null;
+    [p.run.from, p.run.to].forEach((deck, i) => {
+      this.apply({ type: 'play', deck, on: false });
+      this.decks[deckIndex(deck)].pos = p.pos[i];
+    });
+    return Promise.resolve();
+  }
+
+  private advancePreview(): void {
+    const p = this.preview;
+    if (!p) return;
+    const t = this.clockBeats - p.run.t0_beat;
+    const inn = this.decks[deckIndex(p.run.to)];
+    if (!inn.playing && t >= Math.max(0, p.start) && t < p.run.bars * 4) this.apply({ type: 'play', deck: p.run.to, on: true });
+    if (this.clockBeats > p.run.end_beat) void this.stopPreview();
+  }
+
+  private pairs: PairTransition[] = [];
+
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]> {
+    const [ta, tb] = [this.decks[deckIndex(a)].track?.id, this.decks[deckIndex(b)].track?.id];
+    if (!ta || !tb) return Promise.resolve([]);
+    return Promise.resolve(this.pairs.filter((p) => (p.out_track === ta && p.in_track === tb) || (p.out_track === tb && p.in_track === ta)).map((p) => ({ ...p })));
+  }
+
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]> {
+    const out = this.decks[deckIndex(from)];
+    const inn = this.decks[deckIndex(to)];
+    const name = transition.name.trim();
+    if (!out.track || !inn.track) return Promise.reject('Auf beiden Decks muss ein Track liegen.');
+    if (name === '') return Promise.reject('Der Übergang braucht einen Namen mit höchstens 60 Zeichen.');
+    if (when.type !== 'start_here' && when.type !== 'end_here') return Promise.reject('Der Ort ergibt sich aus den Stellen der stehenden Decks: als Beginn oder als Ende.');
+    if (out.playing || inn.playing) return Promise.reject('Zum Speichern für das Paar müssen beide Decks stehen; ihre Stellen legen den Ort fest.');
+    const back = when.type === 'end_here' ? transition.bars * 4 : 0;
+    const at = (d: MockDeck) => secAt(d.track!.grid, Math.round(beatAt(d.track!.grid, d.pos) / 4) * 4 - back);
+    const entry = { out_track: out.track.id, in_track: inn.track.id, out_pos: at(out), in_pos: at(inn), transition: { ...transition, name } };
+    const old = this.pairs.find((p) => p.out_track === entry.out_track && p.in_track === entry.in_track && p.transition.name === name);
+    if (old) Object.assign(old, entry);
+    else this.pairs.push({ id: Math.max(0, ...this.pairs.map((p) => p.id)) + 1, ...entry });
+    return this.listPairTransitions(from, to);
+  }
+
+  deletePairTransition(id: number): Promise<void> {
+    this.pairs = this.pairs.filter((p) => p.id !== id);
+    return Promise.resolve();
+  }
+
+  cancelTransition(): Promise<void> {
+    this.run = null;
+    return Promise.resolve();
+  }
+
+  private saved: Transition[] = [];
+
+  listSavedTransitions(): Promise<Transition[]> {
+    return Promise.resolve(this.saved.map((t) => ({ ...t })));
+  }
+
+  saveTransition(transition: Transition): Promise<Transition[]> {
+    const name = transition.name.trim();
+    if (name === '' || name.length > 60) return Promise.reject('Der Übergang braucht einen Namen mit höchstens 60 Zeichen.');
+    if (name === 'bass_swap' || name === 'fade') return Promise.reject(`„${name}“ ist der Name einer eingebauten Vorlage.`);
+    const clean = { ...transition, name };
+    const i = this.saved.findIndex((t) => t.name === name);
+    if (i >= 0) this.saved[i] = clean;
+    else this.saved.push(clean);
+    return this.listSavedTransitions();
+  }
+
+  deleteTransition(name: string): Promise<Transition[]> {
+    this.saved = this.saved.filter((t) => t.name !== name);
+    return this.listSavedTransitions();
+  }
+
+  /** Führt den simulierten Übergang mit der Clock mit. */
+  private advanceTransition(): void {
+    const run = this.run;
+    if (!run) return;
+    const out = this.decks[deckIndex(run.from)];
+    const inn = this.decks[deckIndex(run.to)];
+    const l = run.bars * 4;
+    const t = this.clockBeats - run.t0_beat;
+    if (t < 0) return;
+    if (!inn.playing && t < l) {
+      // Direkt starten: Das Deck steht schon im Takt, auch vor seinem Anfang (stummer Vorlauf).
+      inn.playing = true;
+      inn.playTime = 0;
+      this.pickMaster();
+    }
+    inn.fader = Math.min(1, Math.max(0, t / (l / 2)));
+    out.fader = Math.min(1, Math.max(0, (l - t) / (l / 2)));
+    if (t >= l) {
+      if (out.playing) this.apply({ type: 'play', deck: run.from, on: false });
+      out.fader = 1;
+      this.run = null;
+    }
+  }
+
+  /** Simuliertes Aktualisieren: Der Musikordner bringt bis zu drei noch nicht vorhandene Tracks. */
+  refreshLibrary(): Promise<RefreshResult> {
+    let added = 0;
+    for (const track of MOCK_TRACKS) {
+      if (added >= 3) break;
+      if (this.library.some((e) => e.track.id === track.id)) continue;
+      this.library.push({ track, analyzed: false, missing: false });
+      added += 1;
+    }
+    if (added > 0) this.libraryChanged();
+    return Promise.resolve({ folders: 1, unreachable: 0, added, relinked: 0, missing: this.library.filter((e) => e.missing).length, failed: [] });
+  }
+
+  getSettings(): Promise<AppSettings> {
+    return Promise.resolve({ refresh_on_start: this.refreshOnStart, music_folders: ['/musik'] });
+  }
+
+  setRefreshOnStart(on: boolean): Promise<void> {
+    this.refreshOnStart = on;
+    return Promise.resolve();
+  }
+
   loadTrack(deck: DeckId, trackId: TrackId): Promise<void> {
     const entry = this.library.find((e) => e.track.id === trackId);
     if (!entry) return Promise.reject(`Track ${trackId} ist nicht in der Bibliothek.`);
@@ -295,6 +529,25 @@ export class MockCore implements CoreApi {
     return Promise.resolve(trackAnalysis(t));
   }
 
+  listAudioDevices(): Promise<AudioDevice[]> {
+    return Promise.resolve(this.noDevice ? [] : MOCK_DEVICES.map((d) => ({ ...d })));
+  }
+
+  /** Wie der Kern: Unbekanntes oder nicht zu öffnendes Gerät wird abgelehnt, die bisherige Wahl bleibt. */
+  selectAudioDevice(name: string | null): Promise<void> {
+    if (name !== null) {
+      const known = !this.noDevice && MOCK_DEVICES.some((d) => d.name === name);
+      if (!known) return Promise.reject(`Gerät „${name}“ nicht gefunden`);
+      if (name === 'Gerät belegt') return Promise.reject('Audio-Schnittstelle meldet: Gerät wird von einer anderen Anwendung benutzt');
+    } else if (this.noDevice) {
+      return Promise.reject('kein Ausgabegerät gefunden');
+    }
+    this.device = name;
+    const st = this.status();
+    this.statusListeners.forEach((l) => l(st));
+    return Promise.resolve();
+  }
+
   // --- Simulation ----------------------------------------------------------
 
   /** Track sofort laden (auch für Szenen). */
@@ -343,8 +596,31 @@ export class MockCore implements CoreApi {
           this.pickMaster();
         }
         break;
+      case 'play_in':
+        if (!d || !d.track || d.playing || !Number.isFinite(cmd.beats)) break;
+        // Wie im Kern: um den Vorlauf zurück (auch vor den Anfang des Tracks), dann starten.
+        d.pos -= ((cmd.beats * 60) / Math.max(1, this.clockBpm)) * (1 + this.effectiveOffset(d, cmd.deck));
+        d.playing = true;
+        d.playTime = 0;
+        this.pickMaster();
+        if (d.sync === 'beat' && this.master !== cmd.deck) d.pos = secAt(d.track.grid, this.beatOf(d) - this.phaseOf(d));
+        break;
+      case 'cancel_scheduled':
+        this.run = null;
+        break;
       case 'seek':
         if (d && d.track) d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
+        break;
+      case 'seek_snap':
+        if (!d || !d.track) break;
+        if (d.playing) {
+          // Wie im Kern: um ganze Beats springen, der Bruchteil (die Phase) bleibt.
+          const now = this.beatOf(d);
+          const beat = now + Math.round(beatAt(d.track.grid, cmd.pos) - now);
+          d.pos = Math.min(Math.max(0, secAt(d.track.grid, beat)), d.track.duration);
+        } else {
+          d.pos = Math.min(Math.max(0, cmd.pos), d.track.duration);
+        }
         break;
       case 'tempo':
         if (d) d.manualOffset = Math.min(1, Math.max(-1, cmd.offset));
@@ -359,7 +635,18 @@ export class MockCore implements CoreApi {
           d.manualOffset = this.effectiveOffset(d, cmd.deck);
         }
         d.sync = cmd.mode;
-        if (cmd.mode === 'beat' && d.track && this.master !== cmd.deck && this.clockBpm > 0) this.alignPhase(d);
+        if (cmd.mode !== 'off' && d.track && !d.playing && !this.decks.some((x) => x.playing)) {
+          // Nichts läuft: Tempo des anderen Decks übernehmen und im Modus „Beat" in dessen Phase rücken.
+          const other = this.decks.find((x, j) => x !== d && x.track && DECK_IDS[j] === this.master) ?? this.decks.find((x) => x !== d && x.track);
+          if (other?.track) {
+            d.manualOffset = Math.min(1, Math.max(-0.99, (other.track.bpm * (1 + other.manualOffset)) / d.track.bpm - 1));
+            if (cmd.mode === 'beat') {
+              const beat = this.beatOf(d);
+              const target = beat + wrapPhase(this.beatOf(other) - beat);
+              d.pos = secAt(d.track.grid, secAt(d.track.grid, target) < 0 ? target + 1 : target);
+            }
+          }
+        } else if (cmd.mode === 'beat' && d.track && this.master !== cmd.deck && this.clockBpm > 0) this.alignPhase(d);
         break;
       case 'set_master':
         this.masterMode = cmd.deck;
@@ -469,6 +756,8 @@ export class MockCore implements CoreApi {
 
   /** Simulation um `dt` Sekunden weiterführen und einen Schnappschuss senden. */
   step(dt: number): void {
+    this.advanceTransition();
+    this.advancePreview();
     this.time += dt;
     this.frames += Math.round(dt * MOCK_SAMPLE_RATE);
     for (const d of this.decks) if (d.playing) d.playTime += dt;
@@ -521,7 +810,8 @@ export class MockCore implements CoreApi {
     if (d.pos >= d.track.duration) {
       d.pos = d.track.duration;
       d.playing = false;
-    } else if (d.pos < 0) {
+    } else if (d.pos < 0 && d.rate < 0) {
+      // Rückwärts über den Anfang hinaus geht es nicht; vorwärts im Vorlauf (VIS-13) bleibt die Stelle negativ.
       d.pos = 0;
     }
   }
@@ -587,6 +877,7 @@ export class MockCore implements CoreApi {
       buffer_size: 256,
       has_device: !this.noDevice,
       device_error: this.noDevice ? NO_DEVICE_TEXT : null,
+      device: this.device,
     };
   }
 

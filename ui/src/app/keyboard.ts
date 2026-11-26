@@ -25,6 +25,8 @@ function focusSearch(): void {
 function releaseFocus(): void {
   const el = document.activeElement;
   if (el instanceof HTMLElement && el !== document.body) el.blur();
+  // Esc bringt auch die Wellenformen zurück an die Abspielstelle (VIS-13).
+  act.peekReset();
 }
 
 const onDown: Partial<Record<ActionId, Handler>> = {
@@ -56,6 +58,10 @@ const onDown: Partial<Record<ActionId, Handler>> = {
   'view.vorbereiten': () => navigate('vorbereiten'),
   'view.automix': () => navigate('automix'),
   'global.snap': () => act.toggleSnap(),
+  'global.record': () => void act.toggleRecording(),
+  'stage.peek_fwd': (_d, fine) => act.peekStep(1, fine),
+  'stage.peek_back': (_d, fine) => act.peekStep(-1, fine),
+  'stage.peek_reset': () => act.peekReset(),
 };
 
 // Loslassen: beendet Halten-Tasten und bricht das „Halten" des Live-Schutzes ab.

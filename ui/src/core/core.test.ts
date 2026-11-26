@@ -179,6 +179,9 @@ describe('TauriCore', () => {
     void h.core.loadTrack('a', '17');
     void h.core.getLoadedTracks();
     void h.core.getAnalysis('17');
+    void h.core.listAudioDevices();
+    void h.core.selectAudioDevice('Interface 4 Ausgänge');
+    void h.core.selectAudioDevice(null);
     expect(h.calls).toEqual([
       { cmd: 'core_send', args: { cmd: { type: 'eq', deck: 'b', band: 'low', db: null } } },
       { cmd: 'library_list', args: undefined },
@@ -186,6 +189,9 @@ describe('TauriCore', () => {
       { cmd: 'deck_load', args: { deck: 'a', trackId: '17' } },
       { cmd: 'deck_loaded', args: undefined },
       { cmd: 'track_analysis', args: { trackId: '17' } },
+      { cmd: 'audio_devices', args: undefined },
+      { cmd: 'audio_select', args: { device: 'Interface 4 Ausgänge' } },
+      { cmd: 'audio_select', args: { device: null } },
     ]);
   });
   it('dekodiert die Wellenform aus ArrayBuffer, Uint8Array oder Zahlenfeld', async () => {
@@ -205,6 +211,24 @@ describe('TauriCore', () => {
     const p = h.core.loadTrack('b', '9');
     h.waiting[0].reject('/musik/a.flac: Datei nicht gefunden');
     await expect(p).rejects.toBe('/musik/a.flac: Datei nicht gefunden');
+  });
+  it('meldet einen Gerätewechsel als Statusänderung (ENG-01)', async () => {
+    const h = harness();
+    const chosen: (string | null)[] = [];
+    h.core.subscribeStatus((s) => chosen.push(s.device));
+    h.frame();
+    h.waiting[0].resolve(poll({ status: { ...emptyEngineStatus(), device: 'Interface 4 Ausgänge' } }));
+    await h.flush();
+    h.frame();
+    h.waiting[1].resolve(poll({ status: { ...emptyEngineStatus(), device: 'Interface 4 Ausgänge' } }));
+    await h.flush();
+    expect(chosen).toEqual([null, 'Interface 4 Ausgänge']);
+  });
+  it('gibt die Ablehnung eines Geräts weiter', async () => {
+    const h = harness();
+    const p = h.core.selectAudioDevice('weg');
+    h.waiting[0].reject('Gerät „weg“ nicht gefunden');
+    await expect(p).rejects.toBe('Gerät „weg“ nicht gefunden');
   });
   it('dispose beendet den Abruf', () => {
     const h = harness();

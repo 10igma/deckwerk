@@ -1,8 +1,16 @@
 import type {
+  AudioDevice,
   Command,
   DeckId,
   EngineStatus,
+  AppSettings,
   ImportResult,
+  RecordingInfo,
+  RefreshResult,
+  PairTransition,
+  Transition,
+  TransitionRun,
+  TransitionWhen,
   LibraryStatus,
   LoadedTracks,
   Snapshot,
@@ -30,6 +38,11 @@ export interface CoreApi {
   listTracks(): Promise<TrackInfo[]>;
   /** Dateien und Ordner importieren (Ordner rekursiv). */
   importPaths(paths: string[]): Promise<ImportResult>;
+  /** Musikordner nach neuen Dateien durchsuchen; bekannte Tracks bleiben unberührt (BIB-19). */
+  refreshLibrary(): Promise<RefreshResult>;
+  getSettings(): Promise<AppSettings>;
+  /** Beim Start die Musikordner durchsuchen. */
+  setRefreshOnStart(on: boolean): Promise<void>;
   /**
    * Lädt einen Track auf ein Deck; erfüllt, sobald das Deck spielbereit ist (kann Sekunden dauern).
    * Abgelehnt mit einem Klartext (string oder Error), wenn das Laden scheitert.
@@ -39,6 +52,51 @@ export interface CoreApi {
   getLoadedTracks(): Promise<LoadedTracks>;
   getWaveform(trackId: TrackId): Promise<Waveform>;
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis>;
+  /** Eingebaute Vorlagen für Übergänge in der gewünschten Länge (TRANS-01). */
+  listTransitions(bars: number): Promise<Transition[]>;
+  /**
+   * Plant einen Übergang vom laufenden Deck `from` zum Deck `to` ein (TRANS-05); der Kern fährt die Regler.
+   * `when` legt fest, ob er an der nächsten Taktgrenze beginnt oder an einer vorgegebenen Stelle endet. Steht
+   * `to`, wird es gestellt und gestartet; läuft es schon im Takt mit, werden nur die Regler gefahren.
+   * Abgelehnt mit Klartext, wenn die Voraussetzungen fehlen.
+   */
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun>;
+  /**
+   * Spielt einen Übergang zum Vorhören (TRANS-06): Beide Decks halten an, werden kurz vor die Stelle
+   * gestellt, an der er mit `when` läge, und spielen ihn ab dem Takt von `fromBeat` (Beats ab T0, ein
+   * Takt Vorlauf). Danach – oder mit `stopPreview` – stehen Decks und Regler wieder wie vorher.
+   */
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen, fromBeat: number): Promise<TransitionRun>;
+  /** Beendet das Vorhören und stellt den Stand von vorher wieder her. */
+  stopPreview(): Promise<void>;
+  /** Für das Paar der Tracks auf zwei Decks gespeicherte Übergänge, beide Richtungen (TRANS-07). */
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]>;
+  /**
+   * Speichert Kurven und Ort für das Paar auf `from` und `to`. `when` ist `start_here` oder `end_here`:
+   * Die Stellen der stehenden Decks sind Beginn oder Ende. Gleicher Name in derselben Richtung ersetzt.
+   */
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]>;
+  deletePairTransition(id: number): Promise<void>;
+  /** Selbst gebaute Übergänge (TRANS-04). */
+  listSavedTransitions(): Promise<Transition[]>;
+  /** Speichert einen Übergang unter seinem Namen (ersetzt einen gleichnamigen); liefert die neue Liste. */
+  saveTransition(transition: Transition): Promise<Transition[]>;
+  deleteTransition(name: string): Promise<Transition[]>;
+  /** Bricht den eingeplanten oder laufenden Übergang ab; die Regler bleiben stehen. */
+  cancelTransition(): Promise<void>;
+  /** Mitschnitt des Master-Signals beginnen (REC-01); `stamp` ist der Zeitstempel für den Dateinamen. */
+  startRecording(stamp: string): Promise<RecordingInfo>;
+  /** Mitschnitt beenden; liefert Pfad und Länge der Datei. */
+  stopRecording(): Promise<RecordingInfo>;
+  /** Laufender Mitschnitt, sonst null. */
+  recordingStatus(): Promise<RecordingInfo | null>;
+  /** Ausgabegeräte des Systems (ENG-01). */
+  listAudioDevices(): Promise<AudioDevice[]>;
+  /**
+   * Wechselt das Ausgabegerät; null = Standardgerät des Systems. Geladene Decks bleiben erhalten.
+   * Abgelehnt mit einem Klartext, wenn sich das Gerät nicht öffnen lässt; dann läuft das bisherige weiter.
+   */
+  selectAudioDevice(name: string | null): Promise<void>;
 }
 
 /** Fehlertext aus einer Ablehnung der Hülle (dort ein string) oder einem Error. */

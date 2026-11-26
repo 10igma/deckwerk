@@ -239,6 +239,35 @@ body[data-scroll='true'] {
   font-size: var(--fs-2);
   color: var(--text-3);
 }
+.settings__note[data-tone='error'] {
+  color: var(--status-warn);
+  overflow-wrap: anywhere;
+}
+.settings__select {
+  width: 100%;
+  min-width: 0;
+  height: var(--ctl-h-sm);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text-1);
+  color-scheme: dark;
+  font: 500 var(--fs-3) / 1 var(--font-text);
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.settings__select:hover {
+  background: var(--bg-3);
+}
+.settings__select:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--focus-ring);
+}
+.settings__select:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
 
 .placeholder {
   height: 100%;
@@ -266,4 +295,26 @@ body[data-scroll='true'] {
   font-size: var(--fs-4);
   line-height: 1.45;
   color: var(--text-2);
+}
+
+/* Ziehen eines Tracks aus der Liste (app/dnd.ts): Marke am Zeiger, keine Textauswahl. */
+:root[data-track-drag] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+.drag-ghost {
+  position: fixed;
+  left: var(--sp-3);
+  top: var(--sp-3);
+  z-index: var(--z-tip);
+  max-width: 20rem;
+  padding: var(--sp-1) var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  background: var(--bg-3);
+  border: var(--stroke-1) solid var(--line-2);
+  pointer-events: none;
 }

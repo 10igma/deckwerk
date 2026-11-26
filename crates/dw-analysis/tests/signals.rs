@@ -134,3 +134,61 @@ fn seven_minute_track_is_analyzed_within_15_seconds() {
     assert!((a.bpm - truth.bpm).abs() <= 0.05);
     assert_eq!(w.frames, audio.frames() as u64);
 }
+
+/// Kick, wie er in Psytrance üblich ist: ein Ton, der in rund 45 ms von hell nach tief fällt. Der
+/// Anschlag ist sofort da, im Tief-Band kommt die Energie aber erst an, wenn der Ton unten ist.
+/// Dazu eine rollende Bassline auf den Sechzehnteln und eine Hi-Hat auf dem Offbeat.
+fn late_body_kick_track(sample_rate: u32, bpm: f64, first: f64, beats: usize) -> AudioBuf {
+    let sr = sample_rate as f64;
+    let period = 60.0 / bpm;
+    let frames = ((first + (beats as f64 + 1.0) * period) * sr) as usize;
+    let mut mono = vec![0.0f32; frames];
+    let mut add = |at: f64, len: f64, f: &dyn Fn(f64) -> f64| {
+        let start = (at * sr).round() as usize;
+        for i in 0..(len * sr) as usize {
+            if start + i < frames {
+                mono[start + i] += f(i as f64 / sr) as f32;
+            }
+        }
+    };
+    let tau = std::f64::consts::TAU;
+    for k in 0..beats {
+        let t = first + k as f64 * period;
+        // Kick: Frequenz fällt von 3,2 kHz auf 52 Hz (unter 120 Hz nach rund 46 ms), Pegel hält 60 ms
+        // und klingt dann ab.
+        add(t, 0.22, &|x| {
+            let phase = tau * (52.0 * x + 3148.0 * 0.012 * (1.0 - (-x / 0.012).exp()));
+            0.85 * phase.sin() * (-(x - 0.06).max(0.0) / 0.05).exp()
+        });
+        // Rollender Bass auf dem zweiten bis vierten Sechzehntel.
+        for s in 1..4 {
+            add(t + s as f64 * period / 4.0, 0.08, &|x| 0.14 * (tau * 73.0 * x).sin() * (x / 0.02).min(1.0) * (-x / 0.035).exp());
+        }
+        // Hi-Hat auf dem Offbeat.
+        add(t + period / 2.0, 0.02, &|x| 0.2 * (tau * 7400.0 * x).sin() * (tau * 9100.0 * x).cos() * (-x / 0.006).exp());
+    }
+    AudioBuf::new(sample_rate, mono.iter().flat_map(|&s| [s, s]).collect())
+}
+
+/// ANA-03 an einem Kick mit spätem Körper: Das Raster gehört auf den Anschlag, nicht auf die
+/// Stelle, an der der Bass des Kicks am stärksten wird. Sonst liegen zwei Tracks im Sync
+/// hörbar gegeneinander versetzt (Befund vom 22.11.2026: 52 ms an echter Musik).
+#[test]
+fn kick_with_late_body_is_placed_on_its_attack() {
+    for (sample_rate, bpm, first) in [(44_100, 140.0, 0.31), (48_000, 145.0, 0.05), (44_100, 128.0, 0.2)] {
+        let beats = 360;
+        let a = analyze(&late_body_kick_track(sample_rate, bpm, first, beats), &config());
+        assert!((a.bpm - bpm).abs() <= 0.05, "{bpm} BPM: erkannt {}", a.bpm);
+        let period = 60.0 / a.bpm;
+        // Abweichung mit Vorzeichen: positiv = das Raster liegt hinter dem Anschlag.
+        let signed: f64 = (0..beats)
+            .map(|k| {
+                let beat = a.grid.beat_at(first + k as f64 * 60.0 / bpm);
+                (beat.round() - beat) * period * 1000.0
+            })
+            .sum::<f64>()
+            / beats as f64;
+        println!("{bpm} BPM: Raster {signed:+.2} ms neben dem Anschlag");
+        assert!(signed.abs() <= 5.0, "{bpm} BPM: Raster liegt {signed:+.1} ms neben dem Anschlag des Kicks");
+    }
+}

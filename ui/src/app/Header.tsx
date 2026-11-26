@@ -1,12 +1,13 @@
 // Kopfzeile (8.2): Ansichten · Master-Clock · Q/S · Aufnahme · Last · Uhr · Einstellungen.
 import { useEffect, useRef, useState } from 'react';
-import { toggleSnap } from './actions';
+import { getAppSettings, listAudioDevices, selectAudioDevice, setRefreshOnStart, syncRecording, toggleRecording, toggleSnap } from './actions';
 import { getDeckAssets } from './assets';
 import { nowDate } from './env';
 import { useEngineStatus, useFrame, useSnap } from './frame';
 import { bindingKeys, findBinding, shortcutKeys } from './keymap';
 import { navigate, VIEWS, type RouteId, type ViewId } from './router';
 import { setLang, setLiveGuard, setUi, useUi } from './store';
+import type { AppSettings, AudioDevice } from '../core/types';
 import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../design/components';
 import { useLang, useT, type MsgKey } from '../i18n';
 import { formatBpm } from '../lib/format';
@@ -135,6 +136,142 @@ function WallClock() {
   );
 }
 
+/** Wahl des Ausgabegeräts (ENG-01). Der Wechsel wirkt sofort; geladene Decks bleiben erhalten. */
+function AudioOutput() {
+  const t = useT();
+  const st = useEngineStatus();
+  const [devices, setDevices] = useState<AudioDevice[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void listAudioDevices().then((list) => {
+      if (alive) setDevices(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const choose = (name: string | null) => {
+    if (busy || name === st.device) return;
+    setBusy(true);
+    setError(null);
+    void selectAudioDevice(name).then((failure) => {
+      setError(failure);
+      setBusy(false);
+    });
+  };
+  const systemDefault = devices.find((d) => d.is_default);
+  // Das gewählte Gerät bleibt in der Liste, auch wenn das System es gerade nicht meldet.
+  const missing = st.device !== null && !devices.some((d) => d.name === st.device) ? st.device : null;
+  return (
+    <>
+      <div className="settings__row">
+        <label className="dw-label" htmlFor="settings-audio">
+          {t('settings.audio')}
+        </label>
+        {/* Leerer Wert = Standardgerät des Systems; Gerätenamen sind nie leer. */}
+        <select id="settings-audio" className="settings__select" value={st.device ?? ''} disabled={busy} onChange={(e) => choose(e.target.value === '' ? null : e.target.value)}>
+          <option value="">{systemDefault ? `${t('settings.audioDefault')} (${systemDefault.name})` : t('settings.audioDefault')}</option>
+          {missing !== null && <option value={missing}>{missing}</option>}
+          {devices.map((d) => (
+            <option key={`${d.host}/${d.name}`} value={d.name}>
+              {`${d.name} · ${t('settings.audioChannels', { n: d.max_channels })}`}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error !== null && (
+        <p className="settings__note" data-tone="error" role="alert">
+          {t('settings.audioFailed', { reason: error })}
+        </p>
+      )}
+      <p className="settings__note">{t('settings.audioNote')}</p>
+    </>
+  );
+}
+
+/** Mitschnitt des Master-Signals (REC-01): starten, laufende Zeit, beenden. */
+function RecordButton() {
+  const t = useT();
+  const lang = useLang();
+  const recording = useUi((s) => s.recording);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    void syncRecording();
+  }, []);
+  useEffect(() => {
+    if (!recording) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [recording]);
+  const secs = recording ? Math.max(0, Math.floor((now - recording.since) / 1000)) : 0;
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  return (
+    <KeyBtn
+      mode="toggle"
+      size="sm"
+      active={recording !== null}
+      accent="var(--status-danger)"
+      onPress={() => void toggleRecording()}
+      ariaLabel={recording ? t('rec.stop') : t('hdr.record')}
+      tip={{ name: recording ? t('rec.stop') : t('hdr.record'), value: recording ? recording.info.path : t('rec.hint'), keys: [lang === 'de' ? 'Strg' : 'Ctrl', 'R'] }}
+    >
+      <Icon name="rec" size="0.85em" />
+      {recording ? <span className="dw-num">{clock}</span> : t('hdr.recordShort')}
+    </KeyBtn>
+  );
+}
+
+/** Bibliothek: Musikordner beim Start nach neuen Dateien durchsuchen. */
+function LibrarySettings() {
+  const t = useT();
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void getAppSettings().then((s) => {
+      if (alive) setSettings(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (settings === null) return null;
+  const choose = (on: boolean) => {
+    if (on === settings.refresh_on_start) return;
+    setSettings({ ...settings, refresh_on_start: on });
+    void setRefreshOnStart(on).then((failure) => {
+      setError(failure);
+      if (failure !== null) setSettings({ ...settings, refresh_on_start: !on });
+    });
+  };
+  return (
+    <>
+      <div className="settings__row">
+        <span className="dw-label">{t('settings.refreshOnStart')}</span>
+        <div className="settings__opts">
+          <KeyBtn mode="toggle" size="sm" active={settings.refresh_on_start} onPress={() => choose(true)}>
+            {t('state.on')}
+          </KeyBtn>
+          <KeyBtn mode="toggle" size="sm" active={!settings.refresh_on_start} onPress={() => choose(false)}>
+            {t('state.off')}
+          </KeyBtn>
+        </div>
+      </div>
+      {error !== null && (
+        <p className="settings__note" data-tone="error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="settings__note">
+        {settings.music_folders.length > 0 ? t('settings.refreshNote', { folders: settings.music_folders.join(' · ') }) : t('settings.refreshNoteEmpty')}
+      </p>
+    </>
+  );
+}
+
 function SettingsPanel() {
   const t = useT();
   const lang = useLang();
@@ -143,6 +280,7 @@ function SettingsPanel() {
   const renderer = useUi((s) => s.rendererInfo);
   return (
     <div className="settings" role="dialog" aria-label={t('hdr.settings')}>
+      <AudioOutput />
       <div className="settings__row">
         <span className="dw-label">{t('settings.guard')}</span>
         <div className="settings__opts">
@@ -155,6 +293,7 @@ function SettingsPanel() {
         </div>
       </div>
       <p className="settings__note">{t('settings.guardNote')}</p>
+      <LibrarySettings />
       <div className="settings__row">
         <span className="dw-label">{t('settings.language')}</span>
         <div className="settings__opts">
@@ -231,10 +370,7 @@ export function Header({ route }: { route: RouteId }) {
         <KeyBtn mode="toggle" size="sm" active={snap} onPress={toggleSnap} tip={{ name: t('hdr.snap'), value: snap ? t('state.on') : t('state.off'), keys: shortcutKeys('global.snap', undefined, lang) }} ariaLabel={t('hdr.snap')}>
           <span className="dw-num">S</span>
         </KeyBtn>
-        <KeyBtn mode="toggle" size="sm" disabled tip={{ name: t('hdr.record'), value: t('hdr.later', { stage: 2 }), keys: [lang === 'de' ? 'Strg' : 'Ctrl', 'R'] }}>
-          <Icon name="rec" size="0.85em" />
-          {t('hdr.recordShort')}
-        </KeyBtn>
+        <RecordButton />
         <LoadMeter />
         <WallClock />
         <div className="hdr__gear">

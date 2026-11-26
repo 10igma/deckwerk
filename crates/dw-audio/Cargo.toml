@@ -17,4 +17,4 @@ dw-core.workspace = true
 dw-engine.workspace = true
 thiserror.workspace = true
 rtrb = "0.3"
-cpal = { version = "0.15", optional = true }
+cpal = { version = "0.18", optional = true }

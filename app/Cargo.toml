@@ -32,6 +32,7 @@ dw-engine.workspace = true
 dw-decode.workspace = true
 dw-analysis.workspace = true
 dw-library.workspace = true
+dw-automix.workspace = true
 
 [dev-dependencies]
 dw-testgen.workspace = true

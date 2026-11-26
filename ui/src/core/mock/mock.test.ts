@@ -91,6 +91,22 @@ describe('MockCore', () => {
     expect(s.clock_bpm).toBeCloseTo(134 * 1.02, 6);
     expect(s.decks[0].phase).toBeCloseTo(0, 6);
   });
+  it('Start mit Vorlauf: Das Deck erreicht seine Stelle nach den genannten Beats, auch von vor dem Anfang (VIS-13)', () => {
+    const core = new MockCore({ manualClock: true });
+    core.loadNow('a', MOCK_TRACKS[0].id);
+    core.loadNow('b', MOCK_TRACKS[0].id);
+    core.apply({ type: 'play', deck: 'a', on: true });
+    core.apply({ type: 'seek', deck: 'b', pos: 2 });
+    run(core, 1);
+    // 16 Beats bei 134 BPM sind gut 7 s: Der Start liegt vor dem Anfang des Tracks.
+    const lead = (16 * 60) / 134;
+    core.apply({ type: 'play_in', deck: 'b', beats: 16 });
+    expect(last(core).decks[1].playing).toBe(true);
+    expect(last(core).decks[1].pos).toBeCloseTo(2 - lead, 6);
+    run(core, lead);
+    expect(Math.abs(last(core).decks[1].pos - 2)).toBeLessThan(0.02);
+    expect(last(core).master).toBe('a');
+  });
   it('Beat-Sync gleicht Tempo und Phase an und hält sie (DECK-08)', () => {
     const core = new MockCore({ manualClock: true });
     core.loadNow('a', MOCK_TRACKS[0].id);
@@ -230,6 +246,37 @@ describe('MockCore', () => {
     expect(st.has_device).toBe(false);
     expect(st.device_error).toMatch(/Ausgabegerät/);
   });
+  it('Bibliothek aktualisieren bringt neue Tracks ohne Analyse; die Start-Einstellung bleibt gemerkt (BIB-19)', async () => {
+    const core = new MockCore({ manualClock: true, library: 'empty' });
+    const before = (await core.listTracks()).length;
+    const r = await core.refreshLibrary();
+    expect(r.added).toBe(3);
+    expect((await core.listTracks()).length).toBe(before + 3);
+    expect((await core.getSettings()).refresh_on_start).toBe(true);
+    await core.setRefreshOnStart(false);
+    expect((await core.getSettings()).refresh_on_start).toBe(false);
+  });
+  it('Ausgabegerät: Wechsel meldet den Status, Ablehnung lässt die Wahl stehen (ENG-01)', async () => {
+    const core = new MockCore({ manualClock: true });
+    const chosen: (string | null)[] = [];
+    core.subscribeStatus((s) => chosen.push(s.device));
+    const devices = await core.listAudioDevices();
+    expect(devices.filter((d) => d.is_default).length).toBe(1);
+    expect(devices.some((d) => d.max_channels >= 4)).toBe(true);
+
+    await core.selectAudioDevice('Interface 4 Ausgänge');
+    expect(chosen).toEqual([null, 'Interface 4 Ausgänge']);
+    await expect(core.selectAudioDevice('Gerät belegt')).rejects.toMatch(/Audio-Schnittstelle/);
+    await expect(core.selectAudioDevice('gibt es nicht')).rejects.toMatch(/nicht gefunden/);
+    expect(core.status().device).toBe('Interface 4 Ausgänge');
+    expect(chosen.length).toBe(2);
+    await core.selectAudioDevice(null);
+    expect(core.status().device).toBe(null);
+
+    const silent = new MockCore({ manualClock: true, noDevice: true });
+    expect(await silent.listAudioDevices()).toEqual([]);
+    await expect(silent.selectAudioDevice(null)).rejects.toMatch(/kein Ausgabegerät/);
+  });
   it('eingefrorener Kern nimmt Befehle an und meldet sofort', () => {
     const core = new MockCore({ scene: 'loaded', frozen: true });
     const seen: Snapshot[] = [];
@@ -238,5 +285,86 @@ describe('MockCore', () => {
     expect(seen.length).toBe(2);
     expect(seen[1].mixer.crossfader).toBe(-0.5);
     expect(seen[1].decks[0].pos).toBe(seen[0].decks[0].pos);
+  });
+});
+
+describe('Sync im Stand (DECK-08)', () => {
+  it('nichts läuft: Tempo des anderen Decks sofort, im Modus „Beat“ dieselbe Stelle im Beat', () => {
+    const core = new MockCore({ scene: 'loaded', manualClock: true });
+    for (const deck of ['a', 'b'] as const) core.send({ type: 'play', deck, on: false });
+    core.send({ type: 'sync', deck: 'b', mode: 'off' });
+    core.send({ type: 'tempo', deck: 'a', offset: 0.02 });
+    core.send({ type: 'seek', deck: 'a', pos: 20.13 });
+    core.send({ type: 'seek', deck: 'b', pos: 41 });
+    core.step(1 / 60);
+    const before = last(core);
+    core.send({ type: 'sync', deck: 'b', mode: 'tempo' });
+    core.step(1 / 60);
+    expect(last(core).decks[1].bpm).toBeCloseTo(before.decks[0].bpm, 6);
+    expect(last(core).decks[1].pos).toBe(before.decks[1].pos);
+    core.send({ type: 'sync', deck: 'b', mode: 'beat' });
+    core.step(1 / 60);
+    const s = last(core);
+    const frac = (b: number) => b - Math.floor(b);
+    expect(frac(s.decks[1].beat)).toBeCloseTo(frac(s.decks[0].beat), 6);
+    expect(Math.abs(s.decks[1].beat - before.decks[1].beat)).toBeLessThanOrEqual(0.5 + 1e-9);
+    expect(s.decks[0].pos).toBe(before.decks[0].pos);
+  });
+});
+
+describe('Sprung im Takt (DECK-20)', () => {
+  it('ein laufendes Deck behält seine Phase, ein stehendes springt genau', () => {
+    const core = new MockCore({ manualClock: true });
+    core.loadNow('a', MOCK_TRACKS[0].id);
+    core.apply({ type: 'play', deck: 'a', on: true });
+    run(core, 3.21);
+    const before = last(core).decks[0];
+    const beat = 60 / 134;
+    // Ziel mitten zwischen zwei Beats: Gelandet wird ganze Beats weiter, höchstens einen halben neben dem Ziel.
+    core.apply({ type: 'seek_snap', deck: 'a', pos: 100.123 });
+    const after = last(core).decks[0];
+    expect(Math.abs(after.pos - 100.123)).toBeLessThanOrEqual(beat / 2 + 1e-9);
+    const beats = (after.pos - before.pos) / beat;
+    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-6);
+    core.apply({ type: 'play', deck: 'a', on: false });
+    core.apply({ type: 'seek_snap', deck: 'a', pos: 50.123 });
+    expect(last(core).decks[0].pos).toBeCloseTo(50.123, 9);
+  });
+});
+
+describe('Mitschnitt (REC-01)', () => {
+  it('Zeitstempel für den Dateinamen in Ortszeit, zweistellig', async () => {
+    const { recordingStamp } = await import('../../app/actions');
+    expect(recordingStamp(new Date(2026, 10, 22, 13, 5, 9))).toBe('2026-11-22 13-05-09');
+    expect(recordingStamp(new Date(2027, 0, 3, 0, 0, 0))).toBe('2027-01-03 00-00-00');
+  });
+
+  it('simulierter Kern: starten, Stand, beenden; nie zwei zugleich', async () => {
+    const core = new MockCore({ manualClock: true });
+    expect(await core.recordingStatus()).toBe(null);
+    await expect(core.stopRecording()).rejects.toContain('keine Aufnahme');
+    const started = await core.startRecording('2026-11-22 13-05-09');
+    expect(started.active).toBe(true);
+    expect(started.path.endsWith('Deckwerk 2026-11-22 13-05-09.wav')).toBe(true);
+    await expect(core.startRecording('x')).rejects.toContain('läuft schon');
+    run(core, 3);
+    expect((await core.recordingStatus())?.seconds).toBeCloseTo(3, 1);
+    const done = await core.stopRecording();
+    expect(done.active).toBe(false);
+    expect(done.seconds).toBeCloseTo(3, 1);
+    expect(await core.recordingStatus()).toBe(null);
+  });
+});
+
+describe('Eigene Übergänge (TRANS-04)', () => {
+  it('simulierter Kern: speichern, ersetzen, löschen; eingebaute Namen sind gesperrt', async () => {
+    const core = new MockCore({ manualClock: true });
+    const [template] = await core.listTransitions(16);
+    expect(await core.listSavedTransitions()).toEqual([]);
+    expect((await core.saveTransition({ ...template, name: ' Mein Tausch ' })).map((t) => t.name)).toEqual(['Mein Tausch']);
+    expect((await core.saveTransition({ ...template, name: 'Mein Tausch', bars: 32 }))[0].bars).toBe(32);
+    await expect(core.saveTransition({ ...template, name: 'fade' })).rejects.toContain('eingebauten Vorlage');
+    await expect(core.saveTransition({ ...template, name: '  ' })).rejects.toContain('Namen');
+    expect(await core.deleteTransition('Mein Tausch')).toEqual([]);
   });
 });

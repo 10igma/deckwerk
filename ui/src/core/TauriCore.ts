@@ -5,10 +5,18 @@ import { decodeWaveform } from './dwwf';
 import {
   emptyEngineStatus,
   emptySnapshot,
+  type AudioDevice,
   type Command,
   type DeckId,
   type EngineStatus,
+  type AppSettings,
   type ImportResult,
+  type RecordingInfo,
+  type RefreshResult,
+  type PairTransition,
+  type Transition,
+  type TransitionRun,
+  type TransitionWhen,
   type LibraryStatus,
   type LoadedTracks,
   type Poll,
@@ -38,7 +46,8 @@ function sameStatus(a: EngineStatus, b: EngineStatus): boolean {
     a.sample_rate === b.sample_rate &&
     a.buffer_size === b.buffer_size &&
     a.has_device === b.has_device &&
-    a.device_error === b.device_error
+    a.device_error === b.device_error &&
+    a.device === b.device
   );
 }
 
@@ -149,5 +158,81 @@ export class TauriCore implements CoreApi {
 
   getAnalysis(trackId: TrackId): Promise<TrackAnalysis> {
     return this.invoke<TrackAnalysis>('track_analysis', { trackId });
+  }
+
+  refreshLibrary(): Promise<RefreshResult> {
+    return this.invoke<RefreshResult>('library_refresh');
+  }
+
+  getSettings(): Promise<AppSettings> {
+    return this.invoke<AppSettings>('settings_get');
+  }
+
+  setRefreshOnStart(on: boolean): Promise<void> {
+    return this.invoke<void>('settings_refresh_on_start', { on });
+  }
+
+  listTransitions(bars: number): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_templates', { bars });
+  }
+
+  startTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<TransitionRun> {
+    return this.invoke<TransitionRun>('transition_start', { from, to, transition, when });
+  }
+
+  previewTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen, fromBeat: number): Promise<TransitionRun> {
+    return this.invoke<TransitionRun>('transition_preview', { from, to, transition, when, fromBeat });
+  }
+
+  stopPreview(): Promise<void> {
+    return this.invoke<void>('transition_preview_stop');
+  }
+
+  listPairTransitions(a: DeckId, b: DeckId): Promise<PairTransition[]> {
+    return this.invoke<PairTransition[]>('pair_list', { a, b });
+  }
+
+  savePairTransition(from: DeckId, to: DeckId, transition: Transition, when: TransitionWhen): Promise<PairTransition[]> {
+    return this.invoke<PairTransition[]>('pair_save', { from, to, transition, when });
+  }
+
+  deletePairTransition(id: number): Promise<void> {
+    return this.invoke<void>('pair_delete', { id });
+  }
+
+  cancelTransition(): Promise<void> {
+    return this.invoke<void>('transition_cancel');
+  }
+
+  listSavedTransitions(): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_saved');
+  }
+
+  saveTransition(transition: Transition): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_save', { transition });
+  }
+
+  deleteTransition(name: string): Promise<Transition[]> {
+    return this.invoke<Transition[]>('transition_delete', { name });
+  }
+
+  startRecording(stamp: string): Promise<RecordingInfo> {
+    return this.invoke<RecordingInfo>('record_start', { stamp });
+  }
+
+  stopRecording(): Promise<RecordingInfo> {
+    return this.invoke<RecordingInfo>('record_stop');
+  }
+
+  recordingStatus(): Promise<RecordingInfo | null> {
+    return this.invoke<RecordingInfo | null>('record_status');
+  }
+
+  listAudioDevices(): Promise<AudioDevice[]> {
+    return this.invoke<AudioDevice[]>('audio_devices');
+  }
+
+  selectAudioDevice(name: string | null): Promise<void> {
+    return this.invoke<void>('audio_select', { device: name });
   }
 }

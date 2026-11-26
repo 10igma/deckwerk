@@ -2,15 +2,18 @@
 // Beide Bahnen wachsen von der Schiene weg – liegen die Beats übereinander, ist das Bild spiegelgleich.
 import { useEffect, useRef, useState } from 'react';
 import { getDeckAssets, type DeckAssets } from '../../app/assets';
-import { bend, focusDeck, send } from '../../app/actions';
+import { bend, cancelTransition, choosePair, chooseTransition, focusDeck, loadPairTransitions, loadSavedTransitions, openEditor, pairRoles, peekAfter, peekBy, peekReset, peekStep, send, startTransition, TRANSITION_BARS, TRANSITION_LEAD, transitionRoles } from '../../app/actions';
 import { useTrackDrop } from '../../app/dnd';
 import { forcedRenderer, webglPresent } from '../../app/env';
 import { latestSnapshot, useFrame, useSnap } from '../../app/frame';
 import { getUi, setUi, useUi } from '../../app/store';
 import { deckIndex, type DeckId } from '../../core/types';
-import { DeckPlate, Icon, KeyBtn, useTip } from '../../design/components';
+import { DeckPlate, Icon, KeyBtn, LiveText, useTip } from '../../design/components';
 import { cssVar, remPx } from '../../design/tokens';
-import { useT } from '../../i18n';
+import { useLang, useT } from '../../i18n';
+import { beatAt, secAt } from '../../lib/grid';
+import type { BeatGrid } from '../../core/types';
+import { shortcutKeys } from '../../app/keymap';
 import { clamp } from '../../lib/curves';
 import { readStageColors } from './stageColors';
 import { Canvas2DWaveRenderer } from './wave/canvas2d';
@@ -18,7 +21,7 @@ import type { WaveRenderer } from './wave/renderer';
 import { buildScene, secondsPerPx, FALLBACK_BPM, type LaneInput, type StageColors } from './wave/scene';
 import { WebGLWaveRenderer } from './wave/webgl';
 
-export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32];
+export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32, 64, 128];
 const LANES: [DeckId, DeckId] = ['a', 'b'];
 /** Höhe der Beat-Schiene in rem (je Deck eine Hälfte). */
 export const RAIL_REM = 2;
@@ -60,6 +63,273 @@ function LaneOverlay({ deck, position }: { deck: DeckId; position: 'top' | 'bott
   );
 }
 
+/** Vorausblick (VIS-13): Tasten zum Verschieben der Ansicht und, solange verschoben, der Weg zurück. */
+function PeekControls() {
+  const t = useT();
+  const lang = useLang();
+  const peek = useUi((s) => s.peekBeats);
+  const bpm = useSnap((s) => s.clock_bpm);
+  const sec = (Math.abs(peek) * 60) / (bpm > 0 ? bpm : FALLBACK_BPM);
+  const amount = `${peek > 0 ? '+' : '−'}${t(Math.abs(peek) === 1 ? 'stage.beat' : 'stage.beats', { n: Math.abs(peek) })} · ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  return (
+    <div className="stage__peek" data-active={peek !== 0 ? 'true' : undefined} onPointerDown={(e) => e.stopPropagation()}>
+      <KeyBtn size="sm" onPress={() => peekStep(-1, false)} ariaLabel={t('stage.peekBack')} tip={{ name: t('stage.peekBack'), value: t('stage.peekHint'), keys: shortcutKeys('stage.peek_back', undefined, lang) }}>
+        <Icon name="slower" size="0.8em" />
+      </KeyBtn>
+      {peek !== 0 ? (
+        <KeyBtn size="sm" mode="toggle" active accent="var(--status-warn)" onPress={peekReset} ariaLabel={t('stage.peekReset')} tip={{ name: t('stage.peekReset'), keys: shortcutKeys('stage.peek_reset', undefined, lang) }} sub={amount}>
+          {t('stage.peekOn')}
+        </KeyBtn>
+      ) : (
+        <span className="stage__zoomval dw-num">{t('stage.peekOff')}</span>
+      )}
+      <KeyBtn size="sm" onPress={() => peekStep(1, false)} ariaLabel={t('stage.peekFwd')} tip={{ name: t('stage.peekFwd'), value: t('stage.peekHint'), keys: shortcutKeys('stage.peek_fwd', undefined, lang) }}>
+        <Icon name="faster" size="0.8em" />
+      </KeyBtn>
+    </div>
+  );
+}
+
+/** Was ein Klick in die Wellenform trifft. */
+export type StageTarget =
+  /** Eine Stelle auf der gemeinsamen Zeitachse der laufenden Decks: so viele Clock-Beats ab jetzt. */
+  | { kind: 'time'; beats: number }
+  /** Eine Stelle in einem stehenden Deck: Position in Sekunden, auf den nächsten Beat gerückt. */
+  | { kind: 'deck'; deck: DeckId; pos: number };
+
+/**
+ * Rechnet einen Klick in die Wellenform um. `x` und `width` in denselben Pixeln; die Bildmitte ist
+ * die Abspielstelle plus Vorausblick. Ein laufendes Deck liegt auf der Zeitachse der Clock; ein
+ * stehendes bleibt im Vorausblick an seiner Stelle, solange ein anderes läuft (VIS-13).
+ */
+export function stageTarget(args: {
+  x: number;
+  width: number;
+  zoomBeats: number;
+  peekBeats: number;
+  clockBpm: number;
+  deck: DeckId;
+  state: { playing: boolean; pos: number; tempo_offset: number; duration: number };
+  anyPlaying: boolean;
+  grid: BeatGrid | null;
+}): StageTarget {
+  const offset = ((args.x - args.width / 2) / Math.max(1, args.width)) * args.zoomBeats;
+  if (args.state.playing) return { kind: 'time', beats: args.peekBeats + offset };
+  // Stehendes Deck: Echtzeit-Abstand zur Bildmitte mal Abspielrate ergibt die Strecke im Track.
+  const shown = args.anyPlaying ? offset : args.peekBeats + offset;
+  const raw = args.state.pos + ((shown * 60) / (args.clockBpm > 0 ? args.clockBpm : FALLBACK_BPM)) * (1 + args.state.tempo_offset);
+  const snapped = args.grid ? secAt(args.grid, Math.round(beatAt(args.grid, raw))) : raw;
+  return { kind: 'deck', deck: args.deck, pos: clamp(snapped, 0, args.state.duration) };
+}
+
+/** Menü nach einem Klick in die Wellenform: Übergang hier enden oder beginnen lassen, Ansicht oder Deck hierher. */
+function StageMenu({ target, left, top, onClose }: { target: StageTarget; left: number; top: number; onClose: () => void }) {
+  const t = useT();
+  const bars = useUi((s) => s.transitionBars);
+  const name = useUi((s) => s.transitionName);
+  const running = useUi((s) => s.transition !== null);
+  const loadedA = useSnap((s) => s.decks[0].loaded);
+  const loadedB = useSnap((s) => s.decks[1].loaded);
+  const playingA = useSnap((s) => s.decks[0].playing);
+  const playingB = useSnap((s) => s.decks[1].playing);
+  const master = useSnap((s) => s.master);
+  const bpm = useSnap((s) => s.clock_bpm);
+  const roles = transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB }, master);
+  const choose = (run: () => void) => () => {
+    onClose();
+    run();
+  };
+  const length = bars * 4;
+  const template = name === 'fade' ? t('trans.fade') : name === 'bass_swap' ? t('trans.bassSwap') : name;
+  let body;
+  if (target.kind === 'deck') {
+    body = (
+      <KeyBtn size="sm" onPress={choose(() => send({ type: 'seek', deck: target.deck, pos: target.pos }))}>
+        {t('menu.deckHere', { deck: target.deck.toUpperCase() })}
+      </KeyBtn>
+    );
+  } else {
+    const beats = target.beats;
+    const sec = (Math.abs(beats) * 60) / (bpm > 0 ? bpm : FALLBACK_BPM);
+    const dirs = roles ? { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() } : null;
+    const endOk = dirs !== null && !running && beats >= length + TRANSITION_LEAD;
+    const startOk = dirs !== null && !running && beats >= TRANSITION_LEAD;
+    body = (
+      <>
+        <span className="stage__menuhead dw-num">
+          {t('menu.at', { n: Math.round(beats), time: `${beats < 0 ? '−' : ''}${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` })}
+          {' · '}
+          {template}, {t('trans.bars', { n: bars })}
+        </span>
+        <KeyBtn size="sm" disabled={!endOk} onPress={choose(() => void startTransition({ type: 'end_in', beats }))} tip={{ name: t('menu.endHere'), value: endOk ? t('trans.endHint') : dirs === null ? t('trans.needDecks') : t('trans.tooLate', { n: length + TRANSITION_LEAD }) }}>
+          {dirs ? t('menu.endHereDir', dirs) : t('menu.endHere')}
+        </KeyBtn>
+        <KeyBtn size="sm" disabled={!startOk} onPress={choose(() => void startTransition({ type: 'end_in', beats: beats + length }))} tip={{ name: t('menu.startHere'), value: startOk ? t('menu.startHint') : dirs === null ? t('trans.needDecks') : t('menu.startTooLate', { n: TRANSITION_LEAD }) }}>
+          {dirs ? t('menu.startHereDir', dirs) : t('menu.startHere')}
+        </KeyBtn>
+        <KeyBtn size="sm" onPress={choose(() => setUi({ peekBeats: peekAfter(0, beats) }))}>
+          {t('menu.viewHere')}
+        </KeyBtn>
+      </>
+    );
+  }
+  return (
+    <div className="stage__menu" role="menu" style={{ left, top }} onPointerDown={(e) => e.stopPropagation()}>
+      {body}
+      <KeyBtn size="sm" onPress={onClose}>
+        {t('menu.close')}
+      </KeyBtn>
+    </div>
+  );
+}
+
+const TRANSITION_NAMES = ['bass_swap', 'fade'] as const;
+
+/** Stand eines Übergangs für die Anzeige: vor dem Start die Beats bis T0, danach der laufende Takt. */
+export function transitionProgress(clockBeats: number, t0: number, bars: number): { phase: 'waiting'; beats: number } | { phase: 'running'; bar: number } | { phase: 'done' } {
+  const t = clockBeats - t0;
+  if (t < 0) return { phase: 'waiting', beats: Math.ceil(-t - 1e-9) };
+  if (t >= bars * 4) return { phase: 'done' };
+  return { phase: 'running', bar: Math.floor(t / 4) + 1 };
+}
+
+/**
+ * Zone des Übergangs für die Wellenform, in Clock-Beats ab jetzt: der eingeplante Übergang, sonst –
+ * bei verschobenem Vorausblick – die Vorschau eines Übergangs, der an der Linie in der Bildmitte endet.
+ */
+export function transitionZone(
+  run: { t0_beat: number; bars: number } | null,
+  clockBeats: number,
+  peekBeats: number,
+  bars: number,
+  possible: boolean,
+): { startBeats: number; endBeats: number; preview: boolean } | null {
+  if (run) return { startBeats: run.t0_beat - clockBeats, endBeats: run.t0_beat - clockBeats + run.bars * 4, preview: false };
+  if (peekBeats > 0 && possible) return { startBeats: peekBeats - bars * 4, endBeats: peekBeats, preview: true };
+  return null;
+}
+
+/**
+ * Übergang auf Knopfdruck (TRANS-05): Vorlage und Länge wählen, starten. Der Kern beginnt an der
+ * nächsten Grenze im Vier-Takt-Raster und fährt die Regler; hier steht, wie weit er ist.
+ */
+function TransitionBar() {
+  const t = useT();
+  const run = useUi((s) => s.transition);
+  const name = useUi((s) => s.transitionName);
+  const bars = useUi((s) => s.transitionBars);
+  const loadedA = useSnap((s) => s.decks[0].loaded);
+  const loadedB = useSnap((s) => s.decks[1].loaded);
+  const playingA = useSnap((s) => s.decks[0].playing);
+  const playingB = useSnap((s) => s.decks[1].playing);
+  const saved = useUi((s) => s.savedTransitions);
+  const pairs = useUi((s) => s.pairTransitions);
+  const pairChoice = useUi((s) => s.pairChoice);
+  const pair = pairs.find((p) => p.id === pairChoice) ?? null;
+  const own = pair !== null || saved.some((s) => s.name === name);
+  useEffect(() => {
+    void loadSavedTransitions();
+  }, []);
+  // Für das Paar gespeicherte Übergänge: neu holen, sobald ein anderer Track auf A oder B liegt.
+  const trackA = useUi((s) => s.deckTracks.a?.id ?? null);
+  const trackB = useUi((s) => s.deckTracks.b?.id ?? null);
+  useEffect(() => {
+    void loadPairTransitions();
+  }, [trackA, trackB]);
+  const over = useSnap((s) => run !== null && s.clock_beats > run.end_beat);
+  useEffect(() => {
+    if (over) setUi({ transition: null });
+  }, [over]);
+  const master = useSnap((s) => s.master);
+  const peek = useUi((s) => s.peekBeats);
+  // Ein Paar-Übergang bringt Richtung und Ort mit; er braucht nur, dass sein gehender Track läuft.
+  const pairDecks = pair ? pairRoles(pair, { a: trackA ? { id: trackA } : null, b: trackB ? { id: trackB } : null }) : null;
+  const roles = pair
+    ? pairDecks && (pairDecks.from === 'a' ? playingA : playingB)
+      ? pairDecks
+      : null
+    : transitionRoles({ loaded: loadedA, playing: playingA }, { loaded: loadedB, playing: playingB }, master);
+  // Mit Vorausblick endet der Übergang an der Linie in der Bildmitte; dafür muss sie weit genug voraus liegen.
+  const tooLate = !pair && peek > 0 && peek < bars * 4 + TRANSITION_LEAD;
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+  if (run) {
+    const label = t('trans.fromTo', { from: run.from.toUpperCase(), to: run.to.toUpperCase() });
+    return (
+      <div className="stage__trans" data-active="true" onPointerDown={stop}>
+        <span className="stage__transstate dw-num" role="status">
+          {label}
+          {' · '}
+          <LiveText
+            read={(s) => {
+              const p = transitionProgress(s.clock_beats, run.t0_beat, run.bars);
+              if (p.phase === 'waiting') return t(p.beats === 1 ? 'trans.inBeat' : 'trans.inBeats', { n: p.beats });
+              if (p.phase === 'running') return t('trans.bar', { n: p.bar, of: run.bars });
+              return t('trans.finishing');
+            }}
+          />
+        </span>
+        <KeyBtn size="sm" onPress={() => void cancelTransition()} tip={{ name: t('trans.cancel'), value: t('trans.cancelHint') }} ariaLabel={t('trans.cancel')}>
+          {t('trans.cancelShort')}
+        </KeyBtn>
+      </div>
+    );
+  }
+  return (
+    <div className="stage__trans" onPointerDown={stop}>
+      <select
+        className="stage__select"
+        value={pair ? `pair:${pair.id}` : name}
+        aria-label={t('trans.template')}
+        onChange={(e) => (e.target.value.startsWith('pair:') ? choosePair(Number(e.target.value.slice(5))) : chooseTransition(e.target.value))}
+      >
+        {pairs.length > 0 && (
+          <optgroup label={t('pair.group')}>
+            {pairs.map((p) => (
+              <option key={p.id} value={`pair:${p.id}`}>
+                {p.out_track === trackA ? 'A→B' : 'B→A'} {p.transition.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {TRANSITION_NAMES.map((n) => (
+          <option key={n} value={n}>
+            {t(n === 'bass_swap' ? 'trans.bassSwap' : 'trans.fade')}
+          </option>
+        ))}
+        {saved.map((s) => (
+          <option key={s.name} value={s.name}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      {/* Ein eigener Übergang bringt seine Länge mit. */}
+      <select className="stage__select" value={bars} disabled={own} aria-label={t('trans.length')} onChange={(e) => setUi({ transitionBars: Number(e.target.value) })}>
+        {[...new Set<number>([...TRANSITION_BARS, bars])].sort((a, b) => a - b).map((b) => (
+          <option key={b} value={b}>
+            {t('trans.bars', { n: b })}
+          </option>
+        ))}
+      </select>
+      <KeyBtn
+        size="sm"
+        disabled={!roles || tooLate}
+        onPress={() => void startTransition()}
+        tip={{
+          name: t('trans.start'),
+          value: pair ? t('pair.startHint') : !roles ? t('trans.needDecks') : tooLate ? t('trans.tooLate', { n: bars * 4 + TRANSITION_LEAD }) : peek > 0 ? t('trans.endHint') : t('trans.startHint'),
+        }}
+        ariaLabel={t('trans.start')}
+      >
+        {roles ? t(peek > 0 && !pair ? 'trans.fromToEnd' : 'trans.fromTo', { from: roles.from.toUpperCase(), to: roles.to.toUpperCase() }) : t('trans.startShort')}
+      </KeyBtn>
+      <KeyBtn size="sm" onPress={() => void openEditor()} tip={{ name: t('ed.open'), value: t('ed.openHint') }} ariaLabel={t('ed.open')}>
+        {t('ed.openShort')}
+      </KeyBtn>
+    </div>
+  );
+}
+
 export function WaveStage() {
   const t = useT();
   const zoom = useUi((s) => s.zoomBeats);
@@ -72,7 +342,16 @@ export function WaveStage() {
   const colors = useRef<{ theme: string; value: StageColors } | null>(null);
   const lastKey = useRef('');
   const tested = useRef(false);
-  const drag = useRef<{ deck: DeckId; x: number; pos: number; playing: boolean; secPerPx: number } | null>(null);
+  const drag = useRef<{ deck: DeckId; x: number; y: number; pos: number; mode: 'bend' | 'seek' | 'pan'; moved: boolean; secPerPx: number; pxPerBeat: number; peek: number } | null>(null);
+  const [menu, setMenu] = useState<{ target: StageTarget; left: number; top: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menu]);
 
   // Zeichner anlegen: WebGL 2, sonst Canvas 2D.
   useEffect(() => {
@@ -118,12 +397,21 @@ export function WaveStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Mausrad zoomt (nicht-passiv, damit nichts rollt).
+  // Mausrad zoomt; mit Shift oder waagerecht verschiebt es die Ansicht (Vorausblick, VIS-13).
+  // Nicht-passiv, damit nichts rollt.
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      if (e.shiftKey || sideways) {
+        // Manche Systeme melden Shift + Rad als waagerechte Bewegung.
+        const delta = sideways ? e.deltaX : e.deltaY;
+        // Schritt: ein Viertel des sichtbaren Ausschnitts, mindestens ein Beat.
+        if (delta !== 0) peekBy(Math.sign(delta) * Math.max(1, getUi().zoomBeats / 4));
+        return;
+      }
       if (e.deltaY !== 0) stepZoom(e.deltaY > 0 ? 1 : -1);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -156,7 +444,14 @@ export function WaveStage() {
       }
     }
     const ui = getUi();
-    let key = `${w}x${h}|${ui.zoomBeats}|${snap.clock_bpm.toFixed(3)}`;
+    const zone = transitionZone(
+      ui.transition,
+      snap.clock_beats,
+      ui.peekBeats,
+      ui.transitionBars,
+      transitionRoles(snap.decks[0], snap.decks[1], snap.master) !== null,
+    );
+    let key = `${w}x${h}|${ui.zoomBeats}|${ui.peekBeats}|${snap.clock_bpm.toFixed(3)}|${zone ? `${zone.startBeats.toFixed(3)}:${zone.endBeats.toFixed(3)}:${zone.preview}` : ''}`;
     for (const deck of LANES) {
       const d = snap.decks[deckIndex(deck)];
       key += `|${d.loaded ? 1 : 0}${d.playing ? 1 : 0}:${d.pos.toFixed(4)}:${d.tempo_offset.toFixed(5)}:${d.eq_db.join(',')}`;
@@ -174,9 +469,11 @@ export function WaveStage() {
       railH: remPx() * RAIL_REM * dpr,
       unit: (remPx() / 14) * dpr,
       zoomBeats: ui.zoomBeats,
+      peekBeats: ui.peekBeats,
       clockBpm: snap.clock_bpm,
       lanes: [laneInput(LANES[0]), laneInput(LANES[1])],
       colors: colors.current.value,
+      zone,
     });
     r.draw(scene, colors.current.value);
     // Einmal nach dem ersten Bild prüfen, ob WebGL wirklich zeichnet; sonst auf Canvas 2D wechseln.
@@ -191,8 +488,12 @@ export function WaveStage() {
     }
   });
 
-  // Ziehen in der Wellenform: laufendes Deck anschieben/abbremsen, stehendes Deck verschieben (DECK-07).
+  // Ziehen in der Wellenform (DECK-07, VIS-13): Ein stehendes Deck wird verschoben. Ein laufendes
+  // wird angeschoben oder gebremst – außer die Ansicht ist schon verschoben oder Shift ist gedrückt:
+  // Dann zieht man nur die Ansicht (Vorausblick), die Wiedergabe bleibt unberührt. Ein Klick ohne
+  // Ziehen öffnet das Menü für diese Stelle.
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (menu) setMenu(null);
     if (e.button !== 0 || !wrap.current) return;
     const rect = wrap.current.getBoundingClientRect();
     const deck = e.clientY - rect.top < rect.height / 2 ? LANES[0] : LANES[1];
@@ -200,23 +501,34 @@ export function WaveStage() {
     const d = snap.decks[deckIndex(deck)];
     if (!d.loaded) return;
     focusDeck(deck);
+    const ui = getUi();
     const refBpm = snap.clock_bpm > 0 ? snap.clock_bpm : d.bpm || FALLBACK_BPM;
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = {
       deck,
       x: e.clientX,
+      y: e.clientY,
       pos: d.pos,
-      playing: d.playing,
-      secPerPx: secondsPerPx(rect.width, getUi().zoomBeats, refBpm) * (1 + d.tempo_offset),
+      mode: !d.playing ? 'seek' : e.shiftKey || ui.peekBeats !== 0 ? 'pan' : 'bend',
+      moved: false,
+      secPerPx: secondsPerPx(rect.width, ui.zoomBeats, refBpm) * (1 + d.tempo_offset),
+      pxPerBeat: rect.width / ui.zoomBeats,
+      peek: ui.peekBeats,
     };
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const g = drag.current;
     if (!g) return;
     const dx = e.clientX - g.x;
-    if (g.playing) {
+    // Erst ab ein paar Pixeln gilt es als Ziehen; darunter bleibt es ein Klick.
+    if (!g.moved && Math.abs(dx) < 4) return;
+    g.moved = true;
+    if (g.mode === 'bend') {
       // Nach links ziehen = Track vorziehen = schneller.
       send({ type: 'bend', deck: g.deck, amount: clamp(-dx / (remPx() * 70), -0.12, 0.12) });
+    } else if (g.mode === 'pan') {
+      // Nach links ziehen = weiter nach vorn sehen.
+      setUi({ peekBeats: peekAfter(g.peek, -dx / g.pxPerBeat) });
     } else {
       send({ type: 'seek', deck: g.deck, pos: Math.max(0, g.pos - dx * g.secPerPx) });
     }
@@ -225,7 +537,28 @@ export function WaveStage() {
     const g = drag.current;
     if (!g) return;
     drag.current = null;
-    if (g.playing) bend(g.deck, 0);
+    if (g.mode === 'bend' && g.moved) bend(g.deck, 0);
+    if (g.moved || !wrap.current) return;
+    // Klick: Menü für diese Stelle.
+    const rect = wrap.current.getBoundingClientRect();
+    const snap = latestSnapshot();
+    const ui = getUi();
+    const d = snap.decks[deckIndex(g.deck)];
+    const target = stageTarget({
+      x: g.x - rect.left,
+      width: rect.width,
+      zoomBeats: ui.zoomBeats,
+      peekBeats: ui.peekBeats,
+      clockBpm: snap.clock_bpm,
+      deck: g.deck,
+      state: d,
+      anyPlaying: LANES.some((l) => snap.decks[deckIndex(l)].loaded && snap.decks[deckIndex(l)].playing),
+      grid: getDeckAssets(g.deck)?.analysis.grid ?? null,
+    });
+    // Im Bild halten: nach links und oben ausweichen, wenn rechts oder unten kein Platz ist.
+    const left = Math.min(g.x - rect.left, rect.width - remPx() * 17);
+    const top = Math.min(g.y - rect.top, rect.height - remPx() * 11);
+    setMenu({ target, left: Math.max(0, left), top: Math.max(0, top) });
   };
 
   return (
@@ -249,6 +582,11 @@ export function WaveStage() {
         <KeyBtn size="sm" onPress={() => stepZoom(1)} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} ariaLabel={t('stage.zoomOut')} tip={{ name: t('stage.zoomOut'), keys: [t('key.wheel')] }}>
           <Icon name="minus" size="0.8em" />
         </KeyBtn>
+      </div>
+      {menu && <StageMenu target={menu.target} left={menu.left} top={menu.top} onClose={() => setMenu(null)} />}
+      <div className="stage__bottom">
+        <TransitionBar />
+        <PeekControls />
       </div>
     </div>
   );
