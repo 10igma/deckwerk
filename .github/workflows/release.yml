@@ -3,16 +3,23 @@ name: Release
 # Ein Tag der Form v1.2.3 baut die Installer für alle drei Systeme und
 # veröffentlicht sie als Release. Der Release bleibt ein Entwurf, bis alle
 # Installer hochgeladen sind; schlägt ein Bau fehl, wird nichts veröffentlicht.
+# Von Hand gestartet (Reiter „Actions") baut der Lauf ein vorhandenes Tag erneut
+# und ergänzt dessen Release, ohne das Tag zu versetzen.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Vorhandenes Tag, z. B. v0.1.0
+        required: true
 
 permissions:
   contents: write
 
 env:
   GH_TOKEN: ${{ github.token }}
-  TAG: ${{ github.ref_name }}
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   entwurf:
@@ -20,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - name: Tag und Version müssen übereinstimmen
         run: |
           version="$(grep -m1 '"version"' app/tauri.conf.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')"
@@ -29,6 +38,10 @@ jobs:
           fi
       - name: Entwurf anlegen
         run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG besteht schon, Installer werden ergänzt"
+            exit 0
+          fi
           if [ -f "docs/releases/$TAG.md" ]; then
             gh release create "$TAG" --draft --title "Deckwerk ${TAG#v}" --notes-file "docs/releases/$TAG.md"
           else
@@ -45,6 +58,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Systempakete (Linux)
@@ -66,8 +81,9 @@ jobs:
       - name: Installer an den Release hängen
         shell: bash
         run: |
-          shopt -s globstar nullglob
-          files=(target/release/bundle/**/*.{deb,rpm,AppImage,dmg,msi,exe})
+          # Ohne globstar: Die bash von macOS (3.2) kennt es nicht.
+          files=()
+          while IFS= read -r f; do files+=("$f"); done < <(find target/release/bundle -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \))
           if [ ${#files[@]} -eq 0 ]; then
             echo "Keine Installer gefunden" >&2
             exit 1
