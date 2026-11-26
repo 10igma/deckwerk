@@ -704,7 +704,7 @@ P1–P3 sind die drei Regler im Einzel-Modus. Im Gruppen-Modus steuert ein Regle
 | Anwendungsrahmen | Tauri 2 | MIT / Apache-2.0 | |
 | Datenaustausch Audio-Thread | rtrb (Ringpuffer ohne Sperren) | MIT / Apache-2.0 | |
 
-Tempo-, Tonart-, Struktur- und Ereignis-Analyse werden selbst umgesetzt. Bausteine mit GPL-Lizenz werden nicht verwendet, damit eine spätere Weitergabe ohne Offenlegung des Quelltexts möglich bleibt (**Annahme**, siehe 12.2).
+Tempo-, Tonart-, Struktur- und Ereignis-Analyse werden selbst umgesetzt. Deckwerk selbst steht seit dem 26.11.2026 unter GPL-3.0 (Entscheidung zu F2, siehe 12.2). Fremde Bausteine mit GPL-Lizenz werden weiterhin nicht verwendet: Solange nur der eigene Quelltext unter GPL steht, können die Rechteinhaber Deckwerk später auch unter einer anderen Lizenz weitergeben.
 
 ---
 
@@ -1098,7 +1098,7 @@ Jede Stufe endet mit einer startbaren, für sich nutzbaren Anwendung, grünen Te
 | Nr. | Frage | Bis dahin gilt die Annahme |
 |---|---|---|
 | F1 | Wie soll das Programm heißen? | Arbeitstitel „Deckwerk" |
-| F2 | Nur für dich oder zur Weitergabe bzw. zum Verkauf? Das entscheidet, ob Bausteine mit GPL-Lizenz erlaubt sind. | Weitergabe soll möglich bleiben, keine GPL-Bausteine |
+| F2 | Nur für dich oder zur Weitergabe bzw. zum Verkauf? Das entscheidet, ob Bausteine mit GPL-Lizenz erlaubt sind. | Entschieden am 26.11.2026: Deckwerk ist quelloffen unter GPL-3.0 (`LICENSE`). Fremde GPL-Bausteine bleiben ausgeschlossen, damit eine andere Lizenzierung durch die Rechteinhaber möglich bleibt |
 | F3 | Auf welchem System arbeitest du hauptsächlich und mit welchem Audio-Interface? | alle drei Systeme gleichrangig; Abnahme am Gerät zuerst auf deinem System |
 | F4 | Hat dein Rechner eine Grafikkarte, die für die Stem-Berechnung nutzbar ist? | CPU-Berechnung muss ausreichen |
 | F5 | Wie groß ist deine Sammlung? | bis 20 000 Tracks |
