@@ -1,6 +1,8 @@
 # Fortschritt
 
-Stand: 21.11.2026. Diese Datei zuerst lesen, dann `docs/spezifikation.md`.
+Stand: 26.11.2026. Diese Datei zuerst lesen, dann `docs/spezifikation.md`.
+
+**Veröffentlichung (26.11.2026):** Deckwerk steht unter GPL-3.0 (`LICENSE`, Entscheidung zu F2). Version 0.1.0 wird als Release auf GitHub veröffentlicht: Ein Tag `v0.1.0` startet `.github/workflows/release.yml`, das die Installer für alle drei Systeme baut und anhängt; der Text dazu steht in `docs/releases/v0.1.0.md`. Die Installer sind nicht signiert und wurden nicht von Hand gestartet (siehe „Nicht geprüft").
 
 ## Wo wir stehen
 
@@ -50,6 +52,7 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 - **Analyse an echter Musik.** Generator und Analyse stammen aus derselben Hand; die 100 % auf dem synthetischen Set sagen wenig über echte Tracks. Braucht die Referenzsammlung Teil B/C (Spezifikation 10.1).
 - **Ausgabe am Gerät.** Unter macOS (CoreAudio, eingebaute Lautsprecher, 2 Kanäle, 48 kHz) kommt Ton, sofort und passend zur Wellenform. Latenz, Kopfhörer-Weg (braucht vier Kanäle) und Stabilität über längere Zeit sind ungemessen; ein externes Interface, ASIO und ALSA/JACK sind weiter nur übersetzt. Unter Windows (WASAPI) kam am 21.11.2026 Ton aus dem Standardgerät des Rechners; ein 7.1-Headset ließ sich erst mit cpal 0.18 öffnen (Fehler 4 im Windows-Abschnitt), in der Anwendung ist es seither über die Einstellungen wählbar und wurde so benutzt. cpal 0.18 baut unter macOS und Linux und besteht dort die Tests (Pipeline vom 22.11.2026 zu fcac44b: Kern auf allen drei Systemen, Oberfläche und Installer grün); gestartet und gehört wurde es dort mit 0.18 noch nicht.
 - **Windows und macOS.** Die Pipeline baut und testet den Kern dort seit dem ersten Lauf erfolgreich und erzeugt Installer für alle drei Systeme. Unter macOS ist die Anwendung aus den Quellen gebaut und gestartet (19.11.2026); den Installer hat dort noch niemand gestartet. Unter Windows ist sie ebenfalls aus den Quellen gebaut und gestartet (21.11.2026), mit der Toolchain `stable-msvc`; den Windows-Installer hat noch niemand gestartet.
+- **Release-Workflow und Installer der Veröffentlichung (26.11.2026).** `.github/workflows/release.yml` ist neu; die Bauschritte sind dieselben wie im Job „Installer" von `build.yml`. Die veröffentlichten Installer hat niemand installiert oder gestartet; sie sind nicht signiert, das Verhalten von SmartScreen (Windows) und Gatekeeper (macOS) ist im README nur nach dem üblichen Ablauf beschrieben, nicht beobachtet. Der macOS-Installer entsteht auf `macos-latest` und ist damit nur für Apple Silicon.
 - **Klang.** EQ, Filter, Limiter und Übergang sind gemessen, nicht gehört.
 - **Bedienung in der echten Anwendung** nur per Tastatur und mit einzelnen Klicks: Zahleneingabe ist dort nicht nachgestellt (im Browser schon). Ziehen von Reglern, Ziehen aus der Liste aufs Deck und das Ablegen eines Ordners auf dem Fenster sind unter Windows am 21.11.2026 von Hand geprüft, unter macOS und Linux nicht.
 - **Grafik unter Linux.** In der Bauumgebung kommt WebGL 2 in WebKitGTK nicht direkt auf den Schirm; die Wellenformen werden dort über eine 2D-Fläche kopiert. Wie sich das mit echter Grafikkarte verhält und was es an Bildrate kostet, ist ungemessen.
@@ -123,6 +126,8 @@ Gemessene Werte (diese Maschine, 4 Kerne):
 | Entscheidung | Grund |
 |---|---|
 | Kern in Rust, Oberfläche mit Tauri 2, React, WebGL 2 | Spezifikation 7.1 |
+| Lizenz GPL-3.0 (`GPL-3.0-only`), Rechteinhaber „Die Deckwerk-Autoren" (26.11.2026) | Vom Nutzer gewählt: quelloffen, veränderte Fassungen müssen offen bleiben. Fremde GPL-Bausteine bleiben ausgeschlossen, damit die Rechteinhaber später auch anders lizenzieren können; das setzt voraus, dass fremde Beiträge nur mit entsprechender Vereinbarung einfließen. „Nur Version 3" statt „oder später" ist die engere Lesart der Wahl und lässt sich nachträglich lockern, nicht aber verschärfen |
+| Release als normale Version, nicht als Vorabversion (26.11.2026) | Nur so zeigt GitHub sie als „Latest" und unter `/releases/latest`; der frühe Stand steht im Text der Version |
 | Symphonia 0.5 statt 0.6, rusqlite 0.32, lofty 0.22 | bekannte, stabile Schnittstellen; Anheben als eigene Aufgabe |
 | cpal 0.18 statt 0.15 (21.11.2026) | cpal 0.15 öffnet unter WASAPI keine Geräte mit strenger Formatprüfung (Fehler 4 der Windows-Abnahme); 0.18 lässt Windows das Format umwandeln. Folge: Mindestversion von Rust 1.85 statt 1.80 |
 | Opus über libopus (mitgebaut) | Symphonia hat keinen eigenen Opus-Decoder |

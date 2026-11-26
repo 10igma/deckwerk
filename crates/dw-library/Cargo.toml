@@ -3,6 +3,8 @@ name = "dw-library"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 dw-core.workspace = true

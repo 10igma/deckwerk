@@ -54,7 +54,7 @@ Umgebungsvariablen der Anwendung: `DECKWERK_DATA` (Ordner für Bibliothek und Ca
 - **Befehlsschicht:** Jede Bedienhandlung ist ein `Command` in `dw-core`. Neue Funktionen bekommen dort einen Befehl; die Oberfläche spricht den Kern nur über `CoreApi` an. Ändert sich `Command` oder `Snapshot`, müssen `ui/src/core/types.ts`, der `MockCore` und `docs/kern-schnittstelle.md` mitziehen.
 - **Messbar prüfen:** Signalverarbeitung, Analyse und Übergänge werden gegen Zahlen aus der Spezifikation getestet (Frequenzgang, Abweichung in ms, Trefferquote), über den Offline-Render. Kein Test, der nur „läuft durch" prüft.
 - **Zeit-Tests:** Mehrfach messen und den schnellsten Lauf werten; die Build-Maschinen sind unterschiedlich ausgelastet.
-- **Lizenzen:** Keine Abhängigkeiten unter GPL. Erlaubt sind MIT, Apache-2.0, BSD, MPL-2.0.
+- **Lizenzen:** Deckwerk selbst steht unter GPL-3.0 (`LICENSE`). Keine Abhängigkeiten unter GPL – nur so bleibt den Rechteinhabern eine andere Lizenzierung offen. Erlaubt sind MIT, Apache-2.0, BSD, MPL-2.0.
 - **Abhängigkeiten:** Symphonia 0.5, cpal 0.18, rusqlite 0.32, lofty 0.22, Tauri 2 sind bewusst festgelegt; ein Versionssprung ist eine eigene Aufgabe.
 - **Sprache:** Bezeichner englisch; Kommentare, Dokumentation, Commit-Nachrichten und Texte der Oberfläche deutsch. Texte der Oberfläche stehen in `ui/src/i18n/` (Deutsch und Englisch).
 - **Oberfläche:** Farben, Abstände und Schriften nur über die Tokens in `ui/src/design/tokens.css`. Animierte Flächen (Wellenformen, Pegel) zeichnen in einer eigenen Bildschleife, nicht über React. Bedienziele mindestens 28 px hoch bei 1280×720; `pnpm shots` misst das.
