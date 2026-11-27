@@ -89,3 +89,6 @@ jobs:
             target/release/bundle/**/*.msi
             target/release/bundle/**/*.exe
           if-no-files-found: error
+          # Installer zum Herunterladen und Ausprobieren; veröffentlicht wird über
+          # den Release-Workflow. Das Artefakt-Kontingent gilt für den ganzen Account.
+          retention-days: 7
