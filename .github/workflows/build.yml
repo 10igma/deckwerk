@@ -53,6 +53,10 @@ jobs:
   installer:
     name: Installer (${{ matrix.os }})
     needs: [kern, oberflaeche]
+    # Installer nur für Pull Requests gegen main (und beim Start von Hand), nicht
+    # bei jedem Push: Ein Satz belegt rund 117 MB vom Artefakt-Kontingent des
+    # Accounts. Die Installer einer Version baut der Release-Workflow.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
