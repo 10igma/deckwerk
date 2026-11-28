@@ -53,7 +53,15 @@ jobs:
   installer:
     name: Installer (${{ matrix.os }})
     needs: [kern, oberflaeche]
+    # Installer nur für Pull Requests gegen main (und beim Start von Hand), nicht
+    # bei jedem Push: Ein Satz belegt rund 117 MB vom Artefakt-Kontingent des
+    # Accounts. Die Installer einer Version baut der Release-Workflow.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ${{ matrix.os }}
+    # actions: write nur für das Löschen der älteren Artefakte am Ende.
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +87,7 @@ jobs:
         # Aus app/ aufrufen: Dort liegt tauri.conf.json.
         run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build
       - uses: actions/upload-artifact@v4
+        id: upload
         with:
           name: deckwerk-${{ runner.os }}
           path: |
@@ -89,3 +98,24 @@ jobs:
             target/release/bundle/**/*.msi
             target/release/bundle/**/*.exe
           if-no-files-found: error
+          # Installer zum Herunterladen und Ausprobieren; veröffentlicht wird über
+          # den Release-Workflow. Das Artefakt-Kontingent gilt für den ganzen Account.
+          retention-days: 7
+      - name: Ältere Installer-Artefakte löschen
+        # Es bleibt nur der eben hochgeladene Satz je System. Bei Pull Requests
+        # aus Forks darf das Token nicht löschen; dort greift die Frist oben.
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ steps.upload.outputs.artifact-id }}
+          NAME: deckwerk-${{ runner.os }}
+        run: |
+          # Erst alle Kennungen holen, dann löschen: Sonst verschieben sich die Seiten.
+          ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=100" --paginate --jq '.artifacts[].id' | tr -d '\r')"
+          printf '%s\n' "$ids" | while read -r id; do
+            if [ -n "$id" ] && [ "$id" != "$KEEP" ]; then
+              echo "lösche $NAME $id"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            fi
+          done
